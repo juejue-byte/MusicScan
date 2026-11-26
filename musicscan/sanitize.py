@@ -430,10 +430,72 @@ def respell(bars, old_fifths, new_fifths, report, base):
         report.note(base, f"re-spelled {changed} notes for the score's key")
 
 
+def _drop_ties(n, kind):
+    for t in n.findall("tie"):
+        if t.get("type") == kind:
+            n.remove(t)
+    for nots in n.findall("notations"):
+        for t in nots.findall("tied"):
+            if t.get("type") == kind:
+                nots.remove(t)
+
+
+def _cut(ev, at):
+    """Split an event at time `at` (inside it): the first piece stays `ev`, the second is returned, tied."""
+    tail = Event(at, ev.end - at, ev.staff, ev.voice, [copy.deepcopy(n) for n in ev.notes], rest=ev.rest,
+                 tuplet=ev.tuplet, hidden=ev.hidden)
+    ev.dur = at - ev.onset
+    for n in ev.notes:
+        for b in n.findall("beam"):
+            n.remove(b)
+        if not ev.rest:
+            _drop_ties(n, "start")
+            _add_tie(n, "start")
+    for n in tail.notes:
+        for tag in ("beam", "lyric", "accidental"):
+            for c in n.findall(tag):
+                n.remove(c)
+        if not ev.rest:
+            _drop_ties(n, "stop")
+            nots = n.find("notations")
+            if nots is not None:
+                for c in list(nots):
+                    if c.tag != "tied":
+                        nots.remove(c)
+            _add_tie(n, "stop")
+    return tail
+
+
+def split_bar(bar, k):
+    """One bar holding k bars' worth -> k bars (notes across the new bar lines are tied)."""
+    L = bar.length
+    out = [Bar(bar.el, [], [], bar.lead if j == 0 else [], bar.tail if j == k - 1 else [], bar.start_attrs, L)
+           for j in range(k)]
+    for ev in sorted(bar.events, key=lambda e: e.onset):
+        while True:
+            j = min(int(ev.onset // L), k - 1)
+            edge = (j + 1) * L
+            if ev.end > edge and j < k - 1:
+                tail = _cut(ev, edge)
+                ev.onset -= j * L
+                out[j].events.append(ev)
+                ev = tail
+                continue
+            ev.onset -= j * L
+            out[j].events.append(ev)
+            break
+    for o in bar.others:
+        j = min(int(o.onset // L), k - 1)
+        o.onset -= j * L
+        out[j].others.append(o)
+    return out
+
+
 class Report:
     def __init__(self):
         self.bars: dict[int, list[str]] = {}
         self.score: list[str] = []
+        self.splits: list[list[int]] = []          # [first global bar, number of bars it became]
 
     def note(self, gi, msg):
         lst = self.bars.setdefault(gi, [])
@@ -441,7 +503,7 @@ class Report:
             lst.append(msg)
 
     def as_dict(self):
-        return {"bars": {str(k): v for k, v in sorted(self.bars.items())}, "score": self.score}
+        return {"bars": {str(k): v for k, v in sorted(self.bars.items())}, "score": self.score, "splits": self.splits}
 
 
 # ---------------------------------------------------------------- emit
@@ -862,22 +924,65 @@ def sanitize(xml: str | bytes, context: dict | None = None, base: int = 0) -> tu
                     a.remove(d)
         _set_child(a0, "divisions", div, ATTR_ORDER)
 
+        pre = Report()
         for mi, bar in enumerate(bars):
-            gi = base + mi
-            separate_voices(bar, report, gi)
+            separate_voices(bar, pre, mi)
+        prepared.append([part, ms, bars, staves, div, a0, pre])
+
+    # a bar holding exactly two (or more) bars' worth in every part is a missed bar line: split it rather than
+    # trimming a whole bar of music (which would also shift every later note)
+    splits = []
+    nmeas = max((len(p[2]) for p in prepared), default=0)
+    for mi in range(nmeas):
+        bs = [p[2][mi] for p in prepared if mi < len(p[2])]
+        ends = [max(e.end for e in b.events) for b in bs if b.events]
+        if not ends or len({b.length for b in bs}) != 1:
+            continue
+        L = bs[0].length
+        U = max(ends)
+        k = U / L
+        if k.denominator == 1 and k >= 2 and all(e == U for e in ends) and k <= 4:
+            splits.append((mi, int(k)))
+    for mi, k in reversed(splits):
+        for p in prepared:
+            part, ms, bars = p[0], p[1], p[2]
+            if mi >= len(bars):
+                continue
+            pieces = split_bar(bars[mi], k)
+            bars[mi:mi + 1] = pieces
+            prev = ms[mi]
+            for j in range(1, k):
+                nm = etree.Element("measure")
+                prev.addnext(nm)
+                ms.insert(mi + j, nm)
+                prev = nm
+    shift = {}
+    off = 0
+    for mi in range(nmeas):
+        shift[mi] = mi + off
+        off += dict(splits).get(mi, 1) - 1
+    for mi, k in splits:
+        for j in range(k):
+            report.note(base + shift[mi] + j, "a bar line was missed: split into bars")
+    report.splits = [[base + mi, k] for mi, k in splits]
+    for p in prepared:
+        for gi, msgs in p[6].bars.items():
+            for msg in msgs:
+                report.note(base + shift.get(gi, gi), msg)
+        for mi, bar in enumerate(p[2]):
             new_events = []
-            for (s, v), seq in _voices(bar).items():
-                new_events.extend(clamp_voice(seq, bar.length, report, gi))
+            for (s_, v), seq in _voices(bar).items():
+                new_events.extend(clamp_voice(seq, bar.length, report, base + mi))
             bar.events = new_events
-        prepared.append((part, ms, bars, staves, div, a0))
+    nmeas = max((len(p[2]) for p in prepared), default=0)
 
     # how long each bar really is, over all parts: a bar every part plays short is a real irregular bar (a pickup,
     # or a bar split around a repeat), anything shorter than that in one voice is a reading gap
     used = [F(0)] * nmeas
-    for _, _, bars, _, _, _ in prepared:
-        for mi, bar in enumerate(bars):
+    for p in prepared:
+        for mi, bar in enumerate(p[2]):
             used[mi] = max(used[mi], max((e.end for e in bar.events), default=F(0)))
-    for part, ms, bars, staves, div, a0 in prepared:
+    for part, ms, bars, staves, div, a0, _ in prepared:
         for mi, (m, bar) in enumerate(zip(ms, bars)):
             gi = base + mi
             length = bar.length

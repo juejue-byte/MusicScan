@@ -104,6 +104,31 @@ def _clean(r: dict, context: dict | None = None, base: int = 0) -> dict:
     except Exception:
         traceback.print_exc()
         return r
+    # a bar split in two (missed bar line): its photo box is divided to match
+    meas = r["measures"]
+    for gi, k in sorted(rep.get("splits", []), reverse=True):
+        i = gi - base
+        if not 0 <= i < len(meas):
+            continue
+        m = meas[i]
+        x0, y0, x1, y1 = m["bbox"]
+        w = (x1 - x0) / k
+        parts = []
+        for j in range(k):
+            c = dict(m)
+            c["bbox"] = [round(x0 + j * w, 1), y0, round(x0 + (j + 1) * w, 1), y1]
+            c["boxes"] = [[round(b[0] + j * (b[2] - b[0]) / k, 1), b[1], round(b[0] + (j + 1) * (b[2] - b[0]) / k, 1), b[3]]
+                          for b in m.get("boxes", [])]
+            c["low"] = [b for b in m.get("low", []) if c["bbox"][0] <= (b[0] + b[2]) / 2 < c["bbox"][2]]
+            parts.append(c)
+        meas[i:i + 1] = parts
+    for i, m in enumerate(meas):
+        m["index"] = i
+    if "systems" in r:
+        for sy in r["systems"]:
+            sy["measures"] = [m["index"] for m in meas if m["system"] == sy["index"]]
+    if "stats" in r:
+        r["stats"]["measures"] = len(meas)
     for k, fixes in rep["bars"].items():
         i = int(k) - base
         if 0 <= i < len(r["measures"]):
