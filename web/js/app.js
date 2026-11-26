@@ -3,7 +3,7 @@ import { Score, pitchName, midiOf, clefTop, toMidi } from './score.js';
 import './edits.js';
 import { DYNAMICS, WORDS } from './markup.js';
 import * as ink from './ink.js';
-import { render, pitchAtY, noteYs } from './render.js';
+import { render, pitchAtY, noteYs, fitZoom } from './render.js';
 import * as audio from './audio.js';
 import * as practice from './practice.js';
 import * as native from './native.js';
@@ -219,6 +219,8 @@ function redraw() {
   const el = $('#score');
   const keep = $('#scoreScroll').scrollTop;
   if (S.selMark && !S.selMark.isConnected) S.selMark = null;
+  // rows as printed: the zoom at which each row of the photo fits on one line, within a readable range
+  if (S.autoZoom) S.zoom = Math.max(window.innerWidth < 600 ? 0.6 : 0.55, Math.min(1, Math.floor(fitZoom(S.score, scoreWidth()) * 20) / 20));
   S.layout = render(S.score, el, { width: scoreWidth(), zoom: S.zoom, selected: S.measures, selectedNote: S.sel, selectedMark: S.selMark, meta: S.meta });
   const ov = $('#overlay');
   ov.setAttribute('width', S.layout.pxWidth);
@@ -1078,7 +1080,7 @@ function setupPhoto() {
   const has = !!S.job;
   $('#btnPhoto').disabled = !has;
   $('#photoCol').classList.toggle('closed', !has || window.innerWidth < 860);
-  if (window.innerWidth < 600 && S.zoom === 1) S.zoom = 0.72;
+  S.autoZoom = true; // until the reader zooms by hand, keep the photo's rows whole (see redraw)
   if (!has) return;
   pageImgOf(S.photoPage || S.job);
   setPhotoKind('page');
@@ -1992,8 +1994,8 @@ function wire() {
   $('#inspClose').onclick = hideInspector;
   $('#btnPhoto').onclick = () => { $('#photoCol').classList.toggle('closed'); setTimeout(() => { redraw(); if (S.focus >= 0) focusBar(S.focus, false); }, 0); };
   for (const b of $$('[data-ph]')) b.onclick = () => setPhotoKind(b.dataset.ph);
-  $('#zoomIn').onclick = () => { S.zoom = Math.min(1.6, +(S.zoom + 0.1).toFixed(2)); redraw(); };
-  $('#zoomOut').onclick = () => { S.zoom = Math.max(0.5, +(S.zoom - 0.1).toFixed(2)); redraw(); };
+  $('#zoomIn').onclick = () => { S.autoZoom = false; S.zoom = Math.min(1.6, +(S.zoom + 0.1).toFixed(2)); redraw(); };
+  $('#zoomOut').onclick = () => { S.autoZoom = false; S.zoom = Math.max(0.5, +(S.zoom - 0.1).toFixed(2)); redraw(); };
   $('#photoClose').onclick = () => { $('#photoCol').classList.add('closed'); redraw(); if (S.focus >= 0) focusBar(S.focus, false); };
   for (const b of $$('[data-dur]')) b.querySelector('.g').innerHTML = noteIcon(b.dataset.dur);
   $('#btnUndo').onclick = undo;

@@ -51,14 +51,38 @@ function measureWidth(score, mi, staves, first) {
   return w;
 }
 
+// Engraving widths above are roomy; a printed row may be drawn up to this much tighter before it has to wrap.
+export const SQUEEZE = 0.84;
+
+// the rows of the photo (bars between <print new-system> marks), with their natural widths
+export function photoRows(score, staves = staffList(score)) {
+  const rows = [];
+  let cur = null;
+  for (let mi = 0; mi < score.nMeasures; mi++) {
+    if (!cur || score.newSystem(mi)) { cur = { bars: [], w: 0 }; rows.push(cur); }
+    cur.w += measureWidth(score, mi, staves, cur.bars.length === 0);
+    cur.bars.push(mi);
+  }
+  return rows;
+}
+
+// zoom at which every printed row fits on one line of the given width (1 when the file has no row marks)
+export function fitZoom(score, pxWidth) {
+  const rows = photoRows(score);
+  if (rows.length < 2 && !score.newSystem(0)) return 1;
+  const widest = Math.max(...rows.map((r) => r.w));
+  return pxWidth / (widest * SQUEEZE + 14 + 10 + 4); // + the left and right margins of render()
+}
+
 export function layoutRows(score, width) {
   const staves = staffList(score);
   const rows = [];
   let cur = [], used = 0;
   for (let mi = 0; mi < score.nMeasures; mi++) {
     let w = measureWidth(score, mi, staves, cur.length === 0);
-    // keep the line breaks of the photo (<print new-system>), and still wrap when a line is too wide for the screen
-    if (cur.length && (used + w > width || score.newSystem(mi))) {
+    // keep the rows of the photo (<print new-system>): a printed row is squeezed to fit, and only wraps
+    // when it would get too tight to read (a phone held upright)
+    if (cur.length && (used + w > width / SQUEEZE || score.newSystem(mi))) {
       rows.push(cur); cur = []; used = 0;
       w = measureWidth(score, mi, staves, true);
     }
