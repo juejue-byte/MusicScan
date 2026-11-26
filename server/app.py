@@ -105,7 +105,7 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
         _clean(r, context=ctx)
         if notes and r["measures"]:
             m0 = r["measures"][0]
-            m0["notes"] = notes
+            m0["notes"] = m0.get("notes", []) + notes
             if m0["level"] == "ok":
                 m0["level"] = "check"
         q = assess(pre, r)
