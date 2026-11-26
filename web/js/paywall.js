@@ -6,6 +6,7 @@
 //   - After that, a scan without Pro opens as a preview: the first half of the page is shown, the rest is blurred, and
 //     editing, playback and export ask to unlock. Going Pro unlocks the whole page and everything else.
 //   - Pro: $15.99 a month or $99.99 a year, about 30 pages a month. No weekly plan.
+//   - Yearly starts with a 7-day free trial (a StoreKit introductory offer: once per Apple ID, new subscribers only).
 //
 // It is OFF by default, so everything keeps working for everyone. Turn it on to review it:
 //   ?paywall in the URL (remembered), or localStorage 'musicscan:paywall' = '1'; ?paywall=off turns it off again.
@@ -13,6 +14,9 @@
 //
 // Before payments go live (App Store Review Guidelines 3.1.1, 3.1.2, 5.1.1):
 //   - Buy through StoreKit 2 In-App Purchase, both plans in ONE subscription group so monthly -> yearly is an upgrade.
+//   - The trial is an introductory offer set on the yearly product in App Store Connect. Ask StoreKit
+//     (Product.SubscriptionInfo.isEligibleForIntroOffer) and set introEligible() from it: someone who already had a
+//     trial must see the plain price, never a trial they can't get (guideline 3.1.2).
 //   - Check entitlements on the server (App Store Server API + notifications). The server, not this file, decides what
 //     a scan returns: for a preview it should send only the first half of the reading, because anything sent to the
 //     browser can be read out of it. Count pages on the server too.
@@ -25,7 +29,7 @@ export const PLAN = {
   sub: 'See every bar, fix it on the staff, play it and export it.',
   features: ['The whole page, every bar', 'Edit, fix and rescan any bar', 'Practice playback: loop, tempo, parts', 'MusicXML and MIDI export', `Up to 30 pages a month`, 'Multi-page scores and PDFs'],
   plans: [
-    { id: 'year', name: 'Yearly', price: '$99.99', period: 'year', per: '$8.33 a month, save 48%', badge: 'Best value' },
+    { id: 'year', name: 'Yearly', price: '$99.99', period: 'year', per: '$8.33 a month, save 48%', badge: 'Best value', trialDays: 7 },
     { id: 'month', name: 'Monthly', price: '$15.99', period: 'month', per: 'per month' },
   ],
   defaultPlan: 'year',
@@ -33,7 +37,7 @@ export const PLAN = {
   privacyUrl: '', // required before App Review: a public privacy policy page
 };
 
-const K = { on: 'musicscan:paywall', pro: 'musicscan:pro', pages: 'musicscan:pages', free: 'musicscan:freeUsed', access: 'musicscan:access' };
+const K = { on: 'musicscan:paywall', pro: 'musicscan:pro', pages: 'musicscan:pages', free: 'musicscan:freeUsed', access: 'musicscan:access', trial: 'musicscan:hadTrial' };
 const get = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const set = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) { /* blocked */ } };
 const month = () => new Date().toISOString().slice(0, 7);
@@ -47,6 +51,9 @@ const month = () => new Date().toISOString().slice(0, 7);
 export const enabled = () => get(K.on) === '1';
 export const isPro = () => get(K.pro) === '1';
 export const freeLeft = () => (get(K.free) ? 0 : PLAN.freePages);
+// whether this person can still get the free trial (preview: yes until they've gone Pro once on this device)
+export const introEligible = () => get(K.pro) == null && get(K.trial) == null;
+const trialOf = (p) => (p.trialDays && introEligible() ? p.trialDays : 0);
 
 // pages read this calendar month (the Pro allowance; the real count belongs on the server)
 export function pagesUsed() {
@@ -75,6 +82,10 @@ const CHECK = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" strok
 
 function render(reason) {
   const plan = PLAN.plans.find((p) => p.id === chosen);
+  const trial = trialOf(plan);
+  const terms = trial
+    ? `Free for ${trial} days, then ${plan.price} per ${plan.period}. Renews automatically until you cancel. Cancel anytime in Settings › your name › Subscriptions, at least 24 hours before the trial ends, and you won't be charged. Payment is charged to your Apple ID when the trial ends.`
+    : `${plan.price} per ${plan.period}. Renews automatically until you cancel. Cancel anytime in Settings › your name › Subscriptions, at least 24 hours before it renews. Payment is charged to your Apple ID.`;
   el.innerHTML = `
     <div class="pw-card" role="dialog" aria-modal="true" aria-labelledby="pwTitle">
       <button class="pw-close" aria-label="Not now"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
@@ -85,16 +96,20 @@ function render(reason) {
       <ul class="pw-features">${PLAN.features.map((f) => `<li>${CHECK}${esc(f)}</li>`).join('')}</ul>
       <div class="pw-plans" role="radiogroup" aria-label="Plan" style="--n: ${PLAN.plans.length}">${PLAN.plans.map((p) => `
         <button class="pw-plan${p.id === chosen ? ' on' : ''}" role="radio" aria-checked="${p.id === chosen}" data-plan="${p.id}">
-          ${p.badge ? `<span class="pw-best">${esc(p.badge)}</span>` : ''}<span class="pw-name">${esc(p.name)}</span><span class="pw-price">${esc(p.price)}</span><span class="pw-per">${esc(p.per)}</span>
+          ${trialOf(p) || p.badge ? `<span class="pw-best">${trialOf(p) ? `${trialOf(p)} days free` : esc(p.badge)}</span>` : ''}<span class="pw-name">${esc(p.name)}</span><span class="pw-price">${esc(p.price)}</span><span class="pw-per">${esc(p.per)}</span>
         </button>`).join('')}</div>
-      <button class="btn primary pw-go">Continue with ${esc(plan.name)}</button>
-      <p class="pw-terms">${esc(plan.price)} per ${esc(plan.period)}. Renews automatically until you cancel. Cancel anytime in Settings › your name › Subscriptions, at least 24 hours before it renews. Payment is charged to your Apple ID.</p>
+      <button class="btn primary pw-go">${trial ? `Start ${trial}-day free trial` : `Continue with ${esc(plan.name)}`}</button>
+      <p class="pw-terms">${esc(terms)}</p>
       <div class="pw-foot"><span>${PLAN.termsUrl ? `<a class="pw-link" href="${esc(PLAN.termsUrl)}" target="_blank" rel="noopener">Terms of Use</a>` : ''}${PLAN.privacyUrl ? ` · <a class="pw-link" href="${esc(PLAN.privacyUrl)}" target="_blank" rel="noopener">Privacy Policy</a>` : ''}</span><span><button class="pw-link" data-a="restore">Restore purchases</button></span></div>
       <div class="pw-preview">Preview: payments aren't connected yet, so nothing is charged.</div>
     </div>`;
   el.querySelector('.pw-close').onclick = () => close(false);
   for (const b of el.querySelectorAll('[data-plan]')) b.onclick = () => { chosen = b.dataset.plan; render(reason); el.querySelector(`[data-plan="${chosen}"]`).focus(); };
-  el.querySelector('.pw-go').onclick = () => { set(K.pro, '1'); close(true, 'Pro is on for this preview. No payment was taken.'); };
+  el.querySelector('.pw-go').onclick = () => {
+    set(K.pro, '1');
+    if (trial) set(K.trial, '1');
+    close(true, trial ? `Your ${trial}-day free trial has started (preview, nothing is charged).` : 'Pro is on for this preview. No payment was taken.');
+  };
   el.querySelector('[data-a=restore]').onclick = () => close(isPro(), isPro() ? 'Pro is already on.' : 'No purchase to restore on this device.');
 }
 
