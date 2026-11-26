@@ -55,8 +55,8 @@ the server. Force it with `?demo`.
 | Check the flagged bars | **Fix it** (F): Enter looks right · `]` `[` next / previous flag · P play the bar · E edit it · Esc close. iPad keyboard: ⌘] ⌘[ ⌘⇧↵ ⌘⇧F |
 | Play / stop | Space (starts at the selected bar) |
 | Loop | L or ⟲: the selected bars repeat (nothing selected: the whole piece) |
-| Dynamics, hairpins, fingering, text, rehearsal marks | Select a note (or bars), then **Marks ▾** (M). Tap a marking to select it; Delete removes it |
-| Draw on the score | **Ink** (P): Apple Pencil, mouse or finger. Pens, highlighter, eraser (E, or Pencil double-tap). Ink never changes the notes |
+| Dynamics, hairpins, fingering, text, rehearsal marks | Select a note (or bars), then **Marks ▾** (K). Tap a marking to select it; Delete removes it |
+| Draw on the score | **Ink** (P): Apple Pencil, mouse or finger. Pens, highlighter, eraser (X, or Pencil double-tap). Ink never changes the notes |
 | Show / hide ink | **Ink: shown / hidden** in the status bar |
 | Undo / redo | Ctrl/Cmd+Z · Ctrl/Cmd+Shift+Z |
 

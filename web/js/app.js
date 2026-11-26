@@ -250,7 +250,7 @@ function updateStatus() {
     const nInk = ink.strokes(S.score).length;
     txt = `Ink · ${nInk} stroke${nInk === 1 ? '' : 's'}. Ink is saved with the score and kept in the MusicXML export; other apps ignore it.`;
   } else if (mk) {
-    txt = `${describeMark(mk)} · bar ${barNumber(mk.mi)}. Delete removes it; Marks ▾ (M) changes it.`;
+    txt = `${describeMark(mk)} · bar ${barNumber(mk.mi)}. Delete removes it; Marks ▾ (K) changes it.`;
   } else if (n) {
     const num = barNumber(n.ev.mi);
     const what = n.ev.rest ? `${n.ev.type || ''} rest` : n.ev.chord.map((c) => pitchName(c.pitch)).join(' + ') + ` · ${n.ev.type || ''}${n.ev.dots ? ' dotted' : ''}`;
@@ -857,8 +857,8 @@ function onKey(e) {
     case 'Delete': case 'Backspace': e.preventDefault(); if (e.shiftKey || (!selected() && S.measures.size)) deleteBars(); else del(); break;
     case 'n': case 'N': setMode(S.mode === 'add' ? 'select' : 'add'); break;
     case 'p': case 'P': setMode(S.mode === 'ink' ? 'select' : 'ink'); break;
-    case 'e': case 'E': if (S.mode === 'ink') setPen(S.eraser ? S.inkPen : 'eraser'); break;
-    case 'm': case 'M': if (S.mode !== 'ink') openMarksMenu($('#btnMarks')); break;
+    case 'x': case 'X': if (S.mode === 'ink') setPen(S.eraser ? S.inkPen : 'eraser'); break;
+    case 'k': case 'K': if (S.mode !== 'ink') openMarksMenu($('#btnMarks')); break;
     case 'v': case 'V': setMode('select'); break;
     case 'Escape': if ($('#marksMenu').classList.contains('open')) closeMenus(); else if (S.mode !== 'select') setMode('select'); else { S.sel = null; S.measures.clear(); hideInspector(); redraw(); } break;
     case ' ': e.preventDefault(); togglePlay(); break;
@@ -1102,7 +1102,7 @@ function closeModal() { $('#modal').classList.add('hidden'); $('#modalCard').inn
 function closeMenus() { for (const m of ['#exportMenu', '#barMenu', '#marksMenu']) $(m).classList.remove('open'); }
 function inkHint() {
   const who = S.penSeen ? '<b>Apple Pencil</b> draws, fingers scroll' : 'Draw with <b>Apple Pencil</b>, a mouse or a finger';
-  return `<b>Ink</b>: ${who}. Ink sits on its own layer and never changes the notes. <b>Eraser</b> (E${native.isNative ? ' or double-tap the Pencil' : ''}) rubs strokes out. Press <b>Done</b> or Esc to edit notes again.`;
+  return `<b>Ink</b>: ${who}. Ink sits on its own layer and never changes the notes. <b>Eraser</b> (X${native.isNative ? ' or double-tap the Pencil' : ''}) rubs strokes out. Press <b>Done</b> or Esc to edit notes again.`;
 }
 function setPen(id) {
   if (id === 'eraser') S.eraser = true;
