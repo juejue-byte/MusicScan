@@ -59,6 +59,30 @@ P.overwrite = function (ev, pitch, type, dots) {
   return { el, ql: want, fitted, type, dots };
 };
 
+// Open another voice on a staff in a bar: a bar of rests in that voice, after a backup to the bar start.
+P.addVoice = function (pi, mi, staff, voice) {
+  const m = this.parts[pi].measures[mi];
+  const a = this.attrs(pi, mi);
+  const len = this.measureLength(pi, mi);
+  let cur = 0, ref = null;
+  for (const c of m.children) {
+    const n = c.localName;
+    if (n === 'note') {
+      if (!c.querySelector(':scope > chord') && !c.querySelector(':scope > grace')) cur += +(c.querySelector(':scope > duration')?.textContent || 0);
+      ref = null;
+    } else if (n === 'backup') { cur -= +c.querySelector('duration').textContent; ref = null; }
+    else if (n === 'forward') { cur += +c.querySelector('duration').textContent; ref = null; }
+    else if (n === 'barline' && !ref) ref = c;
+  }
+  const add = [];
+  if (cur > 0) {
+    const b = this.doc.createElement('backup'); const d = this.doc.createElement('duration'); d.textContent = String(cur); b.appendChild(d); add.push(b);
+  }
+  for (const r of this._rests(len, a.divisions, voice, staff)) { if (a.staves > 1) this._setText(r, 'staff', staff); add.push(r); }
+  for (const el of add) m.insertBefore(el, ref);
+  this._attrCache = null;
+};
+
 // a semitone up or down, spelled the way a musician would: notes of the key first, then sharps going up and flats
 // going down
 P.stepChromatic = function (ev, noteEl, dir) {
@@ -107,7 +131,12 @@ export function createNoteInput(ctx) {
   // S.caret = { pi, staff, voice, mi, q }   (q: quarter notes from the start of the bar)
 
   function caretAt(ev) {
-    S.caret = { pi: ev.pi, staff: ev.staff, voice: ev.voice, mi: ev.mi, q: ev.onset / ev.div };
+    const vs = staffVoices(ev.pi, ev.mi, ev.staff);
+    S.caret = { pi: ev.pi, staff: ev.staff, voice: ev.voice, vk: Math.max(1, vs.indexOf(ev.voice) + 1), mi: ev.mi, q: ev.onset / ev.div };
+  }
+  // the voices used on a staff in a bar, lowest number first
+  function staffVoices(pi, mi, staff) {
+    return [...new Set(score().voiceEvents(pi, mi, staff, null).map((e) => e.voice))].sort((a, b) => +a - +b);
   }
   function caretAfter(el) {
     const ev = findEv(el);
@@ -140,12 +169,13 @@ export function createNoteInput(ctx) {
     if (!c || !S.score) return null;
     if (c.pi >= score().parts.length) c.pi = 0;
     if (c.mi >= score().nMeasures) return { end: true };
-    let evs = score().voiceEvents(c.pi, c.mi, c.staff, c.voice);
-    if (!evs.length) {
-      evs = score().voiceEvents(c.pi, c.mi, c.staff, null);
-      if (evs.length) { c.voice = evs[0].voice; evs = evs.filter((e) => e.voice === c.voice); }
-    }
-    if (!evs.length) return { empty: true };
+    // the caret writes in the staff's first, second... voice (vk), whatever numbers the file gives them
+    const vs = staffVoices(c.pi, c.mi, c.staff);
+    if (!vs.length) return { empty: true };
+    const vk = c.vk || 1;
+    if (vk > vs.length) { c.voice = String(+vs[0] + vk - 1); return { needVoice: true }; }
+    c.voice = vs[vk - 1];
+    const evs = score().voiceEvents(c.pi, c.mi, c.staff, c.voice);
     for (const e of evs) {
       const a = e.onset / e.div, b = (e.onset + e.dur) / e.div;
       if (c.q >= a - EPS && c.q < b - EPS) { c.q = a; return { ev: e }; }
@@ -176,12 +206,12 @@ export function createNoteInput(ctx) {
   const fifthsHere = () => { const c = S.caret; return score().attrs(c.pi, Math.min(c.mi, score().nMeasures - 1)).fifths; };
 
   function ensureCaret() {
-    if (S.caret && S.caret.mi <= score().nMeasures) return;
+    if (S.caret && S.caret.mi <= score().nMeasures) { resolve(); return; }
     const s = ctx.selected();
     if (s) { caretAt(s.ev); return; }
     const mi = S.measures.size ? Math.min(...S.measures) : 0;
     const ev = score().voiceEvents(0, mi, '1', null)[0];
-    S.caret = { pi: 0, staff: '1', voice: ev?.voice || '1', mi, q: 0 };
+    S.caret = { pi: 0, staff: '1', voice: ev?.voice || '1', vk: 1, mi, q: 0 };
   }
   // put the caret on the selection (entering note input on a note starts there)
   function startAtSelection() {
@@ -191,7 +221,7 @@ export function createNoteInput(ctx) {
       const mi = Math.min(...S.measures);
       const pi = S.caret?.pi ?? 0, staff = S.caret?.staff ?? '1';
       const ev = score().voiceEvents(pi, mi, staff, null)[0];
-      S.caret = { pi, staff, voice: ev?.voice || '1', mi, q: 0 };
+      S.caret = { pi, staff, voice: ev?.voice || '1', vk: 1, mi, q: 0 };
     } else ensureCaret();
   }
 
@@ -204,6 +234,11 @@ export function createNoteInput(ctx) {
       if (r?.end) {
         const idx = score().insertBar(score().nMeasures - 1, 'after');
         ctx.metaInsert?.(idx);
+        r = resolve();
+      }
+      if (r?.needVoice) {
+        // the first note in a second voice: that voice gets a bar of rests, then the note goes in
+        score().addVoice(S.caret.pi, S.caret.mi, S.caret.staff, S.caret.voice);
         r = resolve();
       }
       const c = S.caret;
@@ -341,7 +376,7 @@ export function createNoteInput(ctx) {
     const i = list.findIndex((x) => x.pi === c.pi && x.staff === c.staff);
     const nx = list[i + dir];
     if (!nx) return;
-    c.pi = nx.pi; c.staff = nx.staff; c.voice = score().voiceEvents(nx.pi, Math.min(c.mi, score().nMeasures - 1), nx.staff, null)[0]?.voice || c.voice;
+    c.pi = nx.pi; c.staff = nx.staff; c.vk = 1; c.voice = score().voiceEvents(nx.pi, Math.min(c.mi, score().nMeasures - 1), nx.staff, null)[0]?.voice || c.voice;
     const r = resolve();
     S.sel = r?.ev ? r.ev.el : null;
     ctx.redraw();
@@ -415,13 +450,22 @@ export function createNoteInput(ctx) {
     const where = c.mi >= score().nMeasures ? 'end of the score' : `bar ${ctx.barNumber(c.mi)}, beat ${beatLabel()}`;
     const what = `${S.restMode ? 'rest' : 'note'}: ${S.dot ? 'dotted ' : ''}${TYPE_NAME[S.dur]}`;
     const staffs = score().parts.reduce((n, p, pi) => n + (score().attrs(pi, 0).staves || 1), 0);
-    const staffTxt = staffs > 1 ? ` · staff ${c.pi > 0 ? c.pi + 1 + '.' : ''}${c.staff}` : '';
+    const staffTxt = (staffs > 1 ? ` · staff ${c.pi > 0 ? c.pi + 1 + '.' : ''}${c.staff}` : '') + ((c.vk || 1) > 1 ? ` · voice ${c.vk}` : '');
     const keys = touch
       ? 'Tap a key below or the staff to write it'
       : 'A–G write · Shift+A–G chord · 0 rest · R repeat · 1–7 length · ↑↓ semitone · ⌘↑↓ octave · ←→ move · Esc done';
     return `Note input · ${where}${staffTxt} · ${what}.  ${keys}`;
   }
 
+  // ⌘⌥1-4: write in the staff's first to fourth voice from the caret on
+  function setVoice(k) {
+    ensureCaret();
+    S.caret.vk = k;
+    const r = resolve();
+    S.sel = r?.ev ? r.ev.el : null;
+    ctx.redraw();
+    ctx.toast(k === 1 ? 'Voice 1' : `Voice ${k}: notes go in a separate voice on this staff${r?.needVoice ? ' (stems down)' : ''}`, 1600);
+  }
   // the on-screen keyboard: write this exact pitch at the caret, or add it to the last note as a chord tone
   function writePitch(p, chord = false) {
     ensureCaret();
@@ -442,7 +486,7 @@ export function createNoteInput(ctx) {
     return { ref: refPitch(), fifths: fifthsHere(), staff: `${S.caret.pi}/${S.caret.staff}` };
   }
 
-  return { writePitch, context, letter, repeat, tieOn, write, moveCaret, changeStaff, backspace, pitchKey, drawCaret, status, caretAt, caretAfter, startAtSelection, ensureCaret, resolve, findEv };
+  return { setVoice, writePitch, context, letter, repeat, tieOn, write, moveCaret, changeStaff, backspace, pitchKey, drawCaret, status, caretAt, caretAfter, startAtSelection, ensureCaret, resolve, findEv };
 }
 
 export { pitchName };

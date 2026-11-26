@@ -10,7 +10,9 @@ const LS = 'musicscan:pad';
 
 export function createPad(NI, { S, setDur }) {
   const st = { base: null, staff: null, chord: false, open: true };
-  try { st.open = localStorage.getItem(LS) !== 'closed'; } catch (e) { /* storage blocked */ }
+  // open by default on touch screens; with a mouse and keyboard it waits behind the Keyboard button
+  st.open = matchMedia('(pointer: coarse)').matches;
+  try { const v = localStorage.getItem(LS); if (v) st.open = v === 'open'; } catch (e) { /* storage blocked */ }
 
   const el = document.createElement('div');
   el.className = 'pad hidden';
@@ -23,6 +25,7 @@ export function createPad(NI, { S, setDur }) {
     <div class="pad-keys" role="group" aria-label="Piano keyboard"></div>
     <div class="pad-side pad-actions">
       <button class="pad-btn" data-p="chord" aria-pressed="false" title="Keys add to the last note (a chord)">+ Chord</button>
+      <button class="pad-btn" data-p="voice" aria-pressed="false" title="Write a second melody on this staff (voice 2, ⌘⌥2)">Voice 2</button>
       <button class="pad-btn" data-p="rest" title="Write a rest (0)">𝄽 Rest</button>
       <button class="pad-btn" data-p="repeat" title="Repeat the last note (R)">⟳ Repeat</button>
       <button class="pad-btn" data-p="left" title="Move the caret back (←)" aria-label="Caret back">◀</button>
@@ -105,6 +108,7 @@ export function createPad(NI, { S, setDur }) {
       build();
     } else mark();
     el.querySelector('[data-p="chord"]').setAttribute('aria-pressed', String(st.chord));
+    el.querySelector('[data-p="voice"]').setAttribute('aria-pressed', String((S.caret?.vk || 1) > 1));
   }
 
   el.addEventListener('click', (e) => {
@@ -115,6 +119,7 @@ export function createPad(NI, { S, setDur }) {
     if (a === 'oct-') { st.base = Math.max(0, st.base - 1); build(); }
     else if (a === 'oct+') { st.base = Math.min(7, st.base + 1); build(); }
     else if (a === 'chord') { st.chord = !st.chord; sync(); }
+    else if (a === 'voice') NI.setVoice((S.caret?.vk || 1) > 1 ? 1 : 2);
     else if (a === 'rest') NI.write(null);
     else if (a === 'repeat') NI.repeat();
     else if (a === 'left') NI.moveCaret(-1);

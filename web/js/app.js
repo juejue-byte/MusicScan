@@ -881,6 +881,7 @@ const SHORTCUTS = [
     ['T', 'Tie (in note input: a tied note of the same pitch)'],
     ['Alt + 3', 'Triplet (Alt+5, 6, 7, 9 for other tuplets)'],
     ['Backspace', 'In note input: step back and clear that note'],
+    ['⌘/Ctrl + Alt + 1 – 4', 'Write in voice 1 – 4 of the staff (two melodies on one staff)'],
   ]],
   ['Move and change', [
     ['↑ ↓', 'Up or down a semitone'],
@@ -939,6 +940,7 @@ function onKey(e) {
   const add = S.mode === 'add';
   if (mod && (k === 'z' || k === 'Z')) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && k === 'y') { e.preventDefault(); redo(); return; }
+  if (mod && e.altKey && /^Digit[1-4]$/.test(e.code)) { e.preventDefault(); if (!add) setMode('add'); NI.setVoice(+e.code.slice(5)); return; }
   if (mod && !e.shiftKey && !e.altKey && (k === 'c' || k === 'C')) { if (copySel()) e.preventDefault(); return; }
   if (mod && !e.shiftKey && !e.altKey && (k === 'x' || k === 'X')) { if (copySel(true)) e.preventDefault(); return; }
   if (mod && !e.shiftKey && !e.altKey && (k === 'v' || k === 'V')) { if (paste()) e.preventDefault(); return; }

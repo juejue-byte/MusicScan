@@ -119,6 +119,17 @@ function serve() {
   const a4 = (await bar(3))[0], a5 = (await bar(4))[0];
   ok(a4 === a5, `pasted a note over another (${a4} -> ${a5})`);
   ok(JSON.stringify(await over()) === JSON.stringify(overBefore), 'still no bar overflows');
+  // 10. a second voice: ⌘⌥2 on bar 8, two half notes, stems split; voice 1 untouched
+  const v1 = await p.evaluate(() => { const s = window.__ms.S.score; return s.voiceEvents(0, 7, '1', null).map((e) => e.voice + ':' + e.onset).join(','); });
+  await p.evaluate(() => { const S = window.__ms.S; S.sel = null; S.measures = new Set([7]); window.__ms.redraw(); });
+  await key('n', 'Control+Alt+Digit2', '6', 'c', 'e');
+  const vv = await p.evaluate(() => { const s = window.__ms.S.score; const evs = s.voiceEvents(0, 7, '1', null); return { voices: [...new Set(evs.map((e) => e.voice))], v2: evs.filter((e) => e.voice === '2').map((e) => (e.rest ? 'r' : e.chord[0].pitch.step) + '/' + e.type), v1: evs.filter((e) => e.voice === '1').map((e) => e.voice + ':' + e.onset).join(',') }; });
+  console.log('voice 2:', JSON.stringify(vv));
+  ok(vv.voices.length === 2 && vv.v2.join(' ') === 'C/half E/half', 'voice 2 holds the two half notes');
+  ok(vv.v1 === v1, 'voice 1 is untouched');
+  ok(JSON.stringify(await over()) === JSON.stringify(overBefore), 'no bar overflows with two voices');
+  await p.screenshot({ path: OUT + '/03_voice2.png' });
+  await key('Control+Alt+Digit1', 'Escape');
   // the XML still parses
   const xml = await p.evaluate(() => window.__ms.S.score.toXML());
   fs.writeFileSync(OUT + '/out.musicxml', xml);

@@ -371,7 +371,7 @@ i.mf { font-family: 'Times New Roman', Times, serif; font-weight: 700; font-size
 /* on-screen piano for note input (iPad first) */
 .pad { display: flex; align-items: stretch; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--line); background: var(--panel); position: relative; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
 .pad-side { display: flex; flex-direction: column; gap: 4px; justify-content: center; }
-.pad-actions { display: grid; grid-template-columns: repeat(3, auto); gap: 4px; }
+.pad-actions { display: grid; grid-template-columns: repeat(4, auto); gap: 4px; }
 .pad-btn { min-height: 40px; min-width: 52px; padding: 4px 8px; border: 1px solid var(--line2); border-radius: 8px; background: var(--panel); color: var(--ink); font: 600 13px system-ui, sans-serif; cursor: pointer; }
 .pad-btn:active { background: #dbeafe; }
 .pad-btn[aria-pressed="true"] { background: #2563eb; color: #fff; border-color: #2563eb; }
@@ -389,7 +389,7 @@ i.mf { font-family: 'Times New Roman', Times, serif; font-weight: 700; font-size
   .pad { flex-wrap: wrap; column-gap: 4px; }
   .pad-side { flex-direction: row; gap: 4px; }
   .pad-actions { display: flex; flex: 1; justify-content: space-between; gap: 4px; }
-  .pad-btn { min-width: 0; min-height: 38px; padding: 2px 6px; font-size: 12px; flex: 0 1 auto; white-space: nowrap; }
+  .pad-btn { min-width: 0; min-height: 38px; padding: 2px 5px; font-size: 11.5px; flex: 0 1 auto; white-space: nowrap; }
 }
 
 /* multi-page scores */
