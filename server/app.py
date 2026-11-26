@@ -38,7 +38,7 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
     d = WORK / job_id
     try:
         j["status"] = "Cleaning up the photo"
-        im = imageio.load_image(data, name)
+        im = imageio.load_image(data, name, page=opts.get("page", 0))
         im.save(d / "original.jpg", quality=90)
         pre = preprocess.preprocess(im, flatten=opts.get("flatten"), strip_pen=opts.get("strip_pen", True),
                                     lock_page=opts.get("lock_page", True), quad=opts.get("quad"))
@@ -48,12 +48,19 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
         if opts.get("detector", "28m") == "28m":
             j["status"] = "Double-checking"
             omr.second_opinion(r, pre["image"])
-        _clean(r)
+        ctx, notes = page_context(r["xml"], opts.get("context"))
+        _clean(r, context=ctx)
+        if notes and r["measures"]:
+            m0 = r["measures"][0]
+            m0["notes"] = notes
+            if m0["level"] == "ok":
+                m0["level"] = "check"
         q = assess(pre, r)
         j["result"] = {"xml": r["xml"], "measures": r["measures"], "systems": r["systems"], "stats": r["stats"],
                        "quality": q, "steps": pre["steps"], "quad": pre["quad"], "seconds": r["seconds"],
                        "page_size": list(pre["image"].size), "original_size": list(im.size),
-                       "second_opinion": r.get("second_opinion")}
+                       "second_opinion": r.get("second_opinion"),
+                       "pdf_page": opts.get("page", 0) if opts.get("pdf") else None}
         j["status"] = "done"
     except Exception as e:
         traceback.print_exc()
@@ -62,19 +69,85 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
     _save_job(j)
 
 
+def page_context(raw_xml: str, context: dict | None) -> tuple[dict | None, list[str]]:
+    """For a page that continues a score: what carries over from the end of the pages before it.
+    The part/staff layout and the clefs always do (so parts line up across the page turn). The time signature does
+    unless this page prints one (it usually doesn't: only the first page shows it), and so does the key when no key
+    was read. A key read on this page that differs from the previous page's is kept (it may be a real key change)
+    but flagged for checking."""
+    if not context or not context.get("parts"):
+        return None, []
+    from lxml import etree
+    try:
+        root = san._strip_ns(etree.fromstring(raw_xml.encode() if isinstance(raw_xml, str) else raw_xml,
+                                              etree.XMLParser(recover=True, huge_tree=True)))
+    except Exception:
+        return None, []
+    m0 = [p.find("measure") for p in root.findall("part")]
+    def first(tag):
+        for m in m0:
+            if m is None:
+                continue
+            for c in m:
+                if c.tag == "note":
+                    break
+                if c.tag == "attributes" and c.find(tag) is not None:
+                    return c.find(tag)
+        return None
+    has_time = first("time") is not None and first("time").findtext("beats")
+    k = first("key")
+    read_fifths = int(k.findtext("fifths")) if k is not None and (k.findtext("fifths") or "").lstrip("-").isdigit() else None
+    parts, notes = [], []
+    for p in context["parts"]:
+        q = {"staves": int(p.get("staves", 1)), "clefs": p.get("clefs", {})}
+        if not has_time and "beats" in p and "beat_type" in p:
+            q["beats"], q["beat_type"] = int(p["beats"]), int(p["beat_type"])
+        if read_fifths is None and "fifths" in p:
+            q["fifths"] = int(p["fifths"])
+        parts.append(q)
+    prev = context["parts"][0].get("fifths")
+    if read_fifths is not None and prev is not None and int(prev) != read_fifths:
+        notes.append("the key read on this page differs from the page before")
+    return {"parts": parts}, notes
+
+
+def _pdf_pages(data: bytes, name: str) -> int:
+    if not (name.lower().endswith(".pdf") or data[:5] == b"%PDF-"):
+        return 0
+    import pypdfium2 as pdfium
+    try:
+        return len(pdfium.PdfDocument(data))
+    except Exception:
+        raise HTTPException(400, "Could not open this PDF")
+
+
 @app.post("/api/jobs")
 async def create_job(file: UploadFile = File(...), detector: str = Form("28m"), flatten: str = Form("auto"),
-                     strip_pen: bool = Form(True)):
+                     strip_pen: bool = Form(True), page: int = Form(0), context: str | None = Form(None)):
+    """Read one page. A PDF reads page `page` (0-based); the reply says how many pages it has.
+    context (JSON, optional): the layout, key, time and clefs in force at the end of the score this page continues
+    (the editor sends it when you add a page), so parts, clefs and the time signature carry across the page turn."""
     data = await file.read()
     if len(data) > 40_000_000:
         raise HTTPException(413, "File is larger than 40 MB")
+    n_pdf = _pdf_pages(data, file.filename or "")
+    if n_pdf and not 0 <= page < n_pdf:
+        raise HTTPException(400, f"This PDF has {n_pdf} page{'s' if n_pdf != 1 else ''}")
+    ctx = None
+    if context:
+        try:
+            ctx = json.loads(context)
+        except ValueError:
+            ctx = None
     jid = uuid.uuid4().hex[:12]
     (WORK / jid).mkdir()
-    JOBS[jid] = {"id": jid, "status": "queued", "name": file.filename, "created": time.time()}
+    JOBS[jid] = {"id": jid, "status": "queued", "name": file.filename, "created": time.time(),
+                 "page": page if n_pdf else 0, "pages": n_pdf or 1}
     opts = {"detector": detector if detector in ("28m", "2m") else "28m",
-            "flatten": None if flatten == "auto" else flatten == "on", "strip_pen": strip_pen}
+            "flatten": None if flatten == "auto" else flatten == "on", "strip_pen": strip_pen,
+            "page": page if n_pdf else 0, "pdf": bool(n_pdf), "context": ctx}
     threading.Thread(target=_run, args=(jid, data, file.filename or "", opts), daemon=True).start()
-    return {"id": jid}
+    return {"id": jid, "pages": n_pdf or 1, "page": page if n_pdf else 0}
 
 
 def _job(jid):
