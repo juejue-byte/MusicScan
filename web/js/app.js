@@ -2,6 +2,7 @@
 import * as capture from './capture.js';
 import * as library from './library.js';
 import * as pbar from './practicebar.js';
+import * as paywall from './paywall.js';
 import { Score, pitchName, midiOf, clefTop, toMidi } from './score.js';
 import './edits.js';
 import { DYNAMICS, WORDS } from './markup.js';
@@ -105,6 +106,10 @@ async function startUpload(file) {
     return;
   }
   if (lower.endsWith('.mxl')) { toast('Compressed .mxl is not supported yet. Export uncompressed MusicXML.'); return; }
+  // free allowance (only while the paywall preview is on, see web/js/paywall.js)
+  if (paywall.enabled() && !paywall.isPro() && paywall.scansLeft() === 0
+    && !(await paywall.show(`You've used your ${paywall.PLAN.freeScansPerMonth} free scans this month. Go Pro for unlimited scans.`))) return;
+  paywall.countScan();
   show('viewProgress');
   const thumb = $('#progressThumb');
   if (file.type.startsWith('image/') && !/heic|heif/i.test(file.type + lower)) { thumb.src = URL.createObjectURL(file); thumb.classList.remove('hidden'); } else thumb.classList.add('hidden');
@@ -2147,7 +2152,7 @@ function wire() {
     else if (cmd === 'photo') $('#btnPhoto').click();
   });
   $('#btnExport').onclick = (e) => { e.stopPropagation(); $('#exportMenu').classList.toggle('open'); };
-  for (const b of $$('#exportMenu button')) b.onclick = () => exportAs(b.dataset.x);
+  for (const b of $$('#exportMenu button')) b.onclick = () => { closeMenus(); paywall.gate(() => exportAs(b.dataset.x)); };
   document.addEventListener('click', closeMenus);
   $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
   let rt;
@@ -2179,6 +2184,14 @@ function loadResume() {
   try { last = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (e) { last = null; }
   $('#resume')?.remove();
   $('#viewUpload').scrollTop = 0;
+  $('#freeScans')?.remove();
+  if (paywall.enabled() && !paywall.isPro()) {
+    const n = paywall.scansLeft(), of = paywall.PLAN.freeScansPerMonth;
+    const f = document.createElement('div');
+    f.id = 'freeScans'; f.className = 'free-scans';
+    f.innerHTML = `<span>${n} of ${of} free scans left this month</span><span class="fs-track"><span style="width:${(n / of) * 100}%"></span></span>`;
+    $('.upload-row').appendChild(f);
+  }
   library.flush().then(renderLibrary);
   if (!last?.xml || document.body.classList.contains('has-library')) return;
   const b = document.createElement('button');
@@ -2264,6 +2277,7 @@ installZoom({
 });
 
 wire();
+paywall.init({ toast });
 pbar.init({ stop: () => stopPlay(), toggleLoop, isLoop: () => !!S.loop, bars: () => S.score?.nMeasures || 0, label: (mi) => barNumber(mi) });
 addEventListener('pagehide', () => library.flush());
 review.initReview({
@@ -2277,4 +2291,4 @@ review.initReview({
 loadSamples();
 show('viewUpload');
 // for automated tests
-window.__ms = { S, audio, practice, library, renderLibrary, openScore: (xml, meta) => { S.name = 'test.musicxml'; openScore(xml, meta || [], null, null); }, redraw };
+window.__ms = { S, audio, practice, library, renderLibrary, paywall, openScore: (xml, meta) => { S.name = 'test.musicxml'; openScore(xml, meta || [], null, null); }, redraw };
