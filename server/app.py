@@ -18,6 +18,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from musicscan import imageio, omr, preprocess  # noqa: E402
+from musicscan import sanitize as san  # noqa: E402
 from musicscan.quality import assess  # noqa: E402
 
 WORK = ROOT / "work"
@@ -44,6 +45,7 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
         pre["image"].save(d / "page.png")
         j["status"] = "Reading the music"
         r = omr.transcribe(pre["image"], detector=opts.get("detector", "28m"))
+        _clean(r)
         q = assess(pre, r)
         j["result"] = {"xml": r["xml"], "measures": r["measures"], "systems": r["systems"], "stats": r["stats"],
                        "quality": q, "steps": pre["steps"], "quad": pre["quad"], "seconds": r["seconds"],
@@ -94,6 +96,25 @@ def job_file(jid: str, name: str):
     return FileResponse(WORK / jid / name)
 
 
+def _clean(r: dict, context: dict | None = None, base: int = 0) -> dict:
+    """Make the reader's MusicXML structurally sound (bars add up, staves/clefs/voices consistent); bars the
+    sanitizer had to repair are marked for checking."""
+    try:
+        r["xml"], rep = san.sanitize(r["xml"], context=context, base=base)
+    except Exception:
+        traceback.print_exc()
+        return r
+    for k, fixes in rep["bars"].items():
+        i = int(k) - base
+        if 0 <= i < len(r["measures"]):
+            m = r["measures"][i]
+            m["fixes"] = fixes
+            if m["level"] == "ok":
+                m["level"] = "check"
+    r["sanitizer"] = rep
+    return r
+
+
 RESCAN_WAYS = [
     ("other-detector", "Second reader model"),
     ("enlarge", "Enlarged and sharpened"),
@@ -117,8 +138,12 @@ def _variant(img: Image.Image, way: str):
 
 
 @app.post("/api/jobs/{jid}/rescan")
-async def rescan(jid: str, measures: str = Form(...), attempt: int = Form(0), file: UploadFile | None = File(None)):
-    """Re-read the rows holding the selected measures. With a file: read that close-up instead."""
+async def rescan(jid: str, measures: str = Form(...), attempt: int = Form(0), file: UploadFile | None = File(None),
+                 context: str | None = Form(None)):
+    """Re-read the rows holding the selected measures. With a file: read that close-up instead.
+    context (JSON, optional): the parts/staves, key, time and clefs in force at the first target bar in the score
+    being edited (the editor sends it so the user's own key/time fixes carry over). Without it, it is taken from
+    the original reading."""
     j = _job(jid)
     if j.get("status") != "done":
         raise HTTPException(409, "Job not finished")
@@ -143,12 +168,32 @@ async def rescan(jid: str, measures: str = Form(...), attempt: int = Form(0), fi
         x1 = W
         y1 = max(b[3] for b in boxes)
         pad = max(40, int((y1 - y0) * 0.35))
-        crop = page.crop((x0, max(0, int(y0) - pad), x1, min(H, int(y1) + pad)))
+        top, bot = max(0, int(y0) - pad), min(H, int(y1) + pad)
+        # never reach into the neighbouring rows: a cut-off staff of the next system would be read as music too
+        # (a 4-staff choir row used to come back with the whole page's bars)
+        for s in res["systems"]:
+            if s["index"] in systems:
+                continue
+            sy0, sy1 = s["bbox"][1], s["bbox"][3]
+            if sy1 <= y0:
+                top = max(top, int((sy1 + y0) / 2))
+            elif sy0 >= y1:
+                bot = min(bot, int((y1 + sy0) / 2))
+        crop = page.crop((x0, top, x1, bot))
         # give the reader a page-like canvas: white margins around the row
         canvas = Image.new("L", (crop.width + 120, crop.height + 160), 255)
         canvas.paste(crop, (60, 80))
         crop, det = _variant(canvas, way)
     r = omr.transcribe(crop, detector=det)
+    ctx = None
+    if context:
+        try:
+            ctx = json.loads(context)
+        except ValueError:
+            ctx = None
+    if not ctx or not ctx.get("parts"):
+        ctx = san.context_at(res["xml"], target[0])
+    _clean(r, context=ctx, base=target[0])
     q = assess({"image": crop}, r)
     return {"xml": r["xml"], "measures": r["measures"], "stats": r["stats"], "quality": q, "target": target,
             "way": label, "attempt": attempt, "seconds": r["seconds"]}

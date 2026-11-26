@@ -746,6 +746,14 @@ function targetBars() {
   const n = selEvent();
   return n ? [n.ev.mi] : [];
 }
+function rescanContext(score, mi) {
+  return { parts: score.parts.map((p, pi) => {
+    const a = score.attrs(pi, Math.min(mi, p.measures.length - 1));
+    const clefs = {};
+    for (const [n, c] of Object.entries(a.clefs)) clefs[n] = `${c.sign}${c.line}`;
+    return { staves: a.staves, fifths: a.fifths, beats: a.beats, beat_type: a.beatType, clefs };
+  }) };
+}
 function subScoreXML(score, idxs) {
   // a standalone score holding only bars idxs, with the clef/key/time in force at the first one
   const doc = score.doc.cloneNode(true);
@@ -781,6 +789,10 @@ async function rescan(attempt = 0, file = null) {
   const fd = new FormData();
   fd.append('measures', bars.join(','));
   fd.append('attempt', String(attempt));
+  // the layout, key, time and clefs in force where the re-read rows start, as edited so far
+  const sys = S.meta[bars[0]]?.system;
+  const rowStart = sys === undefined ? bars[0] : Math.max(0, S.meta.findIndex((m) => m.system === sys));
+  fd.append('context', JSON.stringify(rescanContext(S.score, rowStart)));
   if (file) fd.append('file', file, file.name);
   let res;
   try {
@@ -821,7 +833,7 @@ async function rescan(attempt = 0, file = null) {
       edit(() => {
         S.score.spliceMeasures(target, fresh);
         const box = (i) => S.meta[target[Math.min(i, target.length - 1)]]?.bbox;
-        const newMeta = res.measures.map((m, i) => ({ ...m, bbox: box(i), boxes: [], low: [] }));
+        const newMeta = res.measures.map((m, i) => ({ ...m, system: S.meta[target[0]]?.system ?? m.system, bbox: box(i), boxes: [], low: [] }));
         S.meta.splice(target[0], target.length, ...newMeta);
       });
       S.sel = null;
