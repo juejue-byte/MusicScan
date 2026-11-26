@@ -493,21 +493,25 @@ export class Score {
 
   // ---------- rescan splice ----------
   spliceMeasures(targets, other) {
-    // replace bars `targets` (consecutive global indices) with all bars of `other` (a Score), part by part
+    // replace bars `targets` (consecutive global indices) with all bars of `other` (a Score), part by part.
+    // The new bars get our divisions; a clef/key change the new reading saw inside the row is kept, and the bar
+    // after the splice re-states whatever was in force there before, so nothing leaks past the replaced rows.
     const nNew = other.nMeasures;
-    const keep = new Set(['attributes', 'print', 'barline', 'sound']);
+    const lastOld = targets[targets.length - 1];
+    const after = this.parts.map((p, pi) => (lastOld + 1 < p.measures.length ? this.attrs(pi, lastOld + 1) : null));
     for (let pi = 0; pi < this.parts.length; pi++) {
       const op = other.parts[pi];
       if (!op) continue;
       const part = this.parts[pi];
       const first = targets[0];
       const oldDiv = this.attrs(pi, first).divisions;
-      // divisions: make ours a multiple of theirs
-      const theirDiv = other.attrs(pi, 0).divisions;
-      const L = lcm(oldDiv, theirDiv);
+      // divisions: make ours a multiple of theirs (every bar of theirs)
+      let L = oldDiv;
+      for (let k = 0; k < op.measures.length; k++) L = lcm(L, other.attrs(pi, k).divisions);
       if (L !== oldDiv) this.rescalePart(pi, L / oldDiv);
       const ourDiv = this.attrs(pi, first).divisions;
       const olds = targets.map((t) => part.measures[t]).filter(Boolean);
+      const nextBar = part.measures[lastOld + 1] || null;
       for (let k = 0; k < Math.max(olds.length, nNew); k++) {
         const nm = op.measures[k];
         let om = olds[k];
@@ -519,23 +523,58 @@ export class Score {
           olds.push(om);
         }
         if (!nm) { om.remove(); continue; }
-        for (const c of [...om.children]) if (!keep.has(c.localName)) c.remove();
-        const theirLocalDiv = other.attrs(pi, k).divisions;
-        const f = ourDiv / theirLocalDiv;
+        // keep only what opens the old bar (its own attributes, print, left barline) and its right barline
+        const lead = [], tail = [];
+        for (const c of [...om.children]) {
+          if (c.localName === 'note' || c.localName === 'backup' || c.localName === 'forward') break;
+          if (['attributes', 'print'].includes(c.localName) || (c.localName === 'barline' && c.getAttribute('location') === 'left')) lead.push(c);
+        }
+        for (const c of [...om.children]) if (c.localName === 'barline' && (c.getAttribute('location') || 'right') === 'right') tail.push(c);
+        for (const c of [...om.children]) if (!lead.includes(c) && !tail.includes(c)) c.remove();
+        for (const c of tail) c.remove();
+        const f = ourDiv / other.attrs(pi, k).divisions;
+        let opening = true;
         for (const c of nm.children) {
-          if (keep.has(c.localName)) {
-            // carry over a clef or key change the new reading saw mid-piece (but never its divisions)
-            if (c.localName === 'attributes' && k > 0) {
-              const a = c.cloneNode(true);
-              for (const d of [...a.children]) if (!['clef', 'key'].includes(d.localName)) d.remove();
-              if (a.children.length) om.appendChild(this.doc.importNode(a, true));
-            }
+          const n = c.localName;
+          if (n === 'print' || n === 'barline' || n === 'sound') continue;
+          if (n === 'attributes') {
+            // a clef or key change the new reading saw after its first bar or mid-bar (never its divisions,
+            // staves or time: the score's own stay in force)
+            if (k === 0 && opening) continue;
+            const a = this.doc.importNode(c, true);
+            for (const d of [...a.children]) if (!['clef', 'key'].includes(d.localName)) d.remove();
+            if (a.children.length) om.appendChild(a);
             continue;
           }
+          if (n === 'note') opening = false;
           const cl = this.doc.importNode(c, true);
           for (const d of cl.querySelectorAll(':scope > duration')) d.textContent = String(Math.round(+d.textContent * f));
           om.appendChild(cl);
         }
+        for (const c of tail) om.appendChild(c);
+      }
+      // restore the state that was in force after the replaced bars
+      this._attrCache = null;
+      const was = after[pi];
+      if (was && nextBar) {
+        this.refresh();
+        const ni = this.parts[pi].measures.indexOf(nextBar);
+        const now = this.attrs(pi, ni);
+        const at = () => this._attrsEl(nextBar);
+        if (now.fifths !== was.fifths && !at().querySelector(':scope > key')) {
+          const k = this.doc.createElement('key'); const fi = this.doc.createElement('fifths'); fi.textContent = String(was.fifths); k.appendChild(fi);
+          const d = at().querySelector(':scope > divisions'); at().insertBefore(k, d ? d.nextSibling : at().firstChild);
+        }
+        for (const [num, c] of Object.entries(was.clefs)) {
+          const cur = now.clefs[num];
+          if (cur && cur.sign === c.sign && cur.line === c.line && (cur.octaveChange || 0) === (c.octaveChange || 0)) continue;
+          if (at().querySelector(`:scope > clef[number="${num}"]`)) continue;
+          const el = this.doc.createElement('clef'); el.setAttribute('number', num);
+          for (const [t, v] of [['sign', c.sign], ['line', c.line]]) { const e = this.doc.createElement(t); e.textContent = String(v); el.appendChild(e); }
+          if (c.octaveChange) { const e = this.doc.createElement('clef-octave-change'); e.textContent = String(c.octaveChange); el.appendChild(e); }
+          at().appendChild(el);
+        }
+        this._attrCache = null;
       }
     }
     this.renumber();
