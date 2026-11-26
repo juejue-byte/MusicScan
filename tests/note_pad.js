@@ -57,6 +57,15 @@ function serve() {
     ok(await p.locator('#notePad').isVisible(), `${dev}: and it comes back`);
     await tap('[data-mode="select"]');
     ok(await p.locator('#notePad').isHidden(), `${dev}: piano goes away with note input`);
+    // copy bar 2 and paste it over bar 4 from the Bar menu (touch only, no keyboard)
+    if (dev.startsWith('iPad')) {
+      const sig = (mi) => p.evaluate((mi) => { const s = window.__ms.S.score; return s.parts.map((pp, pi) => s.events(pi, mi).map((e) => (e.rest ? 'r' : e.chord.map((c) => c.pitch.step + c.pitch.octave).join('+')) + e.type).join(' ')).join('|'); }, mi);
+      await p.evaluate(() => { const S = window.__ms.S; S.sel = null; S.measures = new Set([1]); window.__ms.redraw(); });
+      await tap('#btnBar'); await tap('[data-bar="copy"]');
+      await p.evaluate(() => { const S = window.__ms.S; S.sel = null; S.measures = new Set([3]); window.__ms.redraw(); });
+      await tap('#btnBar'); await tap('[data-bar="paste"]');
+      ok(await sig(3) === await sig(1), `${dev}: Bar menu copies and pastes a bar`);
+    }
     ok(!errs.length, `${dev}: no page errors ${errs.join('; ')}`);
     await ctx.close();
   }

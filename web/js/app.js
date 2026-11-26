@@ -813,6 +813,11 @@ function openBarMenu(btn) {
   menu.querySelector('[data-bar="join"]').disabled = !r || r[0] + 1 >= S.score.nMeasures;
   menu.querySelector('[data-bar="delete"]').disabled = !r || r[1] - r[0] + 1 >= S.score.nMeasures;
   menu.querySelector('[data-bar="delete"]').firstChild.textContent = r && r[1] > r[0] ? `Delete ${r[1] - r[0] + 1} bars ` : 'Delete the bar ';
+  const cp = menu.querySelector('[data-bar="copy"]'), ps = menu.querySelector('[data-bar="paste"]');
+  cp.disabled = !r;
+  cp.firstChild.textContent = r && r[1] > r[0] ? `Copy ${r[1] - r[0] + 1} bars ` : 'Copy the bar ';
+  ps.disabled = !r || CLIP?.kind !== 'bars';
+  ps.firstChild.textContent = CLIP?.kind === 'bars' && CLIP.n > 1 ? `Paste ${CLIP.n} bars here ` : 'Paste over this bar ';
   menu.classList.add('open');
   const b = btn.getBoundingClientRect();
   const w = menu.offsetWidth;
@@ -822,7 +827,7 @@ function openBarMenu(btn) {
 function barAction(a) {
   $('#barMenu').classList.remove('open');
   if (!S.score) return;
-  ({ split: splitBar, join: joinBars, before: () => insertBar('before'), after: () => insertBar('after'), delete: deleteBars })[a]?.();
+  ({ split: splitBar, join: joinBars, before: () => insertBar('before'), after: () => insertBar('after'), delete: deleteBars, copy: () => copySel(false, true), paste: () => paste(true) })[a]?.();
 }
 function del() {
   if (S.selMark) { removeSelMark(); return; }
@@ -1004,11 +1009,11 @@ function onKey(e) {
   }
 }
 // Copy and paste, as everywhere: a selected note or chord, or whole bars (every part). Cut clears the bars to rests.
-let CLIP = null;
-function copySel(cut = false) {
+var CLIP = null;
+function copySel(cut = false, barsOnly = false) {
   if (!S.score) return false;
   const s = selected();
-  if (s && !cut) {
+  if (s && !cut && !barsOnly) {
     CLIP = { kind: 'note', rest: s.ev.rest, pitches: s.ev.chord.map((c) => ({ ...c.pitch })), type: s.ev.type || 'quarter', dots: s.ev.dots };
     toast('Copied the ' + (s.ev.rest ? 'rest' : s.ev.chord.length > 1 ? 'chord' : 'note') + '. Select a note and press ⌘V to paste over it.', 2200);
     return true;
