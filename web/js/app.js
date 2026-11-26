@@ -3,6 +3,7 @@ import { Score, pitchName, midiOf, clefTop, toMidi } from './score.js';
 import { render, pitchAtY, noteYs } from './render.js';
 import * as audio from './audio.js';
 import * as native from './native.js';
+import { api, jobFile, isDemo } from './demo.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -76,13 +77,13 @@ async function startUpload(file) {
     $('#progressBar').style.width = p + '%';
   }, 300);
   try {
-    const r = await fetch('api/jobs', { method: 'POST', body: fd });
+    const r = await api('api/jobs', { method: 'POST', body: fd });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Upload failed');
     const { id } = await r.json();
     S.job = id;
     for (;;) {
       await new Promise((res) => setTimeout(res, 700));
-      const j = await (await fetch('api/jobs/' + id)).json();
+      const j = await (await api('api/jobs/' + id)).json();
       if (j.status === 'done') { setStep('done'); clearInterval(tick); $('#progressBar').style.width = '100%'; openResult(j.result); return; }
       if (j.status === 'error') throw new Error(j.error || 'Transcription failed');
       setStep(/Clean/.test(j.status) ? 'clean' : /Read/.test(j.status) ? 'read' : 'upload');
@@ -653,14 +654,14 @@ function setupPhoto() {
   if (window.innerWidth < 600 && S.zoom === 1) S.zoom = 0.72;
   if (!has) return;
   pageImg = new Image();
-  pageImg.src = `api/jobs/${S.job}/page.png`;
+  pageImg.src = jobFile(S.job, 'page.png');
   pageImg.onload = () => { if (S.focus >= 0) drawInspector(S.focus); };
   setPhotoKind('page');
 }
 function setPhotoKind(kind) {
   S.photo = kind;
   for (const b of $$('[data-ph]')) b.classList.toggle('on', b.dataset.ph === kind);
-  $('#photoImg').src = `api/jobs/${S.job}/${kind === 'page' ? 'page.png' : 'original.jpg'}`;
+  $('#photoImg').src = jobFile(S.job, kind === 'page' ? 'page.png' : 'original.jpg');
   $('#photoSvg').style.display = kind === 'page' ? '' : 'none';
   $('#photoImg').onload = drawPhotoOverlay;
 }
@@ -783,7 +784,7 @@ async function rescan(attempt = 0, file = null) {
   if (file) fd.append('file', file, file.name);
   let res;
   try {
-    const r = await fetch(`api/jobs/${S.job}/rescan`, { method: 'POST', body: fd });
+    const r = await api(`api/jobs/${S.job}/rescan`, { method: 'POST', body: fd });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
     res = await r.json();
   } catch (e) {
@@ -1004,7 +1005,8 @@ function wire() {
 
 async function loadSamples() {
   try {
-    const names = await (await fetch('api/samples')).json();
+    const names = await (await api('api/samples')).json();
+    if (isDemo()) document.body.classList.add('demo');
     const box = $('#samples');
     box.innerHTML = names.length ? '<div class="samples-title">No photo handy? Try a sample:</div>' : '';
     for (const n of names) {

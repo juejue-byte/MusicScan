@@ -28,6 +28,13 @@ Python 3.12+. A page takes about 15–20 s on a 4-core CPU with copista-28m and 
 the GPU is used automatically when present (NVIDIA CUDA, or MPS on Apple Silicon Macs, with a CPU fallback for any op MPS
 lacks). Force a device with `MUSICSCAN_DEVICE=cpu|mps|cuda scripts/run.sh`. Sample photos are on the start screen.
 
+## Preview without a server
+
+`web/` also works on any static host (GitHub Pages, Cloudflare Pages, a plain file server). When no MusicScan server
+answers, the sample photos open results the real reader produced earlier (`web/demo/`, built by
+`scripts/build_demo.py`), and editing, rescans of the samples, playback and export all work. Reading new photos needs
+the server. Force it with `?demo`.
+
 ## Editing cheatsheet
 
 | Do this | How |

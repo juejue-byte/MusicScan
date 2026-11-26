@@ -173,3 +173,9 @@ button, .btn { touch-action: manipulation; }
 .form label { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .form select, .form input { height: 34px; border: 1px solid var(--line2); border-radius: 8px; padding: 0 8px; background: var(--panel); }
 .form input { width: 64px; }
+
+/* static preview without the reading server (web/js/demo.js) */
+.demo-note { display: none; margin: 14px 0 0; padding: 10px 14px; border-radius: 10px; background: #fff7e0; color: #6b4e00; font-size: 14px; }
+body.demo .demo-note { display: block; }
+body.demo #optFast { display: none; }
+body.demo label.check:has(#optFast) { display: none; }
