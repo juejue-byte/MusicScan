@@ -155,16 +155,18 @@ Providers to turn on in Supabase (Authentication > Sign In / Providers): **Anony
 
 The app talks to Supabase Auth directly (no package to add). On first launch it makes an anonymous account; the token
 goes to the server as a Bearer header and as the `musicscan_session` cookie in the editor's web view, refreshed before
-it expires. **Server: …** now has an **Account** section: "Guest on this device", or add an email with a 6-digit code
-(on a guest account the email is attached to the same account, so its pages carry over). Apple and Google buttons
-are behind `AuthFlags` in Auth.swift, off until those providers are set up.
+it expires. **Server: …** now has an **Account** section: "Guest on this device", or add an email: Supabase sends a
+sign-in link (its default email), and tapping it on the iPad or iPhone opens the app through
+`musicscan://auth-callback`, signed in. On a guest account the email is attached to the same account, so its pages
+carry over. Apple and Google buttons are behind `AuthFlags` in Auth.swift, off until those providers are set up.
 
 Supabase dashboard settings this needs:
 
 1. Authentication > Sign In / Providers: **Allow anonymous sign-ins** on, **Email** on.
-2. Authentication > Emails: in the **Magic Link** and **Change Email Address** templates, include the code,
-   for example `<p>Your MusicScan code: <strong>{{ .Token }}</strong></p>`.
-3. For Apple/Google later: Authentication > URL Configuration > Redirect URLs: add `musicscan://auth-callback`.
+2. Authentication > URL Configuration > Redirect URLs: add `musicscan://auth-callback` (email links, Apple, Google).
+3. Before launch: custom SMTP (Authentication > Emails > SMTP Settings, for example Resend). Supabase's built-in
+   sender only delivers a few emails an hour, only to your team's addresses, and keeps the templates locked.
+   With SMTP set, the templates can also carry a 6-digit code (`{{ .Token }}`; `verifyEmailCode` is ready for it).
 
 Check it: **Server: …** > **Test connection** says "Connected to MusicScan, signed in." when the server accepted
 the token; "…did not accept the sign-in" means the server's `SUPABASE_URL` is missing or the project still signs

@@ -8,7 +8,7 @@ import WebKit
 /// Sign-in with Supabase Auth, talking to its REST API directly (no package to add).
 ///
 /// - First launch: an anonymous account, with no screen. The server counts the free page and Pro pages against it.
-/// - Email: a 6-digit code. On an anonymous account the email is added to that same account, so its pages and
+/// - Email: a sign-in link (Supabase's default email), back into the app through musicscan://auth-callback. On an anonymous account the email is added to that same account, so its pages and
 ///   purchases carry over.
 /// - Apple and Google: behind `AuthFlags`, through Supabase's hosted sign-in page (ASWebAuthenticationSession).
 ///
@@ -128,20 +128,51 @@ final class AuthManager: ObservableObject {
         do { adopt(try await post("signup", [String: String]())) } catch { report(error) }
     }
 
-    /// Step 1 of email sign-in: sends a 6-digit code. On an anonymous account, the email is attached to it.
-    func sendEmailCode(_ email: String) async -> Bool {
+    static var redirectURL: String { "\(AuthFlags.callbackScheme)://auth-callback" }
+
+    /// Email sign-in: Supabase emails a link (its default template). Tapping it on this iPad or iPhone opens the app
+    /// through musicscan://auth-callback (`handleCallback`). On a guest account the email is attached to that same
+    /// account, so its pages and purchases carry over.
+    func sendEmailLink(_ email: String) async -> Bool {
+        let redirect = "redirect_to=" + (Self.redirectURL.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "")
         do {
             if let s = session, s.isAnonymous {
-                _ = try await send("user", method: "PUT", body: ["email": email], token: s.accessToken)
+                _ = try await send("user?" + redirect, method: "PUT", body: ["email": email], token: s.accessToken)
             } else {
-                _ = try await post("otp", ["email": email, "create_user": true] as [String: Any])
+                _ = try await post("otp?" + redirect, ["email": email, "create_user": true] as [String: Any])
             }
             lastError = nil
             return true
         } catch { report(error); return false }
     }
 
-    /// Step 2: the code from the email.
+    /// The email link (or Apple/Google) came back: musicscan://auth-callback#access_token=…&refresh_token=…
+    func handleCallback(_ url: URL) {
+        guard url.scheme == AuthFlags.callbackScheme else { return }
+        let parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        var q: [String: Any] = [:]
+        for item in parts?.queryItems ?? [] { q[item.name] = item.value }
+        for pair in (parts?.fragment ?? "").split(separator: "&") {
+            let kv = pair.split(separator: "=", maxSplits: 1).map { String($0).removingPercentEncoding ?? String($0) }
+            if kv.count == 2 { q[kv[0]] = kv[1] }
+        }
+        if let e = q["error_description"] as? String {
+            lastError = e.replacingOccurrences(of: "+", with: " ")
+            return
+        }
+        if let access = q["access_token"] as? String {
+            q["expires_in"] = Double(q["expires_in"] as? String ?? "3600") ?? 3600
+            q["user"] = AuthManager.claims(access)
+            adopt(q)
+        } else if var s = session {
+            // a confirmed email change can come back without tokens: refresh so the session carries the email
+            s.expiresAt = .distantPast
+            setSession(s)
+            Task { _ = await accessToken() }
+        }
+    }
+
+    /// A 6-digit code instead of the link, once custom SMTP lets the email templates include {{ .Token }}.
     func verifyEmailCode(_ email: String, code: String) async -> Bool {
         let attaching = session?.isAnonymous ?? false
         do {
@@ -163,24 +194,14 @@ final class AuthManager: ObservableObject {
         guard let base else { return }
         var parts = URLComponents(url: base.appendingPathComponent("auth/v1/authorize"), resolvingAgainstBaseURL: false)!
         parts.queryItems = [URLQueryItem(name: "provider", value: provider),
-                            URLQueryItem(name: "redirect_to", value: "\(AuthFlags.callbackScheme)://auth-callback")]
+                            URLQueryItem(name: "redirect_to", value: AuthManager.redirectURL)]
         guard let url = parts.url else { return }
         let web = ASWebAuthenticationSession(url: url, callbackURLScheme: AuthFlags.callbackScheme) { [weak self] cb, err in
             Task { @MainActor in
                 guard let self else { return }
                 self.webAuth = nil
                 if let err, (err as? ASWebAuthenticationSessionError)?.code != .canceledLogin { self.report(err) }
-                guard let cb, let fragment = URLComponents(url: cb, resolvingAgainstBaseURL: false)?.fragment else { return }
-                var q: [String: Any] = [:]
-                for pair in fragment.split(separator: "&") {
-                    let kv = pair.split(separator: "=", maxSplits: 1).map { String($0).removingPercentEncoding ?? String($0) }
-                    if kv.count == 2 { q[kv[0]] = kv[1] }
-                }
-                if let e = q["error_description"] as? String { self.lastError = e.replacingOccurrences(of: "+", with: " ") }
-                guard let access = q["access_token"] as? String else { return }
-                q["expires_in"] = Double(q["expires_in"] as? String ?? "3600") ?? 3600
-                q["user"] = AuthManager.claims(access)
-                self.adopt(q)
+                if let cb { self.handleCallback(cb) }
             }
         }
         web.presentationContextProvider = presenter
@@ -296,7 +317,6 @@ private enum Keychain {
 struct AccountSection: View {
     @ObservedObject private var auth = AuthManager.shared
     @State private var email = ""
-    @State private var code = ""
     @State private var codeSent = false
     @State private var busy = false
 
@@ -333,23 +353,13 @@ struct AccountSection: View {
             .textContentType(.emailAddress)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
+        Button(busy ? "Sending…" : codeSent ? "Send the link again" : "Email me a sign-in link") {
+            Task { busy = true; codeSent = await auth.sendEmailLink(email); busy = false }
+        }
+        .disabled(busy || !email.contains("@"))
         if codeSent {
-            TextField("6-digit code from the email", text: $code)
-                .keyboardType(.numberPad)
-                .textContentType(.oneTimeCode)
-            Button(busy ? "Checking…" : "Sign in") {
-                Task {
-                    busy = true
-                    if await auth.verifyEmailCode(email, code: code) { codeSent = false; code = "" }
-                    busy = false
-                }
-            }
-            .disabled(busy || code.count < 6)
-        } else {
-            Button(busy ? "Sending…" : "Email me a sign-in code") {
-                Task { busy = true; codeSent = await auth.sendEmailCode(email); busy = false }
-            }
-            .disabled(busy || !email.contains("@"))
+            Text("Open the email on this iPad or iPhone and tap the link. It brings you back here, signed in.")
+                .font(.footnote).foregroundStyle(.secondary)
         }
     }
 }

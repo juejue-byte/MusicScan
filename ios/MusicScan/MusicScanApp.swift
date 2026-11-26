@@ -14,6 +14,7 @@ struct MusicScanApp: App {
         WindowGroup {
             ContentView()
                 .task { await AuthManager.shared.start() }  // anonymous account on first launch (Auth.swift)
+                .onOpenURL { AuthManager.shared.handleCallback($0) }  // the email sign-in link, musicscan://auth-callback
         }
     }
 }
