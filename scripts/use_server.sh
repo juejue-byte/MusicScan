@@ -8,7 +8,11 @@ url="${1:?usage: scripts/use_server.sh <server address> <access key>}"; key="${2
 url="${url%/}"
 case "$url" in http://*|https://*) ;; *) url="https://$url" ;; esac
 case "$key" in *[!A-Za-z0-9_-]*) echo "The key should be letters, digits, - or _ only." >&2; exit 1 ;; esac
-printf 'MUSICSCAN_SERVER_URL=%s\nMUSICSCAN_ACCESS_KEY=%s\n' "$url" "$key" > .env
+# update just these two lines in .env, keeping everything else (Supabase, Apple settings)
+touch .env
+grep -v -e '^MUSICSCAN_SERVER_URL=' -e '^MUSICSCAN_ACCESS_KEY=' .env > .env.tmp || true
+printf 'MUSICSCAN_SERVER_URL=%s\nMUSICSCAN_ACCESS_KEY=%s\n' "$url" "$key" >> .env.tmp
+mv .env.tmp .env
 printf '// Written by scripts/use_server.sh; gitignored.\nMUSICSCAN_SERVER_URL = %s\nMUSICSCAN_ACCESS_KEY = %s\n' \
   "${url/:\/\//:/\$()/}" "$key" > ios/Secrets.xcconfig
 chmod 600 .env ios/Secrets.xcconfig
