@@ -32,6 +32,7 @@ an NVIDIA GPU is used automatically when present. Sample photos are on the start
 | Do this | How |
 | --- | --- |
 | Change a pitch | Drag the note up/down, or select it and press ↑ ↓ (Shift: octave) |
+| Reorder | Drag a note left/right past its neighbour to swap them |
 | Change a duration | Select, then 1 whole · 2 half · 3 quarter · 4 eighth · 5 16th · 6 32nd · `.` dot |
 | Accidentals | `-` flat · `=` natural · `+` sharp (or the ♭ ♮ ♯ buttons) |
 | Write notes | **Add notes** (N), pick a duration, click on the staff. Clicking a rest fills it; following rests make room |

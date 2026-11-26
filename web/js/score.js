@@ -356,6 +356,23 @@ export class Score {
     this._attrCache = null;
   }
 
+  // Swap an event with the next one in the same voice (drag left/right). Only for neighbours that sit next to each
+  // other in the file, which is the normal case inside one voice.
+  swapWithNext(ev) {
+    const group = (e) => (e.chord.length ? e.chord.map((c) => c.el) : [e.el]);
+    const evs = this.events(ev.pi, ev.mi).filter((e) => !e.grace && e.voice === ev.voice && e.staff === ev.staff).sort((a, b) => a.onset - b.onset);
+    const i = evs.findIndex((e) => e.el === ev.el);
+    const next = evs[i + 1];
+    if (i < 0 || !next) return false;
+    const A = group(evs[i]), B = group(next);
+    if (A[A.length - 1].nextElementSibling !== B[0]) return false;
+    const parent = A[0].parentNode;
+    for (const el of B) parent.insertBefore(el, A[0]);
+    for (const el of [...A, ...B]) for (const b of el.querySelectorAll(':scope > beam')) b.remove();
+    this._attrCache = null;
+    return true;
+  }
+
   deleteRest(ev) { ev.el.remove(); this._attrCache = null; }
 
   addChordTone(ev, pitch) {

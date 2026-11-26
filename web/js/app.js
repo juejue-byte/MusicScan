@@ -340,7 +340,10 @@ function onPointerDown(e) {
     if (!ev.rest) {
       const member = ev.chord.find((c) => c.el === h.member);
       audio.preview(midiOf(member.pitch));
-      S.drag = { el: h.member, startY: e.clientY, steps: 0, orig: member.pitch, origIdx: S.score.diatonic(member.pitch), pushed: false, pointer: e.pointerId };
+      S.drag = { el: h.member, evEl: ev.el, startY: e.clientY, startX: e.clientX, axis: null, steps: 0, orig: member.pitch, origIdx: S.score.diatonic(member.pitch), pushed: false, pointer: e.pointerId };
+      $('#score').setPointerCapture(e.pointerId);
+    } else {
+      S.drag = { el: h.member, evEl: ev.el, startY: e.clientY, startX: e.clientX, axis: null, rest: true, pushed: false };
       $('#score').setPointerCapture(e.pointerId);
     }
     redraw();
@@ -383,6 +386,13 @@ function onPointerMove(e) {
   if (!S.layout) return;
   const { x, y } = localPoint(e);
   if (S.drag) {
+    const dx = e.clientX - S.drag.startX, dy = e.clientY - S.drag.startY;
+    if (!S.drag.axis) {
+      if (Math.abs(dx) < 7 && Math.abs(dy) < 4) return;
+      S.drag.axis = Math.abs(dx) > Math.abs(dy) * 1.5 ? 'x' : (S.drag.rest ? null : 'y');
+      if (!S.drag.axis) return;
+    }
+    if (S.drag.axis === 'x') { dragSideways(x); return; }
     const steps = Math.round((S.drag.startY - e.clientY) / (5 * S.zoom));
     if (steps !== S.drag.steps) {
       if (!S.drag.pushed) { S.undo.push(snapshot()); S.redo = []; S.drag.pushed = true; }
@@ -403,6 +413,23 @@ function onPointerMove(e) {
   // hover feedback in select mode
   const h = hitTest(x, y);
   $('#score').style.cursor = h?.type === 'note' ? (h.n.ev.rest ? 'pointer' : 'ns-resize') : h?.type === 'num' ? 'pointer' : h ? 'cell' : 'default';
+}
+
+// drag left/right: swap with the neighbour once the pointer passes its middle
+function dragSideways(x) {
+  const n = S.layout.notes.find((q) => q.ev.el === S.drag.evEl);
+  if (!n) return;
+  const same = S.layout.notes.filter((q) => !q.ghost && q.ev.mi === n.ev.mi && q.ev.pi === n.ev.pi && q.ev.staff === n.ev.staff && q.ev.voice === n.ev.voice).sort((a, b) => a.ev.onset - b.ev.onset);
+  const i = same.indexOf(n);
+  const next = same[i + 1], prev = same[i - 1];
+  let ok = false;
+  const doSwap = (ev) => {
+    if (!S.drag.pushed) { S.undo.push(snapshot()); S.redo = []; S.drag.pushed = true; }
+    return S.score.swapWithNext(ev);
+  };
+  if (next && x > noteX(next) - 4) ok = doSwap(n.ev);
+  else if (prev && x < noteX(prev) + 4) ok = doSwap(prev.ev);
+  if (ok) { redraw(); clearOverlay('drag'); }
 }
 
 function onPointerUp() {
@@ -544,7 +571,7 @@ function setMode(m) {
   $('#score').classList.toggle('mode-add', m === 'add');
   $('#hint').innerHTML = m === 'add'
     ? 'Click on the staff to write a <b>' + S.dur + (S.dot ? ' (dotted)' : '') + '</b> note there. Clicking a rest fills it. <b>Shift-click</b> a note to build a chord. Press <b>V</b> or Esc to stop.'
-    : 'Click a note to select it, then <b>drag it up or down</b> (or use ↑↓). Click a bar number to select bars. <b>Add notes</b> (N) writes new ones.';
+    : 'Click a note to select it. <b>Drag up/down</b> to change pitch, <b>left/right</b> to swap it with its neighbour. Click a bar number to select bars. <b>Add notes</b> (N) writes new ones.';
   clearOverlay('ghost');
 }
 
