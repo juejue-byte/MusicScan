@@ -157,6 +157,14 @@ function serve() {
   await p.click('#btnKeyTime'); await p.selectOption('#trDir', '-1'); await p.selectOption('#trIv', 'M2'); await p.click('[data-m="transpose"]');
   const t2 = await snap();
   ok(t2.f === t0.f && t2.m.every((m, i) => m === t0.m[i]), 'and back down');
+  // 14. bars selected: ⌘↑ moves every note in them up an octave
+  const bo = () => p.evaluate(() => { const s = window.__ms.S.score; return s.events(0, 9).filter((e) => !e.rest).flatMap((e) => e.chord.map((c) => c.pitch.octave)); });
+  const o0 = await bo();
+  await p.evaluate(() => { const S = window.__ms.S; S.sel = null; S.measures = new Set([9]); window.__ms.redraw(); });
+  await key('Control+ArrowUp');
+  const o1 = await bo();
+  ok(o1.length === o0.length && o1.every((o, i) => o === o0[i] + 1), `⌘↑ on a selected bar moves all ${o1.length} notes up an octave`);
+  await key('Control+z');
   // the XML still parses
   const xml = await p.evaluate(() => window.__ms.S.score.toXML());
   fs.writeFileSync(OUT + '/out.musicxml', xml);

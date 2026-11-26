@@ -462,7 +462,7 @@ function onPointerDown(e) {
     return;
   }
   if (!h) { S.sel = null; S.measures.clear(); redraw(); hideInspector(); return; }
-  if (h.type === 'num') { toggleBar(h.mi, e.shiftKey || e.metaKey || e.ctrlKey); return; }
+  if (h.type === 'num') { S.barStaff = null; toggleBar(h.mi, e.shiftKey || e.metaKey || e.ctrlKey); return; }
   const addMode = S.mode === 'add';
   if (h.type === 'note' && !(addMode && (e.shiftKey || h.n.ev.rest))) {
     S.sel = h.member;
@@ -486,6 +486,8 @@ function onPointerDown(e) {
     const st = h.st;
     // empty staff in select mode: select the bar
     S.sel = null;
+    // an empty spot on a staff selects the bar; ↑↓ then move only that staff's notes (as in MuseScore)
+    S.barStaff = { pi: st.pi, staff: st.staff };
     toggleBar(st.mi, e.shiftKey || e.metaKey || e.ctrlKey, true);
     return;
   }
@@ -897,7 +899,7 @@ const SHORTCUTS = [
     ['⌘/Ctrl + Alt + 1 – 4', 'Write in voice 1 – 4 of the staff (two melodies on one staff)'],
   ]],
   ['Move and change', [
-    ['↑ ↓', 'Up or down a semitone'],
+    ['↑ ↓', 'Up or down a semitone (every note when bars are selected)'],
     ['Alt + ↑ ↓', 'Up or down a scale step'],
     ['⌘/Ctrl + ↑ ↓', 'Up or down an octave'],
     ['← →', 'Previous / next note (the caret in note input)'],

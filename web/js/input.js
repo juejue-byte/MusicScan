@@ -449,7 +449,8 @@ export function createNoteInput(ctx) {
   // ↑↓ semitone, Alt+↑↓ scale step, Ctrl/⌘+↑↓ (or Shift) octave, on the selected note
   function pitchKey(dir, how) {
     const s = ctx.selected();
-    if (!s || s.ev.rest) { if (S.mode === 'add') changeStaff(-dir); return; }
+    if (!s && S.measures.size && S.mode !== 'add') return pitchBars(dir, how);
+    if (!s || s.ev.rest) return;
     let p;
     const ok = ctx.act(() => {
       if (how === 'octave') {
@@ -462,6 +463,28 @@ export function createNoteInput(ctx) {
       else p = score().stepChromatic(s.ev, s.member.el, dir);
     });
     if (ok && p) ctx.preview([midiOf(p)]);
+  }
+
+  // with bars selected, ↑↓ / Alt+↑↓ / ⌘↑↓ move every note in them (a passage read an octave off is one keystroke)
+  function pitchBars(dir, how) {
+    const bars = [...S.measures].sort((a, b) => a - b);
+    let n = 0;
+    const ok = ctx.act(() => {
+      for (const mi of bars) score().parts.forEach((part, pi) => {
+        for (const e of score().events(pi, mi)) {
+          if (e.rest) continue;
+          if (S.barStaff && (S.barStaff.pi !== pi || S.barStaff.staff !== e.staff)) continue;
+          for (const c of e.chord) {
+            const fresh = score().events(pi, mi).find((x) => x.el === e.el) || e;
+            if (how === 'octave') score().setPitch(c.el, { ...c.pitch, octave: c.pitch.octave + dir }, !!c.el.querySelector(':scope > accidental'));
+            else if (how === 'step') score().moveDiatonic(fresh, c.el, dir);
+            else score().stepChromatic(fresh, c.el, dir);
+            n++;
+          }
+        }
+      });
+    });
+    if (ok && n) ctx.toast(`${n} note${n > 1 ? 's' : ''} ${dir > 0 ? 'up' : 'down'} ${how === 'octave' ? 'an octave' : how === 'step' ? 'a step' : 'a semitone'}`, 1400);
   }
 
   // the caret: a translucent bar across the staff where the next note goes
