@@ -15,8 +15,8 @@
   <div class="top-actions">
     <button class="btn ghost" id="btnNew" title="Scan another page">New<span class="wide-only">&nbsp;scan</span></button>
     <div class="sep"></div>
-    <button class="btn icon" id="btnUndo" title="Undo (Ctrl+Z)" disabled>↶</button>
-    <button class="btn icon" id="btnRedo" title="Redo (Ctrl+Shift+Z)" disabled>↷</button>
+    <button class="btn icon" id="btnUndo" title="Undo (Ctrl+Z)" aria-label="Undo" disabled><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+    <button class="btn icon" id="btnRedo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
     <div class="sep"></div>
     <button class="btn primary play" id="btnPlay" title="Play (Space)" disabled><span class="pi">▶</span><span class="pl">Play</span></button>
     <label class="tempo" title="Tempo (beats per minute)"><span>♩=</span><input id="tempo" type="number" min="30" max="240" value="90"></label>
@@ -96,8 +96,15 @@
             <button data-acc="1" title="Sharp (+)"><span class="g">♯</span></button>
           </div>
           <div class="seg" role="group" aria-label="Edit">
-            <button data-act="rest" title="Note ↔ rest (R)">𝄽 Rest</button>
+            <button data-act="rest" title="Make it a rest (R). In Add notes, writes rests.">𝄽 Rest</button>
             <button data-act="delete" title="Delete (Del)">⌫</button>
+          </div>
+          <div class="seg" role="group" aria-label="Rhythm">
+            <button data-act="tie" title="Tie to the next note of the same pitch (T)"><svg width="20" height="12" viewBox="0 0 20 12" aria-hidden="true"><path d="M2 3 Q10 12 18 3" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>Tie</button>
+            <button data-act="tuplet" title="Triplet: three notes in the time of this one (Alt+3). Again removes it.">³ Triplet</button>
+          </div>
+          <div class="seg" role="group" aria-label="Bars">
+            <button data-act="bar" id="btnBar" title="Split, join, add or delete bars">𝄀 Bar ▾</button>
           </div>
           <div class="seg right">
             <button data-act="keytime" id="btnKeyTime" title="Fix the key or time signature">♯ Key / time</button>
@@ -127,6 +134,13 @@
   </section>
 </main>
 
+<div class="menu-pop bar-pop" id="barMenu" role="menu">
+  <button data-bar="split">Split the bar before this note <kbd>|</kbd></button>
+  <button data-bar="join">Join with the next bar <kbd>J</kbd></button>
+  <button data-bar="before">Insert an empty bar before <kbd>⇧I</kbd></button>
+  <button data-bar="after">Insert an empty bar after <kbd>I</kbd></button>
+  <button data-bar="delete">Delete the bar <kbd>⇧Del</kbd></button>
+</div>
 <div class="modal hidden" id="modal"><div class="modal-card" id="modalCard"></div></div>
 <div class="toast hidden" id="toast"></div>
 <footer class="credit">OMR by <a href="https://github.com/kobimusic/copisteria" target="_blank" rel="noopener">copisteria</a> © KobiMusic (Apache-2.0)<span class="credit-more"> · engraving by VexFlow</span></footer>

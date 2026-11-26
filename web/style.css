@@ -233,3 +233,8 @@ body.demo label.check:has(#optFast) { display: none; }
   body.editing .brand > span:last-child { display: inline; }
   .wide-only { display: inline; }
 }
+/* bar menu: fixed so the scrolling toolbar on phones does not clip it */
+.bar-pop { position: fixed; right: auto; top: 0; left: 0; min-width: 250px; }
+.bar-pop button { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+.bar-pop button:disabled { opacity: .4; cursor: default; background: none; }
+.btn.icon svg { display: block; }

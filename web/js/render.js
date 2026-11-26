@@ -1,5 +1,6 @@
 // Draws a Score with VexFlow and returns a layout map used for hit-testing and overlays.
 import { Score, STEPS, keyAlter, clefKey, clefTop, midiOf } from './score.js';
+import './edits.js';
 
 const VF = window.Vex.Flow;
 const VF_CLEF = { G2: 'treble', F4: 'bass', C3: 'alto', C4: 'tenor', C1: 'soprano', F3: 'baritone-f', C2: 'mezzo-soprano', G1: 'french' };
@@ -172,6 +173,7 @@ export function render(score, el, opts = {}) {
         const vfVoices = [];
         vkeys.forEach((vk, vi) => {
           const tickables = [];
+          const byEl = new Map();
           const stem = vkeys.length > 1 ? (vi === 0 ? 1 : -1) : undefined;
           let lastClef = clefKey(v.clef);
           for (const e of voices[vk]) {
@@ -188,6 +190,7 @@ export function render(score, el, opts = {}) {
             if (e.hidden) {
               const g = new VF.GhostNote({ duration: dur, dots });
               tickables.push(g);
+              byEl.set(e.el, g);
               layout.notes.push({ ev: e, vf: g, stave: v.stave, top: eTop, clef: eclef, rowIdx: ri, staffIdx: staves.indexOf(v.s), ghost: true });
               continue;
             }
@@ -220,12 +223,24 @@ export function render(score, el, opts = {}) {
             const isSel = selNote && (selNote === e.el || e.chord.some((c) => c.el === selNote));
             if (isSel) note.setStyle({ fillStyle: '#2563eb', strokeStyle: '#2563eb' });
             tickables.push(note);
+            byEl.set(e.el, note);
             layout.notes.push({ ev: e, vf: note, stave: v.stave, top: eTop, clef: eclef, rowIdx: ri, staffIdx: staves.indexOf(v.s) });
           }
           if (!tickables.length) return;
+          // triplets and other tuplets: bracket + number, and the right spacing
+          const tuplets = [];
+          const done = new Set();
+          for (const e of voices[vk]) {
+            if (!e.tuplet || done.has(e.el)) continue;
+            const g = score.tupletGroup(e);
+            for (const x of g) done.add(x.el);
+            const notes = g.map((x) => byEl.get(x.el)).filter(Boolean);
+            if (notes.length < 2) continue;
+            try { tuplets.push(new VF.Tuplet(notes, { num_notes: e.tuplet.actual, notes_occupied: e.tuplet.normal, location: stem === -1 ? -1 : 1 })); } catch (err) { /* ignore */ }
+          }
           const voice = new VF.Voice({ num_beats: v.a.beats, beat_value: v.a.beatType }).setMode(VF.Voice.Mode.SOFT);
           voice.addTickables(tickables);
-          vfVoices.push({ voice, tickables, stem });
+          vfVoices.push({ voice, tickables, stem, tuplets });
         });
         if (!vfVoices.length) {
           const g = new VF.Voice({ num_beats: v.a.beats, beat_value: v.a.beatType }).setMode(VF.Voice.Mode.SOFT);
@@ -240,7 +255,7 @@ export function render(score, el, opts = {}) {
       const avail = Math.max(30, x + w - startX - 14);
       try { formatter.format(allVoices, avail); } catch (err) { console.warn('format', err); }
       for (const { v, vfVoices } of perStave) {
-        for (const { voice, tickables, stem } of vfVoices) {
+        for (const { voice, tickables, stem, tuplets } of vfVoices) {
           let beams = [];
           try {
             const beamable = tickables.filter((t) => t instanceof VF.StaveNote);
@@ -248,6 +263,7 @@ export function render(score, el, opts = {}) {
           } catch (err) { beams = []; }
           try { voice.draw(ctx, v.stave); } catch (err) { console.warn('draw', err); }
           for (const b of beams) { try { b.setContext(ctx).draw(); } catch (err) { /* ignore */ } }
+          for (const t of tuplets || []) { try { t.setContext(ctx).draw(); } catch (err) { /* ignore */ } }
         }
       }
       // measure overlays (drawn into the background group so they sit under the music)
@@ -271,7 +287,36 @@ export function render(score, el, opts = {}) {
     });
     layout.rows.push(rowInfo);
   });
+  drawTies(score, layout, ctx);
   return layout;
+}
+
+// ties: a curve from each tied note to the next one; across a line break, half a curve on each line
+function drawTies(score, layout, ctx) {
+  const at = new Map();
+  for (const n of layout.notes) {
+    if (n.ghost || n.ev.rest) continue;
+    const members = [...n.ev.chord].sort((a, b) => midiOf(a.pitch) - midiOf(b.pitch));
+    members.forEach((c, i) => at.set(c.el, { n, i }));
+  }
+  for (const n of layout.notes) {
+    if (n.ghost || n.ev.rest || !score.isTied(n.ev)) continue;
+    let nx = null;
+    try { nx = score.nextEvent(n.ev); } catch (err) { nx = null; }
+    for (const c of n.ev.chord) {
+      if (![...c.el.children].some((t) => t.localName === 'tie' && t.getAttribute('type') === 'start')) continue;
+      const a = at.get(c.el);
+      const d = nx?.chord.find((x) => midiOf(x.pitch) === midiOf(c.pitch));
+      const b = d ? at.get(d.el) : null;
+      const ties = [];
+      if (b && b.n.rowIdx === a.n.rowIdx) ties.push({ first_note: a.n.vf, last_note: b.n.vf, first_indices: [a.i], last_indices: [b.i] });
+      else {
+        ties.push({ first_note: a.n.vf, last_note: null, first_indices: [a.i], last_indices: [a.i] });
+        if (b) ties.push({ first_note: null, last_note: b.n.vf, first_indices: [b.i], last_indices: [b.i] });
+      }
+      for (const t of ties) { try { new VF.StaveTie(t).setContext(ctx).draw(); } catch (err) { /* ignore */ } }
+    }
+  }
 }
 
 // pitch under a point on a stave

@@ -1,5 +1,6 @@
 // MusicScan web app: upload -> transcribe -> edit on the staff -> play -> export.
 import { Score, pitchName, midiOf, clefTop, toMidi } from './score.js';
+import './edits.js';
 import { render, pitchAtY, noteYs } from './render.js';
 import * as audio from './audio.js';
 import * as native from './native.js';
@@ -12,7 +13,7 @@ const LS_KEY = 'musicscan:last';
 
 const S = {
   score: null, meta: [], job: null, result: null, name: '',
-  mode: 'select', dur: 'quarter', dot: false,
+  mode: 'select', dur: 'quarter', dot: false, restMode: false,
   sel: null,                 // selected note/rest element (a <note>)
   measures: new Set(),       // selected bars (for rescan / playback start)
   focus: -1,                 // bar shown in the photo inspector
@@ -210,8 +211,12 @@ function updateToolbar() {
   const n = S.mode === 'add' ? null : selEvent();
   const dur = n && !n.ghost ? n.ev.type : S.dur;
   const dot = n && !n.ghost ? n.ev.dots > 0 : S.dot;
+  const isRest = n && !n.ghost ? n.ev.rest : S.mode === 'add' && S.restMode;
   for (const b of $$('[data-dur]')) b.classList.toggle('on', b.dataset.dur === dur);
   $('[data-act="dot"]').classList.toggle('on', !!dot);
+  $('[data-act="rest"]').classList.toggle('on', !!isRest);
+  $('[data-act="tie"]').classList.toggle('on', !!(n && !n.ghost && !n.ev.rest && S.score.isTied(n.ev)));
+  $('[data-act="tuplet"]').classList.toggle('on', !!(n && !n.ghost && n.ev.tuplet));
   const member = n && n.ev.chord.find((c) => c.el === S.sel);
   for (const b of $$('[data-acc]')) b.classList.toggle('on', !!member && (member.pitch.alter || 0) === +b.dataset.acc && !!member.el.querySelector(':scope > accidental, :scope > pitch > alter'));
 }
@@ -225,10 +230,10 @@ function updateStatus() {
   if (n) {
     const num = barNumber(n.ev.mi);
     const what = n.ev.rest ? `${n.ev.type || ''} rest` : n.ev.chord.map((c) => pitchName(c.pitch)).join(' + ') + ` · ${n.ev.type || ''}${n.ev.dots ? ' dotted' : ''}`;
-    const keys = S.touch ? 'Drag up/down for pitch, sideways to swap' : '↑↓ pitch · Shift+↑↓ octave · 1–6 duration · R rest · Del delete';
+    const keys = S.touch ? 'Drag up/down for pitch, sideways to swap. Tap a length to change it' : '↑↓ pitch · Shift+↑↓ octave · 1–6 length · R rest · T tie · Alt+3 triplet · | split bar here · Del delete';
     txt = `Bar ${num} · staff ${n.ev.staff} · ${what}.  ${keys}`;
   } else if (S.measures.size) {
-    txt = `${S.measures.size} bar${S.measures.size > 1 ? 's' : ''} selected. Rescan re-reads them from the photo; Play starts here.`;
+    txt = `${S.measures.size} bar${S.measures.size > 1 ? 's' : ''} selected. Rescan re-reads them from the photo; Play starts here; Bar ▾ splits, joins, adds or deletes bars.`;
   } else txt = `${S.score.nMeasures} bars · ${S.score.parts.length} part${S.score.parts.length > 1 ? 's' : ''}`;
   if (over.length) txt += `  ·  ⚠ ${over.length} bar${over.length > 1 ? 's are' : ' is'} too long (${over.map(barNumber).slice(0, 6).join(', ')})`;
   st.textContent = txt;
@@ -252,6 +257,27 @@ function edit(fn, { keepRedo = false } = {}) {
   try { fn(); } catch (e) { console.error(e); toast('That edit did not work: ' + e.message); }
   redraw();
   saveLocal();
+}
+// Like edit(), but an edit that cannot be done (it throws) leaves the score exactly as it was and says why.
+function act(fn) {
+  const snap = snapshot();
+  const path = selPath();
+  try {
+    const r = fn();
+    S.undo.push(snap);
+    if (S.undo.length > 200) S.undo.shift();
+    S.redo = [];
+    redraw();
+    saveLocal();
+    return r === undefined ? true : r;
+  } catch (e) {
+    S.score = new Score(snap.xml);
+    S.meta = JSON.parse(snap.meta);
+    S.sel = elFromPath(path);
+    toast(e.message, 3600);
+    redraw();
+    return false;
+  }
 }
 function undo() { if (!S.undo.length) return; S.redo.push(snapshot()); restore(S.undo.pop()); }
 function redo() { if (!S.redo.length) return; S.undo.push(snapshot()); restore(S.redo.pop()); }
@@ -295,9 +321,10 @@ function notesIn(st) {
 // fingers are less precise than a mouse: widen the hit area while the last pointer was a touch
 const TOUCH = { dx: 24, dy: 14, rest: 22 };
 function hitTest(x, y, touch = S.touch) {
-  for (const m of S.layout.measures) if (m && x >= m.x0 && x <= m.x1 && y >= m.y0 - 16 && y < m.y0 + 2) return { type: 'num', mi: m.mi };
+  // a high note can sit on the bar-number strip: the note wins
+  const num = S.layout.measures.find((m) => m && x >= m.x0 && x <= m.x1 && y >= m.y0 - 16 && y < m.y0 + 2);
   const st = staveAt(x, y);
-  if (!st) return null;
+  if (!st) return num ? { type: 'num', mi: num.mi } : null;
   const notes = notesIn(st);
   let best = null, bd = 1e9;
   for (const n of notes) {
@@ -312,6 +339,7 @@ function hitTest(x, y, touch = S.touch) {
     }
   }
   if (best) return { type: 'note', st, ...best };
+  if (num) return { type: 'num', mi: num.mi };
   return { type: 'staff', st, notes };
 }
 
@@ -409,12 +437,14 @@ function addAt(h, x, y, shift) {
   const place = h.type === 'note' && h.n.ev.rest ? { where: 'at', n: h.n } : placementAt(st, h.notes || [], x);
   let created = null;
   edit(() => {
-    if (place.where === 'empty') created = S.score.addToEmpty(st.pi, st.mi, st.staff, pitch, S.dur, S.dot ? 1 : 0);
+    if (place.where === 'at' && place.n.ev.tuplet) created = S.score.restToNote(place.n.ev, pitch); // a triplet rest keeps its rhythm
+    else if (place.where === 'empty') created = S.score.addToEmpty(st.pi, st.mi, st.staff, pitch, S.dur, S.dot ? 1 : 0);
     else created = S.score.placeNote(place.n.ev, pitch, S.dur, S.dot ? 1 : 0, place.where);
+    if (S.restMode && created) { const ev = S.score.events(st.pi, st.mi).find((e) => e.el === created); if (ev && !ev.rest) S.score.toRest(ev); }
   });
   S.sel = created;
   S.measures = new Set([st.mi]);
-  audio.preview(midiOf(pitch));
+  if (!S.restMode) audio.preview(midiOf(pitch));
   native.haptic('medium');
   redraw();
 }
@@ -564,10 +594,32 @@ function moveSel(delta) {
   edit(() => { p = S.score.moveDiatonic(s.ev, s.member.el, delta); });
   if (p) audio.preview(midiOf(p));
 }
+// The palette turns the selection into what you pick: a length makes it a note of that length (a rest becomes a
+// note), Rest makes it a rest of the same length. With nothing selected it sets what Add notes writes.
 function setDur(type) {
   const s = selected();
-  if (!s || S.mode === 'add') { S.dur = type; if (S.mode !== 'add') setMode('add'); else setMode('add'); updateToolbar(); return; }
+  if (!s || S.mode === 'add') { S.dur = type; S.restMode = false; setMode('add'); updateToolbar(); return; }
+  if (s.ev.rest) {
+    const p = guessPitch(s.ev);
+    act(() => {
+      S.score.restToNote(s.ev, p);
+      const e = S.score.events(s.ev.pi, s.ev.mi).find((x) => x.el === s.ev.el);
+      if (e && (e.type !== type || e.dots)) S.score.setDuration(e, type, 0);
+    });
+    S.sel = s.ev.el;
+    audio.preview(midiOf(p));
+    redraw();
+    return;
+  }
   edit(() => S.score.setDuration(s.ev, type, s.ev.dots));
+}
+// a pitch for a rest that becomes a note: the note before it in the same staff, else the middle line
+function guessPitch(ev) {
+  for (let mi = ev.mi; mi >= Math.max(0, ev.mi - 4); mi--) {
+    const prev = S.score.events(ev.pi, mi).filter((e) => !e.rest && !e.grace && e.staff === ev.staff && (mi < ev.mi || e.onset < ev.onset)).sort((a, b) => b.onset - a.onset)[0];
+    if (prev) return { ...prev.chord[0].pitch };
+  }
+  return S.score.pitchAt(clefTop(ev.clef) - 4, S.score.attrs(ev.pi, ev.mi).fifths);
 }
 function toggleDot() {
   const s = selected();
@@ -582,19 +634,120 @@ function setAcc(alter) {
   const m = n?.ev.chord.find((c) => c.el === S.sel);
   if (m) audio.preview(midiOf(m.pitch));
 }
-function toggleRest() {
+function makeRest() {
   const s = selected();
-  if (!s) return;
-  if (s.ev.rest) {
-    const a = S.score.attrs(s.ev.pi, s.ev.mi);
-    const p = S.score.pitchAt(clefTop(s.ev.clef) - 4, a.fifths);
-    edit(() => S.score.setPitch(s.ev.el, p));
-    audio.preview(midiOf(p));
-  } else {
-    edit(() => S.score.toRest(s.ev));
-    S.sel = s.ev.el;
+  if (!s || S.mode === 'add') { S.restMode = S.mode === 'add' ? !S.restMode : true; setMode('add'); updateToolbar(); return; }
+  if (s.ev.rest) { toast('This is already a rest. Pick a note length to turn it into a note.'); return; }
+  edit(() => S.score.toRest(s.ev));
+  S.sel = s.ev.el;
+  redraw();
+}
+function tie() {
+  const s = selected();
+  if (!s || s.ev.rest) { toast('Select a note, then tie it to the next note of the same pitch'); return; }
+  const on = act(() => S.score.toggleTie(s.ev));
+  if (on !== false) toast(S.score.isTied(S.score.events(s.ev.pi, s.ev.mi).find((e) => e.el === s.ev.el) || s.ev) ? 'Tied to the next note' : 'Tie removed', 1600);
+}
+function tuplet(n = 3) {
+  const s = selected();
+  if (!s) { toast('Select a note to divide it into a triplet'); return; }
+  const name = { 3: 'triplet', 5: 'quintuplet', 6: 'sextuplet', 7: 'septuplet', 9: 'nonuplet' }[n] || n + '-tuplet';
+  if (s.ev.tuplet) { if (act(() => { S.sel = S.score.removeTuplet(s.ev); })) toast(`Back to one note`, 1600); return; }
+  if (act(() => { S.sel = S.score.makeTuplet(s.ev, n); })) toast(`Made a ${name}. Click its rests in Add notes to fill them.`, 3200);
+}
+
+// ---------------------------------------------------------------- bars: split, join, insert, delete (every part)
+const metaOn = () => S.meta.length > 0;
+function metaSplit(mi, frac) {
+  if (!metaOn() || !S.meta[mi]) return;
+  const m = S.meta[mi];
+  const a = { ...m }, b = { ...m, low: [], boxes: [], low_n: 0 };
+  if (m.bbox) { const [x0, y0, x1, y1] = m.bbox; const xm = x0 + (x1 - x0) * frac; a.bbox = [x0, y0, xm, y1]; b.bbox = [xm, y0, x1, y1]; }
+  S.meta.splice(mi, 1, a, b);
+}
+function metaJoin(mi) {
+  if (!metaOn()) return;
+  const a = S.meta[mi], b = S.meta[mi + 1];
+  if (!a || !b) { S.meta.splice(mi + 1, 1); return; }
+  const rank = { ok: 0, check: 1, bad: 2 };
+  const m = { ...a, level: (rank[b.level] || 0) > (rank[a.level] || 0) ? b.level : a.level, low_n: (a.low_n || 0) + (b.low_n || 0), low: [...(a.low || []), ...(b.low || [])] };
+  if (a.bbox && b.bbox && a.system === b.system) m.bbox = [Math.min(a.bbox[0], b.bbox[0]), Math.min(a.bbox[1], b.bbox[1]), Math.max(a.bbox[2], b.bbox[2]), Math.max(a.bbox[3], b.bbox[3])];
+  S.meta.splice(mi, 2, m);
+}
+function metaInsert(idx) {
+  if (!metaOn()) return;
+  const near = S.meta[idx] || S.meta[idx - 1] || {};
+  S.meta.splice(idx, 0, { level: 'ok', low_n: 0, low: [], boxes: [], system: near.system, bbox: null });
+}
+function metaDelete(lo, hi) { if (metaOn()) S.meta.splice(lo, hi - lo + 1); }
+const isOver = (mi) => S.score.parts.some((p, pi) => S.score.measureProblems(pi, mi).over);
+const barQl = (mi) => S.score.measureLength(0, mi) / S.score.attrs(0, mi).divisions;
+function barRange() {
+  const s = selected();
+  if (s) return [s.ev.mi, s.ev.mi];
+  const bars = targetBars();
+  return bars.length ? [bars[0], bars[bars.length - 1]] : null;
+}
+// where Split would put the barline: before the selected note, or at the time signature of an over-long bar
+function splitPoint() {
+  const s = selected();
+  if (s) { const q = S.score.onsetQl(s.ev); return q > 0 ? { mi: s.ev.mi, q } : null; }
+  const r = barRange();
+  if (r && isOver(r[0])) return { mi: r[0], q: barQl(r[0]) };
+  return null;
+}
+function splitBar() {
+  const sp = splitPoint();
+  if (!sp) { toast(selected() ? 'This note already starts the bar. Select the note that should start the new bar.' : 'Select the note that should start the new bar'); return; }
+  const content = Math.max(barQl(sp.mi), ...S.score.parts.map((p, pi) => (S.score.measureProblems(pi, sp.mi).ends ? Math.max(0, ...Object.values(S.score.measureProblems(pi, sp.mi).ends)) / S.score.attrs(pi, sp.mi).divisions : 0)));
+  const keep = S.sel;
+  if (act(() => { S.score.splitBar(sp.mi, sp.q); metaSplit(sp.mi, Math.min(1, sp.q / content)); })) {
+    S.sel = keep && keep.isConnected ? keep : null;
+    S.measures = new Set([sp.mi + 1]);
     redraw();
+    toast(`Split bar ${barNumber(sp.mi)}: the new bar starts here. Undo with Ctrl+Z.`);
   }
+}
+function joinBars() {
+  const r = barRange();
+  if (!r) { toast('Select a bar (or a note in it) to join it with the next bar'); return; }
+  const mi = r[0];
+  if (mi + 1 >= S.score.nMeasures) { toast('This is the last bar'); return; }
+  if (act(() => { S.score.mergeBars(mi); metaJoin(mi); })) { S.sel = null; S.measures = new Set([mi]); redraw(); toast(`Joined bars ${barNumber(mi)} and ${+barNumber(mi) + 1 || 'next'}. Undo with Ctrl+Z.`); }
+}
+function insertBar(where) {
+  const r = barRange();
+  const mi = r ? (where === 'before' ? r[0] : r[1]) : S.score.nMeasures - 1;
+  let idx = -1;
+  if (act(() => { idx = S.score.insertBar(mi, where); metaInsert(idx); })) { S.sel = null; S.measures = new Set([idx]); redraw(); scrollToBar(idx); }
+}
+function deleteBars() {
+  const r = barRange();
+  if (!r) { toast('Select the bars to delete'); return; }
+  const [lo, hi] = r;
+  const label = lo === hi ? `bar ${barNumber(lo)}` : `bars ${barNumber(lo)}–${barNumber(hi)}`;
+  if (act(() => { S.score.deleteBars(lo, hi); metaDelete(lo, hi); })) { S.sel = null; S.measures = new Set(); hideInspector(); redraw(); toast(`Deleted ${label}. Undo with Ctrl+Z.`); }
+}
+function openBarMenu(btn) {
+  const menu = $('#barMenu');
+  if (menu.classList.contains('open')) { menu.classList.remove('open'); return; }
+  const r = barRange(), sp = splitPoint();
+  const split = menu.querySelector('[data-bar="split"]');
+  split.disabled = !sp;
+  split.firstChild.textContent = !selected() && sp ? 'Split this too-long bar at its time signature ' : 'Split the bar before this note ';
+  menu.querySelector('[data-bar="join"]').disabled = !r || r[0] + 1 >= S.score.nMeasures;
+  menu.querySelector('[data-bar="delete"]').disabled = !r || r[1] - r[0] + 1 >= S.score.nMeasures;
+  menu.querySelector('[data-bar="delete"]').firstChild.textContent = r && r[1] > r[0] ? `Delete ${r[1] - r[0] + 1} bars ` : 'Delete the bar ';
+  menu.classList.add('open');
+  const b = btn.getBoundingClientRect();
+  const w = menu.offsetWidth;
+  menu.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, b.left)) + 'px';
+  menu.style.top = (b.bottom + 4) + 'px';
+}
+function barAction(a) {
+  $('#barMenu').classList.remove('open');
+  if (!S.score) return;
+  ({ split: splitBar, join: joinBars, before: () => insertBar('before'), after: () => insertBar('after'), delete: deleteBars })[a]?.();
 }
 function del() {
   const s = selected();
@@ -627,8 +780,8 @@ function setMode(m) {
   for (const b of $$('[data-mode]')) b.classList.toggle('on', b.dataset.mode === m);
   $('#score').classList.toggle('mode-add', m === 'add');
   $('#hint').innerHTML = m === 'add'
-    ? 'Click on the staff to write a <b>' + S.dur + (S.dot ? ' (dotted)' : '') + '</b> note there. Clicking a rest fills it. <b>Shift-click</b> a note to build a chord. Press <b>V</b> or Esc to stop.'
-    : 'Click a note to select it. <b>Drag up/down</b> to change pitch, <b>left/right</b> to swap it with its neighbour. Click a bar number to select bars. <b>Add notes</b> (N) writes new ones.';
+    ? 'Click on the staff to write a <b>' + S.dur + (S.dot ? ' (dotted)' : '') + (S.restMode ? ' rest' : ' note') + '</b> there. Clicking a rest fills it. <b>Shift-click</b> a note to build a chord. Press <b>V</b> or Esc to stop.'
+    : 'Click a note to select it. <b>Drag up/down</b> to change pitch, <b>left/right</b> to swap it. Pick a length, <b>Rest</b>, <b>Tie</b> or <b>Triplet</b> to turn it into that. <b>Bar ▾</b> splits, joins, adds or deletes bars.';
   clearOverlay('ghost');
 }
 
@@ -640,6 +793,8 @@ function onKey(e) {
   if (mod && (k === 'z' || k === 'Z')) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && k === 'y') { e.preventDefault(); redo(); return; }
   if (mod) return;
+  // Alt+3 / Alt+5 ...: tuplets (by key position, so it works with any keyboard layout's Alt characters)
+  if (e.altKey && /^Digit[35679]$/.test(e.code)) { e.preventDefault(); tuplet(+e.code.slice(5)); return; }
   const map = { 1: 'whole', 2: 'half', 3: 'quarter', 4: 'eighth', 5: '16th', 6: '32nd' };
   if (map[k]) { e.preventDefault(); setDur(map[k]); return; }
   switch (k) {
@@ -651,8 +806,13 @@ function onKey(e) {
     case '+': case '#': setAcc(1); break;
     case '-': case '_': setAcc(-1); break;
     case '=': setAcc(0); break;
-    case 'r': case 'R': toggleRest(); break;
-    case 'Delete': case 'Backspace': e.preventDefault(); del(); break;
+    case 'r': case 'R': makeRest(); break;
+    case 't': case 'T': tie(); break;
+    case '|': splitBar(); break;
+    case 'j': case 'J': joinBars(); break;
+    case 'i': insertBar('after'); break;
+    case 'I': insertBar('before'); break;
+    case 'Delete': case 'Backspace': e.preventDefault(); if (e.shiftKey || (!selected() && S.measures.size)) deleteBars(); else del(); break;
     case 'n': case 'N': setMode(S.mode === 'add' ? 'select' : 'add'); break;
     case 'v': case 'V': setMode('select'); break;
     case 'Escape': if (S.mode === 'add') setMode('select'); else { S.sel = null; S.measures.clear(); hideInspector(); redraw(); } break;
@@ -1013,7 +1173,11 @@ function wire() {
   for (const b of $$('[data-dur]')) b.onclick = () => setDur(b.dataset.dur);
   for (const b of $$('[data-acc]')) b.onclick = () => setAcc(+b.dataset.acc);
   $('[data-act="dot"]').onclick = toggleDot;
-  $('[data-act="rest"]').onclick = toggleRest;
+  $('[data-act="rest"]').onclick = makeRest;
+  $('[data-act="tie"]').onclick = tie;
+  $('[data-act="tuplet"]').onclick = () => tuplet(3);
+  $('#btnBar').onclick = (e) => { e.stopPropagation(); openBarMenu(e.currentTarget); };
+  for (const b of $$('#barMenu button')) b.onclick = (e) => { e.stopPropagation(); barAction(b.dataset.bar); };
   $('[data-act="delete"]').onclick = del;
   $('#btnRescan').onclick = () => rescan(0);
   $('#btnKeyTime').onclick = keyTimeDialog;
@@ -1049,7 +1213,7 @@ function wire() {
   });
   $('#btnExport').onclick = (e) => { e.stopPropagation(); $('#exportMenu').classList.toggle('open'); };
   for (const b of $$('#exportMenu button')) b.onclick = () => exportAs(b.dataset.x);
-  document.addEventListener('click', () => $('#exportMenu').classList.remove('open'));
+  document.addEventListener('click', () => { $('#exportMenu').classList.remove('open'); $('#barMenu').classList.remove('open'); });
   $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
   let rt;
   window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (S.score && !$('#viewEditor').classList.contains('hidden')) redraw(); }, 150); });
