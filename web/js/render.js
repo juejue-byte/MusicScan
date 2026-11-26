@@ -55,7 +55,8 @@ export function layoutRows(score, width) {
   let cur = [], used = 0;
   for (let mi = 0; mi < score.nMeasures; mi++) {
     let w = measureWidth(score, mi, staves, cur.length === 0);
-    if (cur.length && used + w > width) {
+    // keep the line breaks of the photo (<print new-system>), and still wrap when a line is too wide for the screen
+    if (cur.length && (used + w > width || score.newSystem(mi))) {
       rows.push(cur); cur = []; used = 0;
       w = measureWidth(score, mi, staves, true);
     }

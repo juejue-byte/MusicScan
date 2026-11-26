@@ -79,8 +79,42 @@ def flags(d: Path):
     print(f"\n({len(rows)} pages where the bar count matched the ground truth.)")
 
 
+def plays(d: Path, data: Path):
+    """Would the file play the same as the original? Same notes at the same beats with the same lengths, per part,
+    plus the same key and time signature. Tempo is not compared: the ground-truth pages carry no tempo marking."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from musicscan.compare import plays_same
+    from musicscan.omr import fix_pickup
+    from musicscan.sanitize import sanitize
+    per = defaultdict(list)
+    for r in load(d):
+        f = d / "pred" / f"{r['id']}__{r['cond']}__{r['mode']}.musicxml"
+        if not f.exists() and r["cond"] == "clean":
+            f = d / "pred" / f"{r['id']}__clean__musicscan.musicxml"
+        if not f.exists():
+            continue
+        x = f.read_text()
+        x = sanitize(fix_pickup(x))[0]   # what the app does to every reading now; older result files predate it
+        if r["cond"] == "clean":
+            per[("clean", "raw")].append(plays_same((data / f"{r['id']}.musicxml").read_text(), x))
+        per[(r["cond"], r["mode"])].append(plays_same((data / f"{r['id']}.musicxml").read_text(), x))
+    print("| Condition | Pages | Plays identically raw → MusicScan | Notes at the right beat, pitch and length raw → MusicScan | Key right | Time right |")
+    print("| --- | --- | --- | --- | --- | --- |")
+    for c in CONDS:
+        ms, raw = per.get((c, "musicscan"), []), per.get((c, "raw"), [])
+        if not ms:
+            continue
+        n = len(ms)
+        ident = lambda xs: f"{sum(x['identical'] for x in xs)}/{len(xs)}"  # noqa: E731
+        print(f"| {c} | {n} | {ident(raw) if raw else '–'} → **{ident(ms)}** | "
+              f"{mean(x['play_f1'] for x in raw):.1%} → **{mean(x['play_f1'] for x in ms):.1%}** | "
+              f"{sum(x['key_ok'] for x in ms)}/{n} | {sum(x['time_ok'] for x in ms)}/{n} |")
+
+
 if __name__ == "__main__":
     d = Path(sys.argv[1] if len(sys.argv) > 1 else "bench/results")
     main(d)
     print()
     flags(d)
+    print()
+    plays(d, Path(sys.argv[2] if len(sys.argv) > 2 else "bench/data"))

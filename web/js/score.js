@@ -373,6 +373,17 @@ export class Score {
     return true;
   }
 
+  // true when the source file starts a new line of music at this bar
+  newSystem(mi) {
+    const m = this.parts[0]?.measures[mi];
+    if (!m) return false;
+    for (const c of m.children) {
+      if (c.localName === 'note') return false;
+      if (c.localName === 'print' && c.getAttribute('new-system') === 'yes') return true;
+    }
+    return false;
+  }
+
   deleteRest(ev) { ev.el.remove(); this._attrCache = null; }
 
   addChordTone(ev, pitch) {

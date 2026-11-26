@@ -99,12 +99,107 @@ def transcribe(im: Image.Image, detector: str = "28m") -> dict:
                               cands=cands, feats=feats)
             xml = write.write(rd, image=g)
     out = analyse(rd)
-    out["xml"] = xml
+    xml = add_system_breaks(xml, [s["measures"][0] for s in out["systems"][1:] if s["measures"]])
+    out["xml"] = fix_pickup(xml)
     out["seconds"] = round(time.time() - t0, 1)
     out["detector"] = detector
     out["device"] = pick_device()
     out["size"] = [im.width, im.height]
     return out
+
+
+def fix_pickup(xml: str) -> str:
+    """A pickup (anacrusis) bar comes back padded with hidden rests to a full bar, which makes playback wait before
+    the second bar. When the first bar's printed content is shorter than the time signature in every part, drop the
+    hidden padding and mark the bar implicit, the way MusicXML writes a pickup."""
+    from lxml import etree
+    try:
+        root = etree.fromstring(xml.encode())
+    except etree.XMLSyntaxError:
+        return xml
+    parts = root.findall("part")
+    firsts = [pt.find("measure") for pt in parts]
+    if not parts or any(m is None for m in firsts):
+        return xml
+    dur = lambda el: int(float(el.findtext("duration", "0") or 0))  # noqa: E731
+    ends, bar = [], None
+    for m in firsts:
+        div, cur, last, end = 1, 0, 0, 0
+        for el in m:
+            if el.tag == "attributes":
+                if el.findtext("divisions"):
+                    div = int(float(el.findtext("divisions")))
+                if el.findtext("time/beats"):
+                    bar = (int(el.findtext("time/beats")), int(el.findtext("time/beat-type")), div)
+            elif el.tag == "backup":
+                cur -= dur(el)
+            elif el.tag == "forward":
+                cur += dur(el)
+            elif el.tag == "note":
+                chord = el.find("chord") is not None
+                start = last if chord else cur
+                if el.get("print-object") != "no" and el.find("grace") is None:
+                    end = max(end, start + dur(el))
+                if not chord:
+                    last, cur = cur, cur + dur(el)
+        ends.append((end, div))
+    if bar is None:
+        return xml
+    full = [bar[0] * 4 * d // bar[1] for _, d in ends]
+    if not all(0 < e < f for (e, _), f in zip(ends, full)):
+        return xml
+    for m, (E, _) in zip(firsts, ends):
+        oc = nc = last = 0
+        for el in list(m):
+            if el.tag == "backup":
+                target = oc - dur(el)
+                oc = target
+                el.find("duration").text = str(nc - min(target, E))
+                nc = min(target, E)
+            elif el.tag == "forward":
+                if oc >= E:
+                    m.remove(el)
+                else:
+                    nc += dur(el)
+                oc += dur(el)
+            elif el.tag == "note":
+                chord = el.find("chord") is not None
+                if chord:
+                    continue
+                d = dur(el)
+                if oc >= E and el.get("print-object") == "no" and el.find("rest") is not None:
+                    m.remove(el)
+                else:
+                    nc += d
+                oc += d
+        m.set("implicit", "yes")
+    for pt in parts:
+        for i, m in enumerate(pt.findall("measure")):
+            m.set("number", str(i))
+    head = xml[: xml.find("<score-partwise")] if "<score-partwise" in xml else ""
+    return head + etree.tostring(root, encoding="unicode")
+
+
+def add_system_breaks(xml: str, starts: list[int]) -> str:
+    """Mark where each line of music starts on the photo (<print new-system="yes"/>), so the file keeps the
+    original line breaks in notation programs and in the editor."""
+    from lxml import etree
+    try:
+        root = etree.fromstring(xml.encode())
+    except etree.XMLSyntaxError:
+        return xml
+    want = set(starts)
+    for part in root.iter("part"):
+        for mi, m in enumerate(part.findall("measure")):
+            if mi not in want:
+                continue
+            pr = m.find("print")
+            if pr is None:
+                pr = etree.Element("print")
+                m.insert(0, pr)
+            pr.set("new-system", "yes")
+    head = xml[: xml.find("<score-partwise")] if "<score-partwise" in xml else ""
+    return head + etree.tostring(root, encoding="unicode")
 
 
 def analyse(rd) -> dict:

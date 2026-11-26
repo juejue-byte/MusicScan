@@ -179,3 +179,84 @@ def compare(gt_xml: str, pred_xml: str) -> dict:
         "key_ok": gt["key"] == pr["key"], "time_ok": gt["time"] == pr["time"],
         "streams": [len(gk), len(pk)],
     }
+
+
+# ---------- "plays the same": what a MIDI player would hear ----------
+def _q(x: Fraction) -> Fraction:
+    """Round to 1/96 of a quarter so a triplet written with different divisions still matches."""
+    return Fraction(round(x * 96), 96)
+
+
+def sounding(xml: str | bytes) -> dict:
+    """Per part: sorted (onset, midi, duration) in quarter notes, tied notes merged, rests and staves ignored."""
+    if isinstance(xml, str):
+        xml = xml.encode()
+    root = _strip_ns(etree.fromstring(xml, etree.XMLParser(recover=True, huge_tree=True)))
+    parts, local = [], []
+    for part in root.findall("part"):
+        div, t0, notes, open_ties = 1, Fraction(0), [], {}
+        for bar_i, m in enumerate(part.findall("measure")):
+            cur = last = mlen = Fraction(0)
+            for el in m:
+                if el.tag == "attributes" and el.findtext("divisions"):
+                    div = int(float(el.findtext("divisions")))
+                elif el.tag == "backup":
+                    cur -= Fraction(int(float(el.findtext("duration", "0"))), div)
+                elif el.tag == "forward":
+                    cur += Fraction(int(float(el.findtext("duration", "0"))), div)
+                elif el.tag == "note":
+                    if el.find("grace") is not None or el.find("cue") is not None:
+                        continue
+                    dur = Fraction(int(float(el.findtext("duration", "0") or 0)), div)
+                    chord = el.find("chord") is not None
+                    start = last if chord else cur
+                    p = el.find("pitch")
+                    if p is not None and el.find("rest") is None:
+                        midi = 12 * (int(p.findtext("octave")) + 1) + STEP[p.findtext("step")] + int(float(p.findtext("alter", "0") or 0))
+                        ties = {t.get("type") for t in el.findall("tie")}
+                        on = t0 + start
+                        if "stop" in ties and midi in open_ties and open_ties[midi][0] + open_ties[midi][2] == on:
+                            n = open_ties.pop(midi)
+                            n[2] += dur
+                        else:
+                            n = [on, midi, dur, bar_i, start]
+                            notes.append(n)
+                        if "start" in ties:
+                            open_ties[midi] = n
+                    if not chord:
+                        last = cur
+                        cur += dur
+                    mlen = max(mlen, cur)
+            t0 += mlen
+        parts.append(sorted((_q(a), b, _q(c)) for a, b, c, _, _ in notes))
+        local.append(sorted((bi, _q(st), b, _q(c)) for _, b, c, bi, st in notes))
+    key = root.findtext(".//attributes/key/fifths")
+    b, bt = root.findtext(".//attributes/time/beats"), root.findtext(".//attributes/time/beat-type")
+    tempo = root.find(".//sound[@tempo]")
+    return {"parts": parts, "local": local, "key": int(key) if key else None, "time": f"{b}/{bt}" if b else None,
+            "tempo": float(tempo.get("tempo")) if tempo is not None else None}
+
+
+def plays_same(gt_xml: str, pred_xml: str) -> dict:
+    """play_f1: notes in the same bar, at the same beat, with the same pitch and length, per part (parts paired for
+    the best match). Counting beats within each bar keeps one wrong rhythm from shifting every later note.
+    `identical` means a MIDI player would play both files the same at any tempo: every note matches and the key
+    and time signature agree (key matters for display only; pitches already carry the accidentals)."""
+    from collections import Counter
+    from scipy.optimize import linear_sum_assignment
+    g, p = sounding(gt_xml), sounding(pred_xml)
+    def best(G, P):
+        M = np.zeros((len(G), max(len(P), 1)))
+        for i, a in enumerate(G):
+            for j, b in enumerate(P):
+                M[i, j] = sum((Counter(a) & Counter(b)).values())
+        if not (P and G):
+            return 0
+        ri, ci = linear_sum_assignment(-M)
+        return int(M[ri, ci].sum())
+    ng, npred = sum(map(len, g["parts"])), sum(map(len, p["parts"]))
+    f1 = 2 * best(g["local"], p["local"]) / max(ng + npred, 1)
+    same_notes = best(g["parts"], p["parts"]) == ng == npred
+    return {"play_f1": round(f1, 4), "same_notes": same_notes, "key_ok": g["key"] == p["key"],
+            "time_ok": g["time"] == p["time"], "identical": same_notes and g["key"] == p["key"] and g["time"] == p["time"],
+            "gt_notes": ng, "pred_notes": npred, "tempo_gt": g["tempo"], "tempo_pred": p["tempo"]}
