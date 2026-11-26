@@ -618,7 +618,7 @@ body.playing .practice-pop { z-index: 46; }
 .pw-features { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 20px; }
 .pw-features li { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; }
 .pw-features svg { flex: none; color: var(--accent); }
-.pw-plans { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.pw-plans { display: grid; grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr)); gap: 12px; }
 .pw-plan { position: relative; display: flex; flex-direction: column; gap: 2px; padding: 16px; border-radius: 18px; border: 2px solid var(--line); background: var(--panel); text-align: left; cursor: pointer; font: inherit; color: var(--ink); }
 .pw-plan.on { border-color: var(--accent); background: var(--bg); }
 .pw-best { position: absolute; top: -12px; right: 12px; padding: 3px 10px; border-radius: 99px; background: var(--marigold); font-size: 12px; font-weight: 700; color: var(--ink); }
@@ -648,3 +648,10 @@ body.playing .practice-pop { z-index: 46; }
 }
 .pw-card > * { flex: none; }
 @media (max-width: 600px) { .pw-badge { width: 48px; height: 48px; border-radius: 16px; } .pw-badge svg { width: 24px; height: 24px; } .pw-features { gap: 6px; } .pw-features li { font-size: 14px; } }
+
+/* half-page preview (paywall): the rest of the page is blurred until unlocked */
+.lock-veil { position: absolute; right: 0; z-index: 6; backdrop-filter: blur(7px) saturate(.6); -webkit-backdrop-filter: blur(7px) saturate(.6); background: linear-gradient(to bottom, rgba(255,255,255,.35), rgba(255,255,255,.8) 140px); border-top: 2px dashed var(--line); display: flex; justify-content: center; align-items: flex-start; padding-top: 28px; }
+.lv-card { position: sticky; top: 24px; display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: min(380px, calc(100% - 32px)); padding: 18px 22px; border-radius: 20px; background: var(--panel); box-shadow: 0 12px 36px rgba(14,34,56,.18); text-align: center; font-size: 14px; color: var(--muted); }
+.lv-card b { font: 800 18px var(--font-display); color: var(--ink); }
+.lv-card .btn { margin-top: 4px; }
+.pw-terms { margin: -6px 0 0; font-size: 12px; line-height: 1.45; color: var(--muted); text-align: center; }

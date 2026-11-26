@@ -1,6 +1,6 @@
-// Paywall UI (web/js/paywall.js), payments not connected: off by default (export just works); with ?paywall the
-// export menu opens the sheet, Not now keeps the file back, plans can be picked, Continue unlocks the preview and
-// the export goes through; the start screen counts free scans and the 4th scan in a month asks first.
+// Paywall UI (web/js/paywall.js), payments not connected: off by default (export just works); with ?paywall the first
+// page is free with every feature, the next scan shows the first half and blurs the rest, taps, keys, Play and Export
+// ask to unlock, the sheet has two plans with renewal terms, Terms and Restore, Continue unlocks, Pro has 30 pages.
 // Usage: node tests/paywall.js [outDir]     (serves web/ itself; exits non-zero on failure)
 const { chromium, devices } = require('playwright');
 const fs = require('fs');
@@ -51,43 +51,66 @@ function serve() {
   await sample(1);
   ok(!!(await exportXml()) && (await sheet()) === 0, 'export works without a paywall by default');
 
-  // 2. preview on
+  // 2. preview on: the first page is free with every feature
   await p.goto(url('&paywall'));
   await p.waitForSelector('.sample');
-  ok(/of 3 free scans left/.test(await p.locator('#freeScans').textContent()), 'start screen shows the free scans left');
+  ok(/first page is free/.test(await p.locator('#freeScans').textContent()), 'start screen says the first page is free');
   await sample(1);
+  ok(await p.locator('#lockVeil').count() === 0, 'the free page is not blurred');
   let dl = await exportXml();
-  ok(!dl && (await sheet()) === 1, 'export opens the paywall first');
+  ok(!!dl && (await sheet()) === 0, 'the free page exports without the paywall');
+
+  // 3. the second scan opens as a half-page preview
+  await tap('#btnNew');
+  ok(/first half/.test(await p.locator('#freeScans').textContent()), 'start screen explains the preview after the free page');
+  await sample(2);
+  const veil = await p.locator('#lockVeil').boundingBox();
+  const sc = await p.locator('#score').boundingBox();
+  ok(!!veil && veil.y > sc.y + 40, `the lower part of the page is blurred (veil at ${veil && Math.round(veil.y - sc.y)} px)`);
+  ok(/more bars? on this page/.test(await p.locator('#lockVeil b').textContent()), 'the veil says how many bars are hidden');
+  await p.screenshot({ path: path.join(OUT, 'ipad_preview.png') });
+  const before = await p.evaluate(() => window.__ms.S.score.toXML());
+  await p.locator('#score').tap({ position: { x: 200, y: 60 } });
+  await p.waitForTimeout(300);
+  ok((await sheet()) === 1, 'tapping the score asks to unlock');
   await p.screenshot({ path: path.join(OUT, 'ipad_paywall.png') });
   const plans = await p.$$eval('.pw-plan', (xs) => xs.map((x) => x.querySelector('.pw-price').textContent));
-  ok(plans.join() === '$44.99,$6.99,$5.99', `three plans with the brief's prices (${plans.join(' ')})`);
+  ok(plans.join() === '$99.99,$15.99', `two plans, no weekly (${plans.join(' ')})`);
   ok(/Yearly/.test(await p.locator('.pw-go').textContent()), 'Yearly is picked by default');
-  await tap('.pw-plan[data-plan="week"]');
-  ok(/Weekly/.test(await p.locator('.pw-go').textContent()) && await p.locator('.pw-plan.on[data-plan="week"]').count() === 1, 'tapping a plan picks it');
+  ok(/\$99\.99 per year\. Renews automatically/.test(await p.locator('.pw-terms').textContent()), 'renewal terms shown with the price');
+  ok(await p.locator('.pw-foot a', { hasText: 'Terms of Use' }).count() === 1 && await p.locator('[data-a=restore]').count() === 1, 'Terms of Use and Restore purchases are on the sheet');
+  await tap('.pw-plan[data-plan="month"]');
+  ok(/Monthly/.test(await p.locator('.pw-go').textContent()) && /\$15\.99 per month/.test(await p.locator('.pw-terms').textContent()), 'tapping a plan picks it and updates the terms');
   await tap('.pw-close');
   await p.waitForTimeout(300);
-  ok((await sheet()) === 0, 'Not now closes the sheet and keeps the file back');
-  dl = await exportXml();
+  ok((await sheet()) === 0, 'Not now closes the sheet');
+  await p.keyboard.press('ArrowUp'); await p.keyboard.press('Delete');
+  await p.waitForTimeout(200);
+  const after = await p.evaluate(() => window.__ms.S.score.toXML());
+  ok(before === after, 'keys do not edit a preview');
+  if (await sheet()) await tap('.pw-close');
+  await tap('#btnPlay');
+  ok((await sheet()) === 1 && !(await p.evaluate(() => window.__ms.audio.isPlaying())), 'Play asks to unlock and does not play');
+  await tap('.pw-close');
+  await tap('#btnExport');
+  ok((await sheet()) === 1 && await p.locator('#exportMenu.open').count() === 0, 'Export asks to unlock');
   await tap('.pw-go');
   await p.waitForTimeout(500);
   ok((await sheet()) === 0 && await p.evaluate(() => window.__ms.paywall.isPro()), 'Continue unlocks the preview');
+  ok(await p.locator('#lockVeil').count() === 0, 'the whole page shows after unlocking');
   dl = await exportXml();
-  ok(!!dl, 'after Continue the export goes through');
+  ok(!!dl, 'after unlocking the export goes through');
 
-  // 3. free allowance: the 4th scan this month asks first
-  await p.evaluate(() => { localStorage.removeItem('musicscan:pro'); localStorage.setItem('musicscan:scans', JSON.stringify({ m: new Date().toISOString().slice(0, 7), n: 3 })); });
-  await p.goto(url());
-  await p.waitForSelector('.sample');
-  ok(/0 of 3/.test(await p.locator('#freeScans').textContent()), 'the meter shows none left after 3 scans');
+  // 4. Pro allowance: 30 pages a month
+  await tap('#btnNew');
+  ok(/of 30 pages left/.test(await p.locator('#freeScans').textContent()), 'Pro sees the pages left this month');
+  await p.evaluate(() => localStorage.setItem('musicscan:pages', JSON.stringify({ m: new Date().toISOString().slice(0, 7), n: 30 })));
   await tap('.sample:nth-of-type(2)');
-  await p.waitForTimeout(400);
-  ok((await sheet()) === 1 && /free scans/.test(await p.locator('.pw-head p').textContent()), 'a 4th scan opens the paywall with the reason');
-  await p.keyboard.press('Escape');
-  await p.waitForTimeout(300);
-  ok((await sheet()) === 0 && await p.locator('#viewUpload:not(.hidden)').count() === 1, 'Escape closes it and the scan does not start');
+  await p.waitForTimeout(500);
+  ok(await p.locator('#viewUpload:not(.hidden)').count() === 1 && /all 30 pages/.test(await p.locator('#toast').textContent()), 'after 30 pages a scan says when more pages come');
   await ctx.close();
 
-  // 4. phone: a bottom sheet that fits
+  // 5. phone: a bottom sheet that fits
   const ctx2 = await b.newContext({ ...devices['iPhone 14'] });
   const p2 = await ctx2.newPage();
   p2.on('pageerror', (e) => errs.push(e.message));

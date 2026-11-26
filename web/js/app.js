@@ -106,10 +106,10 @@ async function startUpload(file) {
     return;
   }
   if (lower.endsWith('.mxl')) { toast('Compressed .mxl is not supported yet. Export uncompressed MusicXML.'); return; }
-  // free allowance (only while the paywall preview is on, see web/js/paywall.js)
-  if (paywall.enabled() && !paywall.isPro() && paywall.scansLeft() === 0
-    && !(await paywall.show(`You've used your ${paywall.PLAN.freeScansPerMonth} free scans this month. Go Pro for unlimited scans.`))) return;
-  paywall.countScan();
+  // free page / half-page preview / Pro allowance (only while the paywall preview is on, see web/js/paywall.js)
+  const access = await paywall.beforeScan();
+  if (!access) return;
+  S.pendingAccess = access;
   show('viewProgress');
   const thumb = $('#progressThumb');
   if (file.type.startsWith('image/') && !/heic|heif/i.test(file.type + lower)) { thumb.src = URL.createObjectURL(file); thumb.classList.remove('hidden'); } else thumb.classList.add('hidden');
@@ -183,6 +183,9 @@ function openScore(xml, meta, quality, job, pages = null) {
   review.stop();
   S.score = new Score(xml);
   S.libId = S.openLib || library.newId(); S.openLib = null; // a new scan or file gets its own place in Your music
+  if (job && S.pendingAccess) paywall.setAccess(S.libId, S.pendingAccess);
+  S.pendingAccess = null;
+  applyLock();
   S.meta = (meta || []).map((m) => ({ ...m }));
   S.job = job;
   S.pages = pages || (job && S.result ? { [job]: pageRec(job, S.result, S.name) } : {});
@@ -247,6 +250,66 @@ function renderBanner(q, pid = null) {
 // ---------------------------------------------------------------- drawing
 function scoreWidth() { return $('#scoreScroll').clientWidth - 4; }
 
+// ---------------------------------------------------------------- half-page preview (paywall, see web/js/paywall.js)
+// A preview score shows its first rows and blurs the rest; every tap, key and button in the editor asks to unlock,
+// except a few that only look (photo, zoom, new scan). Off unless the paywall preview is on.
+function applyLock() {
+  S.locked = paywall.locked(S.libId);
+  document.body.classList.toggle('pw-locked', S.locked);
+  if (S.locked) { audio.stop?.(); }
+}
+function afterUnlock() {
+  const was = S.locked;
+  applyLock();
+  if (was && !S.locked) redraw();
+}
+async function offerUnlock() {
+  if (paywall.isOpen()) return;
+  await paywall.show('The whole page is read. Unlock it to see every bar, fix it, play it and export it.');
+  afterUnlock();
+}
+function drawLockVeil() {
+  let v = $('#lockVeil');
+  const ms = S.layout?.measures.filter(Boolean) || [];
+  if (!S.locked || !ms.length) { v?.remove(); return; }
+  const nRows = Math.max(...ms.map((m) => m.rowIdx)) + 1;
+  const z = S.zoom, top0 = $('#score').offsetTop;
+  let y, x = 0, h;
+  if (nRows > 1) {
+    const cut = Math.ceil(nRows / 2);
+    y = Math.min(...ms.filter((m) => m.rowIdx >= cut).map((m) => m.y0)) * z;
+  } else {
+    const half = ms[Math.ceil(ms.length / 2)] || ms[ms.length - 1];
+    x = half.x0 * z; y = half.y0 * z; h = (half.y1 - half.y0) * z;
+  }
+  const hidden = ms.filter((m) => (nRows > 1 ? m.y0 * z >= y : m.x0 * z >= x)).length;
+  if (!v) {
+    v = document.createElement('div');
+    v.id = 'lockVeil'; v.className = 'lock-veil';
+    v.innerHTML = '<div class="lv-card"><b></b><span>Unlock to see the rest, edit, play and export.</span><button class="btn primary">See plans</button></div>';
+    v.querySelector('button').onclick = (e) => { e.stopPropagation(); offerUnlock(); };
+    $('#scoreScroll').appendChild(v);
+  }
+  v.querySelector('b').textContent = `${hidden} more bar${hidden === 1 ? '' : 's'} on this page`;
+  Object.assign(v.style, { top: top0 + y + 'px', left: x + 'px', height: (h ?? Math.max(240, S.layout.height * z - y + 120)) + 'px' });
+}
+// in a preview, editor input asks to unlock (capture phase, so no tool sees it)
+const LOOK_ONLY = '#btnNew, #btnPhoto, #photoCol, #zoomIn, #zoomOut, #zoomVal, #btnKeys, #qualityBanner [data-b=close], #lockVeil button, #paywall, .toast';
+function lockGuard(e) {
+  if (!S.locked || $('#viewEditor').classList.contains('hidden') || paywall.isOpen()) return;
+  if (!e.target.closest('#viewEditor, header.top, .pbar') || e.target.closest(LOOK_ONLY)) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  if (e.type === 'click') offerUnlock();
+}
+function lockKeys(e) {
+  if (!S.locked || $('#viewEditor').classList.contains('hidden') || paywall.isOpen()) return;
+  if (['Tab', 'Escape', 'PageUp', 'PageDown', 'Home', 'End'].includes(e.key) || e.target.closest?.('input, textarea')) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  if (!e.metaKey && !e.ctrlKey && e.key.length === 1 || e.key === 'Enter') offerUnlock();
+}
+for (const t of ['pointerdown', 'pointerup', 'click', 'dblclick', 'contextmenu']) document.addEventListener(t, lockGuard, true);
+document.addEventListener('keydown', lockKeys, true);
+
 function redraw() {
   if (!S.score) return;
   const el = $('#score');
@@ -263,6 +326,7 @@ function redraw() {
   ov.style.top = el.offsetTop + 'px';
   $('#ink').style.top = el.offsetTop + 'px';
   drawInk();
+  drawLockVeil();
   $('#scoreScroll').scrollTop = keep;
   el.classList.toggle('mode-add', S.mode === 'add');
   drawPhotoOverlay();
@@ -1796,6 +1860,8 @@ async function readMorePages(file, { from = 0, total = null }, session) {
   const isPdf = /\.pdf$/i.test(file.name || '') || file.type === 'application/pdf';
   let n = total ?? 1;
   for (let k = from; k < n; k++) {
+    if (!(await paywall.allowPage())) break;
+    if (session !== scoreSession) return;
     const label = isPdf && total ? `page ${k + 1} of ${n}` : `page ${pageList().length + 1}`;
     setReading(`Reading ${label}…`);
     const fd = new FormData();
@@ -2136,6 +2202,7 @@ function wire() {
     if (cmd === 'new') return $('#btnNew').click();
     if (cmd === 'scan') return $('#cameraInput').closest('label').click();
     if (!editing) return;
+    if (S.locked && !['zoom-in', 'zoom-out', 'photo'].includes(cmd)) return offerUnlock();
     if (cmd === 'undo') undo();
     else if (cmd === 'redo') redo();
     else if (cmd === 'play') togglePlay();
@@ -2152,7 +2219,7 @@ function wire() {
     else if (cmd === 'photo') $('#btnPhoto').click();
   });
   $('#btnExport').onclick = (e) => { e.stopPropagation(); $('#exportMenu').classList.toggle('open'); };
-  for (const b of $$('#exportMenu button')) b.onclick = () => { closeMenus(); paywall.gate(() => exportAs(b.dataset.x)); };
+  for (const b of $$('#exportMenu button')) b.onclick = () => { closeMenus(); paywall.gate(() => exportAs(b.dataset.x), null, S.libId).then(afterUnlock); };
   document.addEventListener('click', closeMenus);
   $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
   let rt;
@@ -2185,11 +2252,14 @@ function loadResume() {
   $('#resume')?.remove();
   $('#viewUpload').scrollTop = 0;
   $('#freeScans')?.remove();
-  if (paywall.enabled() && !paywall.isPro()) {
-    const n = paywall.scansLeft(), of = paywall.PLAN.freeScansPerMonth;
+  if (paywall.enabled()) {
+    const pro = paywall.isPro(), of = paywall.PLAN.proPagesPerMonth;
+    const n = pro ? paywall.pagesLeft() : paywall.freeLeft();
     const f = document.createElement('div');
     f.id = 'freeScans'; f.className = 'free-scans';
-    f.innerHTML = `<span>${n} of ${of} free scans left this month</span><span class="fs-track"><span style="width:${(n / of) * 100}%"></span></span>`;
+    const msg = pro ? `${n} of ${of} pages left this month`
+      : n ? 'Your first page is free, with every feature.' : 'Without Pro, a scan shows the first half of the page.';
+    f.innerHTML = `<span>${msg}</span>${pro ? `<span class="fs-track"><span style="width:${(n / of) * 100}%"></span></span>` : ''}`;
     $('.upload-row').appendChild(f);
   }
   library.flush().then(renderLibrary);
