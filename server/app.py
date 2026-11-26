@@ -5,6 +5,7 @@ import hmac
 import io
 import json
 import os
+import shutil
 import sys
 import threading
 import time
@@ -36,7 +37,7 @@ app = FastAPI(title="MusicScan")
 #    cookie keeps it, or send the X-MusicScan-Key header.
 # Neither set (the default on your own computer) means the API is open.
 ACCESS_KEY = os.environ.get("MUSICSCAN_ACCESS_KEY", "")
-OPEN_API = ("/api/health", "/api/samples")
+OPEN_API = ("/api/health", "/api/samples", "/api/config", "/api/billing/notifications")
 KEY_COOKIE = "musicscan_key"
 
 
@@ -80,10 +81,98 @@ def health(request: Request):
             "device": omr.pick_device() if omr._DEV else None}
 
 
+@app.get("/api/config")
+def public_config():
+    """Client bootstrap values only; the Supabase service secret is never exposed here."""
+    return {"supabaseUrl": auth.supabase_url(),
+            "supabasePublishableKey": os.environ.get("SUPABASE_PUBLISHABLE_KEY", ""),
+            "signIn": auth.enabled() and bool(os.environ.get("SUPABASE_PUBLISHABLE_KEY")),
+            "storeKit": True}
+
+
+@app.post("/api/billing/transaction")
+async def verify_storekit_transaction(request: Request):
+    """Verify Apple's signed StoreKit transaction before changing this user's existing entitlement."""
+    user = request.state.user
+    if not user:
+        raise HTTPException(401, "Sign in before restoring or purchasing MusicScan Pro")
+    try:
+        body = await request.json()
+        from server import billing
+        transaction = billing.verify_transaction(body.get("signedTransaction", ""), user["id"])
+        usage.record_transaction(user["id"], transaction)
+        return {"active": transaction["active"], "product_id": transaction["product_id"],
+                "period_end": transaction["period_end"], "is_trial": transaction["is_trial"]}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(503, "Could not verify or save the subscription right now") from exc
+
+
+@app.post("/api/billing/notifications")
+async def app_store_notifications(request: Request):
+    """App Store Server Notifications V2 endpoint. Apple authenticates this request with its signed payload."""
+    try:
+        body = await request.json()
+        from server import billing
+        notice = billing.verify_notification(body.get("signedPayload", ""))
+        transaction = notice.get("transaction")
+        if transaction:
+            usage.record_transaction(notice["user_id"], transaction)
+        return {"ok": True}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(503, "Could not process the App Store notification") from exc
+
+
 def _save_job(j):
     d = WORK / j["id"]
     d.mkdir(exist_ok=True)
-    (d / "job.json").write_text(json.dumps({k: v for k, v in j.items() if k != "_img"}))
+    (d / "job.json").write_text(json.dumps({k: v for k, v in j.items() if k not in ("_img", "_full_result")}))
+
+
+def _preview_result(result: dict, directory: Path) -> dict:
+    """Cut the score and cover every later bar in the public preview image. Full data stays server-side."""
+    from lxml import etree
+    measures = result.get("measures", [])
+    visible_count = max(1, (len(measures) + 1) // 2)
+    visible = measures[:visible_count]
+    hidden = measures[visible_count:]
+    public = dict(result)
+    public["measures"] = visible
+    public["stats"] = dict(result.get("stats", {}), measures=len(visible))
+    public["systems"] = [dict(s, measures=[i for i in s.get("measures", []) if i < visible_count])
+                         for s in result.get("systems", []) if any(i < visible_count for i in s.get("measures", []))]
+    try:
+        root = etree.fromstring(result["xml"].encode(), etree.XMLParser(recover=True, huge_tree=True))
+        for part in root.xpath("//*[local-name()='part']"):
+            bars = part.xpath("./*[local-name()='measure']")
+            for bar in bars[visible_count:]:
+                part.remove(bar)
+        public["xml"] = etree.tostring(root, encoding="unicode")
+    except Exception:
+        # If the score can't be safely cut, fail closed: do not send MusicXML to a preview user.
+        public["xml"] = ""
+
+    image_path = directory / "page.full.png"
+    if image_path.exists() and hidden:
+        image = Image.open(image_path).convert("RGB")
+        width, height = image.size
+        x0, y0, x1, y1 = hidden[0].get("bbox", [0, height // 2, width, height])
+        same_row = all(m.get("system") == visible[-1].get("system") for m in hidden)
+        if same_row:
+            mask_box = (max(0, int(x0)), max(0, int(min(visible[-1]["bbox"][1], y0))), width, min(height, int(max(visible[-1]["bbox"][3], y1))))
+            # Later rows are hidden too if they follow the visible bar sequence.
+            mask_box = (mask_box[0], 0, mask_box[2], height)
+        else:
+            mask_box = (0, max(0, int(y0)), width, height)
+        from PIL import ImageDraw
+        ImageDraw.Draw(image).rectangle(mask_box, fill="white")
+        image.save(directory / "page.png")
+    return public
 
 
 def _run(job_id: str, data: bytes, name: str, opts: dict):
@@ -95,6 +184,7 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
         im.save(d / "original.jpg", quality=90)
         pre = preprocess.preprocess(im, flatten=opts.get("flatten"), strip_pen=opts.get("strip_pen", True),
                                     lock_page=opts.get("lock_page", True), quad=opts.get("quad"))
+        pre["image"].save(d / "page.full.png")
         pre["image"].save(d / "page.png")
         j["status"] = "Reading the music"
         r = omr.transcribe(pre["image"], detector=opts.get("detector", "28m"))
@@ -109,11 +199,14 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
             if m0["level"] == "ok":
                 m0["level"] = "check"
         q = assess(pre, r)
-        j["result"] = {"xml": r["xml"], "measures": r["measures"], "systems": r["systems"], "stats": r["stats"],
+        full_result = {"xml": r["xml"], "measures": r["measures"], "systems": r["systems"], "stats": r["stats"],
                        "quality": q, "steps": pre["steps"], "quad": pre["quad"], "seconds": r["seconds"],
                        "page_size": list(pre["image"].size), "original_size": list(im.size),
                        "second_opinion": r.get("second_opinion"),
                        "pdf_page": opts.get("page", 0) if opts.get("pdf") else None}
+        (d / "result.full.json").write_text(json.dumps(full_result))
+        j["_full_result"] = full_result
+        j["result"] = _preview_result(full_result, d) if j.get("allowance", {}).get("access") == "preview" else full_result
         j["status"] = "done"
     except Exception as e:
         traceback.print_exc()
@@ -221,6 +314,15 @@ def unlock_job(jid: str, request: Request):
     if allowance["access"] == "cap":
         raise HTTPException(402, {"code": "page_cap", "renews_at": allowance["renews_at"],
                                   "message": f"You've read all {allowance['page_limit']} pages for this month."})
+    if allowance["access"] != "full":
+        raise HTTPException(402, {"code": "subscription_required", "message": "An active MusicScan Pro subscription is required."})
+    if j.get("status") != "done":
+        raise HTTPException(409, "The page is still being read")
+    full_path = WORK / jid / "result.full.json"
+    if not full_path.exists():
+        raise HTTPException(410, "The full reading is no longer available. Please scan this page again.")
+    j["result"] = json.loads(full_path.read_text())
+    shutil.copyfile(WORK / jid / "page.full.png", WORK / jid / "page.png")
     j["allowance"] = allowance
     _save_job(j)
     return allowance
@@ -232,6 +334,8 @@ async def reread(jid: str, request: Request, quad: str = Form(...), detector: st
     the page, or cut a row off). quad: JSON [[x, y] x4] in original.jpg pixels, any order; an empty list reads the
     whole photo without flattening. Returns a new job, like POST /api/jobs."""
     old = _job(jid, request)
+    if old.get("allowance", {}).get("access") == "preview":
+        raise HTTPException(402, "Unlock this page before adjusting its edges")
     src = WORK / jid / "original.jpg"
     if not src.exists():
         raise HTTPException(404, "The photo of this page is no longer on the server")
@@ -280,9 +384,11 @@ def get_job(jid: str, request: Request):
 
 @app.get("/api/jobs/{jid}/{name}")
 def job_file(jid: str, name: str, request: Request):
-    _job(jid, request)
+    job = _job(jid, request)
     if name not in ("page.png", "original.jpg"):
         raise HTTPException(404)
+    if name == "original.jpg" and job.get("allowance", {}).get("access") == "preview":
+        raise HTTPException(403, "Original page is hidden in preview mode")
     return FileResponse(WORK / jid / name)
 
 
@@ -360,6 +466,8 @@ async def rescan(jid: str, request: Request, measures: str = Form(...), attempt:
     being edited (the editor sends it so the user's own key/time fixes carry over). Without it, it is taken from
     the original reading."""
     j = _job(jid, request)
+    if j.get("allowance", {}).get("access") == "preview":
+        raise HTTPException(402, "Unlock this page before rescanning bars")
     if j.get("status") != "done":
         raise HTTPException(409, "Job not finished")
     sel = sorted({int(x) for x in measures.split(",") if x.strip() != ""})

@@ -103,7 +103,9 @@ removes them all.
   small TestFlight group (a page takes a few seconds of GPU); a busy launch needs the queue described below.
 - **One shared key**, not user accounts, until sign-in is switched on. Anyone with the key can read pages.
   Rotate it if it leaks. Sign-in: set `SUPABASE_URL` (server/auth.py), see "Sign-in" below.
-- **No paywall enforcement on the server yet.** The paywall in `web/js/paywall.js` is UI only.
+- **App Store setup is required before purchases can go live.** The iOS app still needs SuperwallKit and its public
+  key, and App Store Connect must have the matching monthly/yearly products and a Superwall campaign. The server
+  verifies StoreKit signed transactions and V2 notifications before calling the existing entitlement RPC.
 
 ## Before launch
 
@@ -124,6 +126,14 @@ What the server does when it is switched on:
 - `server/usage.py`: each new page by a signed-in user asks `claim_page`: `free` (first page), `full` (Pro, under 30
   this billing period), `preview` (half page), or `cap` (HTTP 402). `POST /api/jobs/{id}/unlock` turns a preview
   into a Pro page after a purchase. Jobs are visible only to the user who made them.
+- `POST /api/billing/transaction`: verifies Apple's signed transaction (certificate chain, app bundle, product,
+  expiry/revocation and `appAccountToken`) then calls `set_entitlement`. StoreKit sets `appAccountToken` to the
+  Supabase auth UUID. Never grant Pro from a client-side flag.
+- `POST /api/billing/notifications`: verifies App Store Server Notifications V2 and sends renewals, expirations,
+  refunds and revocations through the same `set_entitlement` RPC. Signed dates prevent old retries overwriting newer
+  subscription state. Configure this URL as the App Store Server Notifications V2 production and sandbox URL.
+- A `preview` response contains only the first half of the score; the rest of the MusicXML is kept server-side and
+  the later bars are covered in the preview image. `unlock_page` returns it only for an active subscription.
 
 Switch it on (copy the **secret** key from Supabase > Project Settings > API Keys; it never goes in the app or git):
 
@@ -132,6 +142,7 @@ Switch it on (copy the **secret** key from Supabase > Project Settings > API Key
 modal secret create musicscan --force \
   MUSICSCAN_ACCESS_KEY="$MUSICSCAN_ACCESS_KEY" \
   SUPABASE_URL=https://fliegieshsoywgrjyltw.supabase.co \
+  SUPABASE_PUBLISHABLE_KEY=sb_publishable_... \
   SUPABASE_SECRET_KEY=sb_secret_...
 modal deploy deploy/modal_app.py
 ```
@@ -139,6 +150,30 @@ modal deploy deploy/modal_app.py
 Providers to turn on in Supabase (Authentication > Sign In / Providers): **Anonymous** (first launch, no screen),
 **Apple** (required by App Review as soon as Google is offered), **Google**, and **Email** (magic link).
 
-Still to build: the app side (supabase-swift, anonymous sign-in at launch, the token as the `musicscan_session`
-cookie in the web view, the sign-in sheet), cutting previews to the top half on the server, and the RevenueCat
-webhook that calls `set_entitlement`.
+<<<<<<< HEAD
+### In the iOS app (ios/MusicScan/Auth.swift)
+
+The app talks to Supabase Auth directly (no package to add). On first launch it makes an anonymous account; the token
+goes to the server as a Bearer header and as the `musicscan_session` cookie in the editor's web view, refreshed before
+it expires. **Server: …** now has an **Account** section: "Guest on this device", or add an email: Supabase sends a
+sign-in link (its default email), and tapping it on the iPad or iPhone opens the app through
+`musicscan://auth-callback`, signed in. On a guest account the email is attached to the same account, so its pages
+carry over. Apple and Google buttons are behind `AuthFlags` in Auth.swift, off until those providers are set up.
+
+Supabase dashboard settings this needs:
+
+1. Authentication > Sign In / Providers: **Allow anonymous sign-ins** on, **Email** on.
+2. Authentication > URL Configuration > Redirect URLs: add `musicscan://auth-callback` (email links, Apple, Google).
+3. Before launch: custom SMTP (Authentication > Emails > SMTP Settings, for example Resend). Supabase's built-in
+   sender only delivers a few emails an hour, only to your team's addresses, and keeps the templates locked.
+   With SMTP set, the templates can also carry a 6-digit code (`{{ .Token }}`; `verifyEmailCode` is ready for it).
+
+Check it: **Server: …** > **Test connection** says "Connected to MusicScan, signed in." when the server accepted
+the token; "…did not accept the sign-in" means the server's `SUPABASE_URL` is missing or the project still signs
+tokens with the legacy secret (then add `SUPABASE_JWT_SECRET` to the Modal secret).
+
+Apple configuration also needs `APPLE_BUNDLE_ID` and numeric `APPLE_APP_ID` in the server secret. Add a Superwall
+public SDK key to the iOS app (never a Superwall secret key). The auth/sign-in stream owns Supabase session creation
+and exposing its user UUID plus access token to this purchase flow. StoreKit configuration and the StoreKit products
+must use `com.musicscan.pro.monthly` and `com.musicscan.pro.yearly`; create the 7-day introductory offer on the yearly
+product and route the app's paywall placements to the Superwall paywall.

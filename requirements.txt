@@ -13,6 +13,7 @@ torch>=2.3             # copisteria runtime (CPU is fine)
 torchvision>=0.18
 huggingface_hub>=0.24  # weights download
 pyjwt[crypto]>=2.8     # verifies Supabase sign-in tokens (server/auth.py)
+app-store-server-library==3.1.2  # Apple's signed transaction and App Store Server Notifications V2 verification
 # benchmark only
 music21>=9.1
 verovio>=4.3

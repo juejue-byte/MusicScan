@@ -31,6 +31,7 @@ image = (
         "fastapi>=0.115", "uvicorn>=0.30", "python-multipart>=0.0.9", "numpy>=1.26", "scipy>=1.11",
         "opencv-python-headless>=4.10", "Pillow>=10.0", "pi-heif>=0.18", "pypdfium2>=4.30", "lxml>=5.0",
         "torch>=2.3", "torchvision>=0.18", "huggingface_hub>=0.24", "pyjwt[crypto]>=2.8",
+        "app-store-server-library==3.1.2",
     )
     .run_commands(
         "git clone https://github.com/kobimusic/copisteria /opt/copisteria",

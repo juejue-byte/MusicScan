@@ -9,6 +9,8 @@ bench/results/images/
 bench/results/pred/
 node_modules/
 .DS_Store
+.supabase/
+supabase/.temp/
 .venv.old.*/
 bench/sheetly_out/
 
