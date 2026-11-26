@@ -418,3 +418,59 @@ i.mf { font-family: 'Times New Roman', Times, serif; font-weight: 700; font-size
 .kt-clef-how label { font-size: 13px; }
 .kt-sub { font-size: 15px !important; margin-top: 14px !important; border-top: 1px solid var(--line); padding-top: 12px; }
 #overlay .caret { fill: var(--accent); fill-opacity: .16; stroke: var(--accent); stroke-opacity: .7; stroke-width: 1.2; }
+
+/* ---------------------------------------------------------------- Sky look (design: https://claude.ai/artifact/CQ5niYBhsneZSpYNWz1ddn)
+   Light blue around the music, white paper for the score. Restyles only: sizes that the iPad toolbar budget depends on
+   (seg/button widths and borders) stay as they are. */
+.top { background: var(--sky-50); border-bottom: 0; }
+.brand { font-family: var(--font-display); font-weight: 800; font-size: 18px; }
+.logo { width: 32px; height: 32px; border-radius: 10px; background: none; }
+.logo svg { display: block; width: 100%; height: 100%; }
+.btn { border-radius: 12px; }
+.btn:hover:not(:disabled) { background: var(--hover); }
+.btn.primary { font-weight: 600; box-shadow: 0 1px 2px rgba(14,34,56,.08), 0 4px 12px rgba(23,105,194,.22); }
+.btn.primary:hover:not(:disabled) { background: var(--accent-ink); }
+.top .btn.ghost:hover:not(:disabled) { background: rgba(255,255,255,.7); }
+.tempo { border-radius: 12px; background: var(--panel); }
+.menu-pop { border-radius: 16px; box-shadow: var(--shadow); }
+.menu-pop button { border-radius: 10px; }
+.menu-pop button:hover { background: var(--hover); }
+
+.toolbar { background: var(--bg); border-bottom: 0; }
+.seg { border-color: transparent; background: var(--sky-50); border-radius: 12px; }
+.seg button { border-right-color: transparent; border-radius: 10px; color: var(--muted); }
+.seg button:hover:not(:disabled) { background: rgba(255,255,255,.7); }
+.seg button.on { background: var(--panel); color: var(--accent-ink); box-shadow: 0 1px 2px rgba(14,34,56,.10), 0 2px 8px rgba(23,105,194,.12); }
+.hint { background: var(--bg); border-bottom: 0; }
+.banner { margin: 8px 12px 0; border-radius: 14px; border-bottom: 0; }
+.banner.good { color: #134D31; } .banner.check { color: #5A3700; } .banner.retake { color: #7F1D16; }
+.banner ul { color: inherit; }
+
+.score-scroll { margin: 0 10px; border-radius: 18px 18px 0 0; box-shadow: var(--shadow); background: #fff; }
+.statusbar { background: var(--bg); border-top: 0; }
+.photo-col { background: var(--bg); border-left: 0; }
+.photo-head { border-bottom: 0; }
+.photo-wrap img { border-radius: 12px; }
+.legend { border-top: 0; }
+.credit { background: var(--bg); border-top: 0; }
+.inspector { border-radius: 18px; box-shadow: var(--shadow); }
+
+.modal { background: rgba(14,34,56,.45); }
+.modal-card { border-radius: 24px; padding: 22px; }
+.modal-card h2, .ptitle, .hero h1, #countIn { font-family: var(--font-display); }
+.modal-card h2 { font-weight: 800; font-size: 21px; }
+.cmp .box, .rv-score, #rvCrop { border-radius: 12px; }
+.toast { background: var(--ink); border-radius: 14px; }
+
+.practice-pop { border-radius: 20px; }
+.ptitle { font-weight: 800; }
+.chip.on { color: var(--accent-ink); }
+.pseg { border-radius: 10px; }
+.review { background: var(--bg); border-bottom: 0; box-shadow: none; }
+.pad { background: var(--bg); border-top: 0; }
+.pad-btn, .page-row, .page-tabs button { border-radius: 10px; }
+
+@media (max-width: 860px) {
+  .photo-col { border-radius: 24px 24px 0 0; background: var(--panel); }
+  .score-scroll { margin: 0 6px; }
+}
