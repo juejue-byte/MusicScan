@@ -779,9 +779,12 @@ function setMode(m) {
   updateToolbar();
   for (const b of $$('[data-mode]')) b.classList.toggle('on', b.dataset.mode === m);
   $('#score').classList.toggle('mode-add', m === 'add');
+  const tap = matchMedia('(pointer: coarse)').matches;
   $('#hint').innerHTML = m === 'add'
-    ? 'Click on the staff to write a <b>' + S.dur + (S.dot ? ' (dotted)' : '') + (S.restMode ? ' rest' : ' note') + '</b> there. Clicking a rest fills it. <b>Shift-click</b> a note to build a chord. Press <b>V</b> or Esc to stop.'
-    : 'Click a note to select it. <b>Drag up/down</b> to change pitch, <b>left/right</b> to swap it. Pick a length, <b>Rest</b>, <b>Tie</b> or <b>Triplet</b> to turn it into that. <b>Bar ▾</b> splits, joins, adds or deletes bars.';
+    ? (tap
+      ? 'Touch the staff and slide to the pitch you want; the <b>' + S.dur + (S.dot ? ' (dotted)' : '') + (S.restMode ? ' rest' : ' note') + '</b> is written when you lift. Tapping a rest fills it. Tap <b>Select</b> to stop.'
+      : 'Click on the staff to write a <b>' + S.dur + (S.dot ? ' (dotted)' : '') + (S.restMode ? ' rest' : ' note') + '</b> there. Clicking a rest fills it. <b>Shift-click</b> a note to build a chord. Press <b>V</b> or Esc to stop.')
+    : (tap ? 'Tap' : 'Click') + ' a note to select it. <b>Drag up/down</b> to change pitch, <b>left/right</b> to swap it. Pick a length, <b>Rest</b>, <b>Tie</b> or <b>Triplet</b> to turn it into that. <b>Bar ▾</b> splits, joins, adds or deletes bars.';
   clearOverlay('ghost');
 }
 
@@ -827,7 +830,7 @@ let pageImg = null;
 function setupPhoto() {
   const has = !!S.job;
   $('#btnPhoto').disabled = !has;
-  $('#photoCol').classList.toggle('closed', !has || window.innerWidth < 860);
+  $('#photoCol').classList.toggle('closed', !has || window.innerWidth < 860 || window.innerHeight < 500);
   if (window.innerWidth < 600 && S.zoom === 1) S.zoom = 0.72;
   if (!has) return;
   pageImg = new Image();

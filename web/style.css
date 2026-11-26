@@ -227,8 +227,9 @@ body.demo .demo-note { display: block; }
 body.demo #optFast { display: none; }
 body.demo label.check:has(#optFast) { display: none; }
 
-/* iPad portrait and wide Split View (700-860 px): room for the full toolbar and header, so wrap instead of scrolling */
-@media (min-width: 700px) and (max-width: 860px) {
+/* iPad portrait and wide Split View (700-860 px): room for the full toolbar and header, so wrap instead of scrolling.
+   Not on landscape phones (also 700-860 px wide), where a wrapped toolbar leaves no room for the score. */
+@media (min-width: 700px) and (max-width: 860px) and (min-height: 501px) {
   .toolbar { flex-wrap: wrap; overflow-x: visible; }
   .btn .pl { display: inline; }
   .tempo { display: inline-flex; }
@@ -239,4 +240,22 @@ body.demo label.check:has(#optFast) { display: none; }
 .bar-pop { position: fixed; right: auto; top: 0; left: 0; min-width: 250px; }
 .bar-pop button { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
 .bar-pop button:disabled { opacity: .4; cursor: default; background: none; }
+.menu-pop button { white-space: nowrap; }
+
+/* touch-only screens (iPad, phone): the 1-6 key badges are noise without a keyboard (iPad keyboards get the
+   ⌘ overlay), and tighter padding lets the whole toolbar fit one row on an 11-inch iPad in landscape */
+@media (pointer: coarse) and (hover: none) {
+  .toolbar kbd, .toolbar .tb-more { display: none; }
+  .toolbar { gap: 6px; }
+  .seg button { padding: 0 6px; }
+}
+
+/* short screens (phones in landscape): every row above the score costs a staff */
+@media (max-height: 500px) {
+  .toolbar { flex-wrap: nowrap; overflow-x: auto; padding-top: 6px; padding-bottom: 6px; }
+  .hint { display: none; }
+  .banner { padding-top: 6px; padding-bottom: 6px; }
+  .banner ul { display: none; }
+  .credit { padding-top: 3px; }
+}
 .btn.icon svg { display: block; }

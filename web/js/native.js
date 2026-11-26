@@ -7,6 +7,9 @@
 const handler = window.webkit?.messageHandlers?.musicscan;
 export const isNative = !!handler;
 if (isNative) document.documentElement.classList.add('native');
+// In the app a pinch should not zoom the whole page (header and toolbar slide off screen); the score has its own
+// zoom. Browsers keep normal page zoom.
+if (isNative) document.querySelector('meta[name=viewport]')?.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover');
 // a music app should be heard with the silent switch on (Safari 16.4+ Audio Session API)
 if (isNative && navigator.audioSession) { try { navigator.audioSession.type = 'playback'; } catch (e) { /* older WebKit */ } }
 
