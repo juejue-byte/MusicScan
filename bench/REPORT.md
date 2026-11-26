@@ -60,7 +60,7 @@ add up), and fixing them takes a click or two. Cut time (2/2) read as 4/4 on one
 ## Is a bad photo caught?
 
 Every one of the 14 *lowq* photos was rated **retake**, and all 84 other pages (clean and the five usable kinds of damage) were
-rated good. On those, MusicScan reads 33% of notes; raw OMR reads 1%.
+rated good. On the bad photos MusicScan still reads 33% of notes (raw OMR: 1%), not enough to be useful.
 
 ## Are wrong bars flagged?
 
