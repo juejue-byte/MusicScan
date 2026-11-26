@@ -1,0 +1,90 @@
+[
+  {
+    "ok": true,
+    "measures": 38,
+    "notes": 391,
+    "validMeasures": 30,
+    "flaggedMeasures": 8,
+    "name": "00_baseline_clean",
+    "image": "/home/antigravity/MusicScan/image.png",
+    "elapsedSec": 0.0,
+    "exitCode": 0
+  },
+  {
+    "ok": true,
+    "measures": 35,
+    "notes": 423,
+    "validMeasures": 22,
+    "flaggedMeasures": 13,
+    "name": "01a_blurred_system2",
+    "image": "/home/antigravity/MusicScan/experiments/01a_blurred_system2.png",
+    "elapsedSec": 60.5,
+    "exitCode": 0
+  },
+  {
+    "ok": true,
+    "measures": 7,
+    "notes": 84,
+    "validMeasures": 7,
+    "flaggedMeasures": 0,
+    "name": "01b_recovery_system2_closeup",
+    "image": "/home/antigravity/MusicScan/experiments/01b_recovery_system2_closeup.png",
+    "elapsedSec": 11.5,
+    "exitCode": 0
+  },
+  {
+    "ok": true,
+    "measures": 38,
+    "notes": 395,
+    "validMeasures": 31,
+    "flaggedMeasures": 7,
+    "name": "02a_perspective_warped",
+    "image": "/home/antigravity/MusicScan/experiments/02a_perspective_warped.png",
+    "elapsedSec": 48.2,
+    "exitCode": 0
+  },
+  {
+    "ok": true,
+    "measures": 38,
+    "notes": 396,
+    "validMeasures": 36,
+    "flaggedMeasures": 2,
+    "name": "02b_recovery_deskewed",
+    "image": "/home/antigravity/MusicScan/experiments/02b_recovery_deskewed.png",
+    "elapsedSec": 50.0,
+    "exitCode": 0
+  },
+  {
+    "ok": true,
+    "measures": 38,
+    "notes": 397,
+    "validMeasures": 33,
+    "flaggedMeasures": 5,
+    "name": "03a_heavy_shadow",
+    "image": "/home/antigravity/MusicScan/experiments/03a_heavy_shadow.png",
+    "elapsedSec": 53.5,
+    "exitCode": 0
+  },
+  {
+    "ok": true,
+    "measures": 38,
+    "notes": 394,
+    "validMeasures": 31,
+    "flaggedMeasures": 7,
+    "name": "03b_recovery_deshadowed",
+    "image": "/home/antigravity/MusicScan/experiments/03b_recovery_deshadowed.png",
+    "elapsedSec": 55.4,
+    "exitCode": 0
+  },
+  {
+    "ok": true,
+    "measures": 35,
+    "notes": 399,
+    "validMeasures": 33,
+    "flaggedMeasures": 2,
+    "name": "04a_lowres_50pct",
+    "image": "/home/antigravity/MusicScan/experiments/04a_lowres_50pct.png",
+    "elapsedSec": 53.8,
+    "exitCode": 0
+  }
+]

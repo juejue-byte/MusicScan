@@ -1,0 +1,9 @@
+homr>=0.7.1
+onnxruntime>=1.18.0
+music21>=9.0.0
+Pillow>=10.0.0
+pillow-heif>=0.18.0
+opencv-python-headless>=4.10.0
+fastapi>=0.115.0
+uvicorn>=0.30.0
+python-multipart>=0.0.9

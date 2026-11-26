@@ -1,0 +1,62 @@
+[
+  {
+    "measures": 38,
+    "notes": 219,
+    "valid": 31,
+    "flagged": 7,
+    "keyFifths": -3,
+    "dataset": "image",
+    "ablation": "A0_raw",
+    "elapsedSec": 0.0
+  },
+  {
+    "measures": 37,
+    "notes": 219,
+    "valid": 31,
+    "flagged": 6,
+    "keyFifths": -3,
+    "dataset": "image",
+    "ablation": "A1_whiten_upscale",
+    "elapsedSec": 50.9
+  },
+  {
+    "measures": 27,
+    "notes": 85,
+    "valid": 14,
+    "flagged": 13,
+    "keyFifths": 0,
+    "dataset": "image_2",
+    "ablation": "A0_raw",
+    "elapsedSec": 0.0
+  },
+  {
+    "measures": 27,
+    "notes": 85,
+    "valid": 14,
+    "flagged": 13,
+    "keyFifths": 0,
+    "dataset": "image_2",
+    "ablation": "A1_whiten_upscale",
+    "elapsedSec": 24.2
+  },
+  {
+    "measures": 11,
+    "notes": 150,
+    "valid": 4,
+    "flagged": 7,
+    "keyFifths": 0,
+    "dataset": "image_3",
+    "ablation": "A0_raw",
+    "elapsedSec": 0.0
+  },
+  {
+    "measures": 10,
+    "notes": 149,
+    "valid": 4,
+    "flagged": 6,
+    "keyFifths": -3,
+    "dataset": "image_3",
+    "ablation": "A1_whiten_upscale",
+    "elapsedSec": 18.7
+  }
+]
