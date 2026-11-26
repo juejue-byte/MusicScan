@@ -31,6 +31,7 @@ function toast(msg, ms = 2600) {
 function show(view) {
   for (const v of ['viewUpload', 'viewProgress', 'viewEditor']) $('#' + v).classList.toggle('hidden', v !== view);
   const editing = view === 'viewEditor';
+  document.body.classList.toggle('editing', editing);
   for (const b of ['#btnPlay', '#btnExport']) $(b).disabled = !editing;
   $('.top-actions').classList.toggle('hidden', !editing);
   if (!editing) $('#docTitle').textContent = '';
@@ -212,7 +213,8 @@ function updateStatus() {
   if (n) {
     const num = barNumber(n.ev.mi);
     const what = n.ev.rest ? `${n.ev.type || ''} rest` : n.ev.chord.map((c) => pitchName(c.pitch)).join(' + ') + ` · ${n.ev.type || ''}${n.ev.dots ? ' dotted' : ''}`;
-    txt = `Bar ${num} · staff ${n.ev.staff} · ${what}.  ↑↓ pitch · Shift+↑↓ octave · 1–6 duration · R rest · Del delete`;
+    const keys = S.touch ? 'Drag up/down for pitch, sideways to swap' : '↑↓ pitch · Shift+↑↓ octave · 1–6 duration · R rest · Del delete';
+    txt = `Bar ${num} · staff ${n.ev.staff} · ${what}.  ${keys}`;
   } else if (S.measures.size) {
     txt = `${S.measures.size} bar${S.measures.size > 1 ? 's' : ''} selected. Rescan re-reads them from the photo; Play starts here.`;
   } else txt = `${S.score.nMeasures} bars · ${S.score.parts.length} part${S.score.parts.length > 1 ? 's' : ''}`;
@@ -945,6 +947,11 @@ function wire() {
   const drop = $('#drop');
   $('#fileInput').onchange = (e) => startUpload(e.target.files[0]);
   $('#cameraInput').onchange = (e) => startUpload(e.target.files[0]);
+  // phones and tablets can't drop files: say what a tap does instead
+  if (matchMedia('(pointer: coarse)').matches) {
+    $('.drop-main').textContent = 'Choose a photo or PDF';
+    $('.drop-sub').textContent = 'JPG, PNG, HEIC, PDF · MusicXML to edit';
+  }
   if (native.isNative) {
     // in the iOS app: Apple's document camera finds the page edges and flattens the page before upload
     const cam = $('#cameraInput').closest('label');
