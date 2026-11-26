@@ -65,8 +65,10 @@ the simulator window first to put it in its Photos library.
    **Signing & Capabilities**. Choose your **Team** (sign in with your Apple ID under *Add an Account…*; a free
    account works). If Xcode says the bundle identifier is taken, change `com.example.musicscan` to something of
    your own, such as `com.yourname.musicscan`.
-3. Optional: set your Mac's address as the default under the target's **Build Settings**, search
-   `MUSICSCAN_SERVER_URL` (it starts as `http://192.168.1.20:8000`). You can also just type it in the app.
+3. Optional: build in a default server. From the repo root run
+   `scripts/use_server.sh <address> [key]` (for example your Mac's `http://192.168.1.20:8000`, or the hosted
+   server and its key). It writes `ios/Secrets.xcconfig`, which is gitignored and read by `ios/Config.xcconfig`.
+   You can also just type the address in the app.
 4. Pick your iPad in the toolbar and press **⌘R**.
 5. The first launch on the phone: if it says the developer is not trusted, go to
    **Settings > General > VPN & Device Management**, tap your Apple ID and **Trust**. Open the app again and tap
@@ -91,7 +93,7 @@ ios/
     MusicScanApp.swift        app entry; audio session so playback ignores the silent switch
     ContentView.swift         web view + "can't reach the server" screen
     EditorWebView.swift       WKWebView and the bridge: scan, share, haptic, settings
-    ServerConfig.swift        server address (default from Info.plist / MUSICSCAN_SERVER_URL)
+    ServerConfig.swift        server address (default from Info.plist, filled from Config.xcconfig + Secrets.xcconfig)
     ServerSettingsView.swift  address sheet with a connection test
     Info.plist                camera and local-network permission texts, http allowed for the dev server
     Assets.xcassets           icon, launch color

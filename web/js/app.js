@@ -11,7 +11,7 @@ import { render, pitchAtY, noteYs, fitZoom } from './render.js';
 import * as audio from './audio.js';
 import * as practice from './practice.js';
 import * as native from './native.js';
-import { api, jobFile, isDemo } from './demo.js';
+import { api, jobFile, isDemo, hostSave, hostSaves } from './demo.js';
 import * as review from './review.js';
 import { createNoteInput } from './input.js';
 import { createPad } from './pad.js';
@@ -65,6 +65,7 @@ function show(view) {
 function download(name, data, type) {
   const blob = data instanceof Blob ? data : new Blob([data], { type });
   if (native.isNative) { native.share(name, blob).catch((e) => toast('Could not share the file: ' + e.message)); return; }
+  if (hostSaves()) { hostSave(name, blob).catch((e) => { if (e?.code !== 'declined') toast('Could not save the file: ' + (e?.message || e)); }); return; }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;

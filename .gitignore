@@ -11,3 +11,7 @@ node_modules/
 .DS_Store
 .venv.old.*/
 bench/sheetly_out/
+
+# Local secrets (scripts/use_server.sh writes these); never commit them
+.env
+ios/Secrets.xcconfig

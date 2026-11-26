@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT))
 from musicscan import imageio, omr, preprocess  # noqa: E402
 from musicscan import sanitize as san  # noqa: E402
 from musicscan.quality import assess  # noqa: E402
+from server import auth, usage  # noqa: E402
 
 # Jobs (photo, cleaned page, reading) live here. A hosted server points it at a persistent volume.
 WORK = Path(os.environ.get("MUSICSCAN_WORK", ROOT / "work"))
@@ -29,31 +30,42 @@ WORK.mkdir(parents=True, exist_ok=True)
 JOBS: dict[str, dict] = {}
 app = FastAPI(title="MusicScan")
 
-# Optional shared access key for a server on the public internet (deploy/modal_app.py sets it), so strangers can't
-# use the GPU. Open the app once as  https://host/?key=KEY  and a cookie keeps it; API clients can send the
-# X-MusicScan-Key header instead. Unset (the default on your own computer) means no key is needed.
+# Who may use the API on a server on the public internet (deploy/modal_app.py):
+#  - signed-in users: a Supabase access token (server/auth.py, on when SUPABASE_URL is set), the launch setup;
+#  - a shared access key (MUSICSCAN_ACCESS_KEY) while testing: open the app once as  https://host/?key=KEY  and a
+#    cookie keeps it, or send the X-MusicScan-Key header.
+# Neither set (the default on your own computer) means the API is open.
 ACCESS_KEY = os.environ.get("MUSICSCAN_ACCESS_KEY", "")
 OPEN_API = ("/api/health", "/api/samples")
 KEY_COOKIE = "musicscan_key"
 
 
+def _given_key(request: Request) -> str:
+    return (request.query_params.get("key") or request.headers.get("x-musicscan-key")
+            or request.cookies.get(KEY_COOKIE) or "")
+
+
 def _key_ok(request: Request) -> bool:
-    if not ACCESS_KEY:
+    return bool(ACCESS_KEY) and hmac.compare_digest(_given_key(request).encode(), ACCESS_KEY.encode())
+
+
+def _authorized(request: Request) -> bool:
+    request.state.user = auth.user_from(request)
+    if request.state.user or _key_ok(request):
         return True
-    given = (request.query_params.get("key") or request.headers.get("x-musicscan-key")
-             or request.cookies.get(KEY_COOKIE) or "")
-    return hmac.compare_digest(given.encode(), ACCESS_KEY.encode())
+    return not ACCESS_KEY and not auth.enabled()
 
 
 @app.middleware("http")
-async def access_key(request: Request, call_next):
-    ok = _key_ok(request)
+async def access_check(request: Request, call_next):
+    ok = _authorized(request)
     path = request.url.path
     if not ok and path.startswith("/api/") and path not in OPEN_API:
-        return JSONResponse({"detail": "This MusicScan server needs its access key. Open it once with ?key=… "
-                                       "at the end of the address."}, status_code=401)
+        msg = ("Please sign in again." if auth.enabled() and not ACCESS_KEY else
+               "This MusicScan server needs its access key. Open it once with ?key=… at the end of the address.")
+        return JSONResponse({"detail": msg}, status_code=401)
     resp = await call_next(request)
-    if ACCESS_KEY and ok and request.cookies.get(KEY_COOKIE) != ACCESS_KEY:
+    if _key_ok(request) and request.cookies.get(KEY_COOKIE) != ACCESS_KEY:
         https = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
         resp.set_cookie(KEY_COOKIE, ACCESS_KEY, max_age=400 * 86400, httponly=True, secure=https, samesite="lax")
     return resp
@@ -62,7 +74,9 @@ async def access_key(request: Request, call_next):
 @app.get("/api/health")
 def health(request: Request):
     """Liveness plus whether this request carries the access key (the iOS app's "Test connection" uses it)."""
-    return {"ok": True, "app": "musicscan", "authorized": _key_ok(request), "key_required": bool(ACCESS_KEY),
+    user = request.state.user
+    return {"ok": True, "app": "musicscan", "authorized": _authorized(request), "key_required": bool(ACCESS_KEY),
+            "sign_in": auth.enabled(), "user": user["id"] if user else None,
             "device": omr.pick_device() if omr._DEV else None}
 
 
@@ -161,7 +175,7 @@ def _pdf_pages(data: bytes, name: str) -> int:
 
 
 @app.post("/api/jobs")
-async def create_job(file: UploadFile = File(...), detector: str = Form("28m"), flatten: str = Form("auto"),
+async def create_job(request: Request, file: UploadFile = File(...), detector: str = Form("28m"), flatten: str = Form("auto"),
                      strip_pen: bool = Form(True), page: int = Form(0), context: str | None = Form(None)):
     """Read one page. A PDF reads page `page` (0-based); the reply says how many pages it has.
     context (JSON, optional): the layout, key, time and clefs in force at the end of the score this page continues
@@ -179,22 +193,45 @@ async def create_job(file: UploadFile = File(...), detector: str = Form("28m"), 
         except ValueError:
             ctx = None
     jid = uuid.uuid4().hex[:12]
+    user = request.state.user
+    try:
+        allowance = usage.claim(user, jid)
+    except Exception:
+        traceback.print_exc()
+        raise HTTPException(503, "Could not check your pages right now. Please try again in a moment.")
+    if allowance["access"] == "cap":
+        raise HTTPException(402, {"code": "page_cap", "renews_at": allowance["renews_at"],
+                                  "message": f"You've read all {allowance['page_limit']} pages for this month."})
     (WORK / jid).mkdir()
     JOBS[jid] = {"id": jid, "status": "queued", "name": file.filename, "created": time.time(),
-                 "page": page if n_pdf else 0, "pages": n_pdf or 1}
+                 "page": page if n_pdf else 0, "pages": n_pdf or 1, "user": user["id"] if user else None,
+                 "allowance": allowance}
     opts = {"detector": detector if detector in ("28m", "2m") else "28m",
             "flatten": None if flatten == "auto" else flatten == "on", "strip_pen": strip_pen,
             "page": page if n_pdf else 0, "pdf": bool(n_pdf), "context": ctx}
     threading.Thread(target=_run, args=(jid, data, file.filename or "", opts), daemon=True).start()
-    return {"id": jid, "pages": n_pdf or 1, "page": page if n_pdf else 0}
+    return {"id": jid, "pages": n_pdf or 1, "page": page if n_pdf else 0, "allowance": allowance}
+
+
+@app.post("/api/jobs/{jid}/unlock")
+def unlock_job(jid: str, request: Request):
+    """After a purchase: the preview of this page becomes a full Pro page (counts toward the month's pages)."""
+    j = _job(jid, request)
+    allowance = usage.unlock(request.state.user, j.get("reread_of") or jid)
+    if allowance["access"] == "cap":
+        raise HTTPException(402, {"code": "page_cap", "renews_at": allowance["renews_at"],
+                                  "message": f"You've read all {allowance['page_limit']} pages for this month."})
+    j["allowance"] = allowance
+    _save_job(j)
+    return allowance
 
 
 @app.post("/api/jobs/{jid}/reread")
-async def reread(jid: str, quad: str = Form(...), detector: str = Form("28m"), context: str | None = Form(None)):
+async def reread(jid: str, request: Request, quad: str = Form(...), detector: str = Form("28m"), context: str | None = Form(None)):
     """Read a page again from its stored photo, with page corners the user placed (the automatic page finder missed
     the page, or cut a row off). quad: JSON [[x, y] x4] in original.jpg pixels, any order; an empty list reads the
     whole photo without flattening. Returns a new job, like POST /api/jobs."""
-    old = _job(jid)
+    old = _job(jid, request)
     src = WORK / jid / "original.jpg"
     if not src.exists():
         raise HTTPException(404, "The photo of this page is no longer on the server")
@@ -212,32 +249,38 @@ async def reread(jid: str, quad: str = Form(...), detector: str = Form("28m"), c
             ctx = None
     nid = uuid.uuid4().hex[:12]
     (WORK / nid).mkdir()
-    JOBS[nid] = {"id": nid, "status": "queued", "name": old.get("name"), "created": time.time(), "page": 0, "pages": 1}
+    # the same page read again: same owner and allowance, not another page counted
+    JOBS[nid] = {"id": nid, "status": "queued", "name": old.get("name"), "created": time.time(), "page": 0, "pages": 1,
+                 "user": old.get("user"), "allowance": old.get("allowance"), "reread_of": old.get("reread_of") or jid}
     opts = {"detector": detector if detector in ("28m", "2m") else "28m", "flatten": None, "strip_pen": True,
             "page": 0, "pdf": False, "context": ctx, "lock_page": bool(q),
             "quad": preprocess.order_quad(q) if q else None}
     threading.Thread(target=_run, args=(nid, src.read_bytes(), "original.jpg", opts), daemon=True).start()
-    return {"id": nid, "pages": 1, "page": 0}
+    return {"id": nid, "pages": 1, "page": 0, "allowance": old.get("allowance")}
 
 
-def _job(jid):
+def _job(jid, request: Request | None = None):
     j = JOBS.get(jid)
     if j is None:
         p = WORK / jid / "job.json"
         if not p.exists() or "/" in jid or ".." in jid:
             raise HTTPException(404, "No such job")
         j = JOBS[jid] = json.loads(p.read_text())
+    if request is not None and j.get("user"):  # a signed-in user's scans are visible to that user only
+        user = getattr(request.state, "user", None)
+        if not user or user["id"] != j["user"]:
+            raise HTTPException(404, "No such job")
     return j
 
 
 @app.get("/api/jobs/{jid}")
-def get_job(jid: str):
-    return _job(jid)
+def get_job(jid: str, request: Request):
+    return _job(jid, request)
 
 
 @app.get("/api/jobs/{jid}/{name}")
-def job_file(jid: str, name: str):
-    _job(jid)
+def job_file(jid: str, name: str, request: Request):
+    _job(jid, request)
     if name not in ("page.png", "original.jpg"):
         raise HTTPException(404)
     return FileResponse(WORK / jid / name)
@@ -310,13 +353,13 @@ def _variant(img: Image.Image, way: str):
 
 
 @app.post("/api/jobs/{jid}/rescan")
-async def rescan(jid: str, measures: str = Form(...), attempt: int = Form(0), file: UploadFile | None = File(None),
+async def rescan(jid: str, request: Request, measures: str = Form(...), attempt: int = Form(0), file: UploadFile | None = File(None),
                  context: str | None = Form(None)):
     """Re-read the rows holding the selected measures. With a file: read that close-up instead.
     context (JSON, optional): the parts/staves, key, time and clefs in force at the first target bar in the score
     being edited (the editor sends it so the user's own key/time fixes carry over). Without it, it is taken from
     the original reading."""
-    j = _job(jid)
+    j = _job(jid, request)
     if j.get("status") != "done":
         raise HTTPException(409, "Job not finished")
     sel = sorted({int(x) for x in measures.split(",") if x.strip() != ""})

@@ -53,10 +53,20 @@ In the app in `ios/` (build it as in `ios/README.md`):
 
 - **In the app:** tap **Server: …** on the start screen (or **Change server** on the error screen), paste the
   address with `?key=…`, tap **Test connection**, then **Save**. It is remembered per device.
-- **As the built-in default:** Xcode > MusicScan target > **Build Settings** > search `MUSICSCAN_SERVER_URL` and set
-  it (Debug and Release) to the same address. That value lands in `Info.plist` as `MusicScanServerURL` and is read
-  by `ios/MusicScan/ServerConfig.swift` (`defaultURL`). The simulator always uses `http://localhost:8000`; change it
-  in the app if you want the simulator on the hosted server too.
+- **As the built-in default:** from the repo root run
+
+  ```bash
+  scripts/use_server.sh https://YOURNAME--musicscan.us-east.modal.run YOURKEY
+  ```
+
+  It saves the address and key in `.env` and `ios/Secrets.xcconfig`, both gitignored, so the key never reaches
+  GitHub. `ios/Config.xcconfig` includes `Secrets.xcconfig`, `Info.plist` passes the values on as
+  `MusicScanServerURL` and `MusicScanAccessKey`, and `ios/MusicScan/ServerConfig.swift` (`defaultURL`) opens that
+  server with the key, also in the simulator. In Xcode, Clean Build Folder (⇧⌘K) and run. An app already on the
+  phone keeps the address it saved, so paste it once in **Server: …** or reinstall. The key is compiled into
+  these builds: fine for your own devices and TestFlight testers, not for the App Store (sign-in replaces it).
+- **Keep the key** in your password manager too. `.env` holds a copy, but Modal does not show a secret's value
+  again; if you lose it, make a new one (see below).
 
 Because it is `https`, nothing else is needed: no Wi-Fi pairing, no local-network prompt.
 
@@ -91,7 +101,8 @@ removes them all.
 
 - **One container.** Jobs are tracked in that container's memory, so `max_containers=1`. Fine for testing and a
   small TestFlight group (a page takes a few seconds of GPU); a busy launch needs the queue described below.
-- **One shared key**, not user accounts. Anyone with the key can read pages. Rotate it if it leaks.
+- **One shared key**, not user accounts, until sign-in is switched on. Anyone with the key can read pages.
+  Rotate it if it leaks. Sign-in: set `SUPABASE_URL` (server/auth.py), see "Sign-in" below.
 - **No paywall enforcement on the server yet.** The paywall in `web/js/paywall.js` is UI only.
 
 ## Before launch
@@ -99,3 +110,35 @@ removes them all.
 See the launch plan (linked from the project) for the full list. In short: Sign in with Apple + per-user page
 counts and StoreKit entitlements checked on the server, previews cut to the first half on the server, jobs in shared
 storage (so `max_containers` can go up), photo retention and a Privacy Policy, and the web editor bundled into the app.
+
+## Sign-in and page allowance (Supabase)
+
+Supabase project **musicscan** (`https://fliegieshsoywgrjyltw.supabase.co`, free plan, us-east-1) holds accounts and
+page counts. Its schema is `supabase/migrations/` (already applied): `profiles`, `entitlements`, `page_usage`, and the
+functions `claim_page` / `unlock_page` / `set_entitlement`, callable only with the server's secret key.
+
+What the server does when it is switched on:
+
+- `server/auth.py`: every API call needs a Supabase access token (`Authorization: Bearer …` or the
+  `musicscan_session` cookie), checked against the project's signing keys. The shared key keeps working beside it.
+- `server/usage.py`: each new page by a signed-in user asks `claim_page`: `free` (first page), `full` (Pro, under 30
+  this billing period), `preview` (half page), or `cap` (HTTP 402). `POST /api/jobs/{id}/unlock` turns a preview
+  into a Pro page after a purchase. Jobs are visible only to the user who made them.
+
+Switch it on (copy the **secret** key from Supabase > Project Settings > API Keys; it never goes in the app or git):
+
+```bash
+. ./.env   # your saved test key; --force replaces the whole secret, so it is passed again
+modal secret create musicscan --force \
+  MUSICSCAN_ACCESS_KEY="$MUSICSCAN_ACCESS_KEY" \
+  SUPABASE_URL=https://fliegieshsoywgrjyltw.supabase.co \
+  SUPABASE_SECRET_KEY=sb_secret_...
+modal deploy deploy/modal_app.py
+```
+
+Providers to turn on in Supabase (Authentication > Sign In / Providers): **Anonymous** (first launch, no screen),
+**Apple** (required by App Review as soon as Google is offered), **Google**, and **Email** (magic link).
+
+Still to build: the app side (supabase-swift, anonymous sign-in at launch, the token as the `musicscan_session`
+cookie in the web view, the sign-in sheet), cutting previews to the top half on the server, and the RevenueCat
+webhook that calls `set_entitlement`.

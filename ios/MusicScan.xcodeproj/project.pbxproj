@@ -24,6 +24,7 @@
 		035C7D144CB3CB5FA3F1F862 /* ServerSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSettingsView.swift; sourceTree = "<group>"; };
 		32BB636196F91ED59D7A4919 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		707A1B8AA6F495C9BF6658C2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		C0F16A2E5B7D4E8A9C21D7E4 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -41,6 +42,7 @@
 			isa = PBXGroup;
 			children = (
 				DB0F6F37EBEB6EA094891243 /* MusicScan */,
+				C0F16A2E5B7D4E8A9C21D7E4 /* Config.xcconfig */,
 				86024CAD1E83101D97359D73 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -195,6 +197,7 @@
 		};
 		FA7C752E798F561D7D156D98 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C0F16A2E5B7D4E8A9C21D7E4 /* Config.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -208,7 +211,6 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				MUSICSCAN_SERVER_URL = "http://192.168.1.20:8000";
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.musicscan;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -219,6 +221,7 @@
 		};
 		22F75101C717335ACF4089A0 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C0F16A2E5B7D4E8A9C21D7E4 /* Config.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -232,7 +235,6 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				MUSICSCAN_SERVER_URL = "http://192.168.1.20:8000";
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.musicscan;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

@@ -1,0 +1,10 @@
+// Build settings shared by every build. Your own server address and key go in Secrets.xcconfig (gitignored):
+// run  scripts/use_server.sh <address> <key>  from the repo root, or copy Secrets.xcconfig.example by hand.
+// In .xcconfig files "//" starts a comment, so an address is written  https:/$()/host  (that is how use_server.sh
+// writes it); Xcode turns it back into https://host.
+MUSICSCAN_SERVER_URL = http:/$()/192.168.1.20:8000
+MUSICSCAN_ACCESS_KEY =
+// Supabase project "musicscan" (sign-in). The publishable key is meant to ship in apps; the secret key never does.
+SUPABASE_URL = https:/$()/fliegieshsoywgrjyltw.supabase.co
+SUPABASE_PUBLISHABLE_KEY = sb_publishable_NSgNUem98tSERXluFmypuQ_kQr81wXB
+#include? "Secrets.xcconfig"
