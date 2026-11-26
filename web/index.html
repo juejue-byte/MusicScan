@@ -20,6 +20,7 @@
     <div class="sep"></div>
     <button class="btn primary play" id="btnPlay" title="Play (Space)" disabled><span class="pi">▶</span><span class="pl">Play</span></button>
     <button class="btn icon loop" id="btnLoop" title="Loop the selected bars (L)" aria-pressed="false" disabled>⟲</button>
+    <button class="btn icon practice" id="btnPractice" title="Practice: tempo, count-in, click, parts" aria-label="Practice settings" aria-expanded="false" disabled><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button>
     <label class="tempo" title="Tempo (beats per minute)"><span>♩=</span><input id="tempo" type="number" min="30" max="240" value="90"></label>
     <div class="menu">
       <button class="btn" id="btnExport" disabled>Export ▾</button>
@@ -144,6 +145,7 @@
 </div>
 <div class="modal hidden" id="modal"><div class="modal-card" id="modalCard"></div></div>
 <div class="toast hidden" id="toast"></div>
+<div class="practice-pop" id="practicePanel" role="dialog" aria-label="Practice"></div>
 <footer class="credit">OMR by <a href="https://github.com/kobimusic/copisteria" target="_blank" rel="noopener">copisteria</a> © KobiMusic (Apache-2.0)<span class="credit-more"> · engraving by VexFlow</span></footer>
 
 <script src="vendor/vexflow.js"></script>

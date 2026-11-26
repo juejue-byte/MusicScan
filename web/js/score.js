@@ -708,7 +708,7 @@ export class Score {
             const time = starts[step] + e.onset / e.div, dur = e.dur / e.div;
             const tie = [...c.el.querySelectorAll(':scope > tie')].map((x) => x.getAttribute('type'));
             if (tie.includes('stop') && open[midi]) { open[midi].dur = time + dur - open[midi].time; if (!tie.includes('start')) delete open[midi]; continue; }
-            const ev = { time, dur, midi, part: pi, measure: mi, step, el: c.el };
+            const ev = { time, dur, midi, part: pi, staff: e.staff, voice: e.voice, measure: mi, step, el: c.el };
             out.push(ev);
             if (tie.includes('start')) open[midi] = ev;
           }
@@ -716,12 +716,14 @@ export class Score {
       });
     }
     out.sort((a, b) => a.time - b.time);
-    return { events: out, starts, order };
+    // time signature of each played step (first part that has one), for the metronome and count-in
+    const meters = order.map((mi) => { const a = this.attrs(0, mi) || {}; return { beats: a.beats || 4, beatType: a.beatType || 4 }; });
+    return { events: out, starts, order, meters };
   }
 }
 
-// Minimal Standard MIDI File writer (format 1, one track per part).
-export function toMidi(score, bpm) {
+// Minimal Standard MIDI File writer (format 1, one track per part). programs: optional GM program per part.
+export function toMidi(score, bpm, programs = []) {
   const { events } = score.playEvents();
   const TPQ = 480;
   const vlq = (n) => { const b = [n & 0x7f]; while ((n >>= 7)) b.unshift((n & 0x7f) | 0x80); return b; };
@@ -742,6 +744,7 @@ export function toMidi(score, bpm) {
     const evs = [];
     const name = [...new TextEncoder().encode(p.name || `Part ${pi + 1}`)];
     evs.push({ t: 0, order: 0, data: [0xff, 0x03, ...vlq(name.length), ...name] });
+    if (programs[pi] && ch !== 9) evs.push({ t: 0, order: 0, data: [0xc0 | ch, programs[pi] & 127] });
     for (const e of events.filter((x) => x.part === pi)) {
       const t0 = Math.round(e.time * TPQ), t1 = Math.round((e.time + e.dur) * TPQ);
       evs.push({ t: t0, order: 2, data: [0x90 | ch, e.midi, 80] });

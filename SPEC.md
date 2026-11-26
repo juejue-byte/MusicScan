@@ -16,7 +16,7 @@ the staff or rescan them, plays them back and exports MusicXML / MIDI.
 | Cleanup | page lock (largest quadrilateral → perspective warp), colored-pen removal (HSV, relative to paper), shadow flattening (background division), all automatic | `musicscan/preprocess.py` |
 | Confidence | per symbol: min probability over class / staff position / dots / accidental heads; per bar: count below 0.85; per photo: image checks + share of uncertain symbols | `musicscan/omr.py`, `quality.py` |
 | Editor | VexFlow 4 drawing a live MusicXML DOM; edits patch `<note>` elements | `web/js/` |
-| Playback | Web Audio, smplr sampled piano (FluidR3 GM), synth fallback | `web/js/audio.js` |
+| Playback | Web Audio look-ahead scheduler, bundled FluidR3 GM samples (12 instruments), synth fallback; practice panel: tempo, speed-up per loop, count-in, click, mute/solo/volume per hand or voice | `web/js/audio.js`, `web/js/practice.js` |
 | Export | MusicXML from the DOM, MIDI written in the browser | no server round trip |
 | Not used | homr, Audiveris (AGPL), OSMD (not needed) | |
 

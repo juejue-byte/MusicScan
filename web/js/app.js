@@ -3,6 +3,7 @@ import { Score, pitchName, midiOf, clefTop, toMidi } from './score.js';
 import './edits.js';
 import { render, pitchAtY, noteYs } from './render.js';
 import * as audio from './audio.js';
+import * as practice from './practice.js';
 import * as native from './native.js';
 import { api, jobFile, isDemo } from './demo.js';
 
@@ -33,7 +34,7 @@ function show(view) {
   for (const v of ['viewUpload', 'viewProgress', 'viewEditor']) $('#' + v).classList.toggle('hidden', v !== view);
   const editing = view === 'viewEditor';
   document.body.classList.toggle('editing', editing);
-  for (const b of ['#btnPlay', '#btnLoop', '#btnExport']) $(b).disabled = !editing;
+  for (const b of ['#btnPlay', '#btnLoop', '#btnPractice', '#btnExport']) $(b).disabled = !editing;
   $('.top-actions').classList.toggle('hidden', !editing);
   if (!editing) $('#docTitle').textContent = '';
   updateUndoButtons();
@@ -133,6 +134,7 @@ function openScore(xml, meta, quality, job) {
   setupPhoto();
   setMode('select');
   $('#tempo').value = Math.round(S.score.tempo());
+  practice.setScore(S.score);
   redraw();
   saveLocal();
   if (job) setTimeout(() => { const firstBad = S.meta.findIndex((m) => m.level === 'bad'); if (firstBad >= 0) focusBar(firstBad, false); }, 50);
@@ -821,7 +823,7 @@ function onKey(e) {
     case 'Escape': if (S.mode === 'add') setMode('select'); else { S.sel = null; S.measures.clear(); hideInspector(); redraw(); } break;
     case ' ': e.preventDefault(); togglePlay(); break;
     case 'l': case 'L': toggleLoop(); break;
-    default: break;
+    default: practice.key(e); break;
   }
 }
 
@@ -1064,16 +1066,16 @@ function togglePlay() {
   // Loop on: repeat the selected bars (one bar selected loops that bar), or the whole piece with nothing selected
   const loop = !!S.loop;
   const to = loop && S.measures.size ? Math.max(...S.measures) : null;
-  const bpm = Math.max(30, Math.min(240, +$('#tempo').value || 90));
   $('#btnPlay').querySelector('.pi').textContent = '■';
   $('#btnPlay').querySelector('.pl').textContent = 'Stop';
   const pe = S.score.playEvents();
+  for (const e of pe.events) e.track = practice.trackOf(e);
   // where each sounding note sits on screen
   const pos = new Map();
   for (const n of S.layout.notes) if (!n.ghost && !n.ev.rest) for (const m of noteYs(n)) pos.set(m.el, { x: noteX(n), y: m.y });
   let lastKey = '';
   audio.play(pe, {
-    bpm, fromMeasure: from, toMeasure: to, loop,
+    ...practice.playOptions(loop), fromMeasure: from, toMeasure: to, loop,
     onMeasure: (m) => drawCursor(m),
     onTime: (q) => {
       const on = pe.events.filter((e) => e.time <= q && q < e.time + Math.max(e.dur, 0.05));
@@ -1101,6 +1103,7 @@ function toggleLoop() {
 }
 function stopPlay() {
   audio.stop();
+  practice.stopped();
   clearOverlay('cursor');
   clearOverlay('sounding');
   $('#btnPlay').querySelector('.pi').textContent = '▶';
@@ -1119,7 +1122,7 @@ function exportAs(kind) {
   $('#exportMenu').classList.remove('open');
   if (!S.score) return;
   if (kind === 'xml') download(baseName() + '.musicxml', S.score.toXML(), 'application/vnd.recordare.musicxml+xml');
-  if (kind === 'mid') download(baseName() + '.mid', new Blob([toMidi(S.score, +$('#tempo').value || 90)], { type: 'audio/midi' }));
+  if (kind === 'mid') download(baseName() + '.mid', new Blob([toMidi(S.score, +$('#tempo').value || 90, practice.programs())], { type: 'audio/midi' }));
 }
 
 function noteIcon(type) {
@@ -1207,6 +1210,10 @@ function wire() {
   $('#btnRedo').onclick = redo;
   $('#btnPlay').onclick = togglePlay;
   $('#btnLoop').onclick = toggleLoop;
+  $('#btnPractice').onclick = (e) => { e.stopPropagation(); practice.toggle(); };
+  practice.init({ tempoField: (b) => { $('#tempo').value = b; }, toast: (m) => toast(m, 1400) });
+  $('#tempo').addEventListener('input', () => { const b = +$('#tempo').value; if (b >= 30 && b <= 240) practice.setBpm(b, true); });
+  $('#tempo').addEventListener('change', () => practice.setBpm(+$('#tempo').value || 90));
   $('#btnNew').onclick = () => { stopPlay(); show('viewUpload'); loadResume(); };
   // iPad app: ⌘ shortcuts from a hardware keyboard (listed when you hold ⌘) and Apple Pencil double-tap
   native.onCommand((cmd) => {
@@ -1274,4 +1281,4 @@ wire();
 loadSamples();
 show('viewUpload');
 // for automated tests
-window.__ms = { S, openScore: (xml, meta) => { S.name = 'test.musicxml'; openScore(xml, meta || [], null, null); }, redraw };
+window.__ms = { S, audio, practice, openScore: (xml, meta) => { S.name = 'test.musicxml'; openScore(xml, meta || [], null, null); }, redraw };
