@@ -122,6 +122,18 @@ export function addArticulations(VF, note, e) {
   }
 }
 
+// ornaments the reader finds (trills, mordents, turns) are drawn above the note
+const ORN = { 'trill-mark': 'tr', mordent: 'mordent', 'inverted-mordent': 'mordent_inverted', turn: 'turn', 'inverted-turn': 'turn_inverted' };
+export function addOrnaments(VF, note, e) {
+  const o = e.el.querySelector(':scope > notations > ornaments');
+  if (!o) return;
+  for (const c of o.children) {
+    const t = ORN[c.localName];
+    if (!t) continue;
+    try { note.addModifier(new VF.Ornament(t), 0); } catch (err) { /* unknown glyph */ }
+  }
+}
+
 export function drawSlurs(VF, ctx, score, layout) {
   const byEl = new Map();
   for (const n of layout.notes) if (!n.ghost) byEl.set(n.ev.el, n);

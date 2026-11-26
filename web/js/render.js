@@ -2,7 +2,7 @@
 import { Score, STEPS, keyAlter, clefKey, clefTop, midiOf } from './score.js';
 import './edits.js';
 import { drawMarks } from './markup.js';
-import { addArticulations, drawSlurs, graceMap, addGraces } from './notations.js';
+import { addArticulations, addOrnaments, drawSlurs, graceMap, addGraces } from './notations.js';
 
 const VF = window.Vex.Flow;
 const VF_CLEF = { G2: 'treble', F4: 'bass', C3: 'alto', C4: 'tenor', C1: 'soprano', F3: 'baritone-f', C2: 'mezzo-soprano', G1: 'french' };
@@ -247,7 +247,7 @@ export function render(score, el, opts = {}) {
                 note.addModifier(new VF.Articulation(below ? 'a@u' : 'a@a').setPosition(below ? VF.Modifier.Position.BELOW : VF.Modifier.Position.ABOVE), 0);
               } catch (err) { /* ignore */ }
             }
-            if (!e.rest) addArticulations(VF, note, e);
+            if (!e.rest) { addArticulations(VF, note, e); addOrnaments(VF, note, e); }
             if (!e.rest && graces.has(e.el)) addGraces(VF, note, graces.get(e.el), { clef: eclef, fifths: v.a.fifths, keyAlter, vfClef });
             const isSel = selNote && (selNote === e.el || e.chord.some((c) => c.el === selNote));
             if (isSel) note.setStyle({ fillStyle: '#1769C2', strokeStyle: '#1769C2' });
