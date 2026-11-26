@@ -2149,7 +2149,7 @@ const NI = createNoteInput({
   S, act, redraw, toast, selected, stepSel, scrollToBar, noteX, barNumber, metaInsert,
   preview: (midis) => midis.forEach((m, i) => setTimeout(() => audio.preview(m), i * 25)),
 });
-var PAD = createPad(NI, { S, setDur });
+var PAD = createPad(NI, { S, setDur, makeRest, stepSel, del });
 installZoom({
   S, redraw,
   // a second finger turns a note drag (or a note being placed) into a pinch: put back anything the drag changed

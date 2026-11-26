@@ -354,6 +354,19 @@ export function createNoteInput(ctx) {
     ctx.stepSel(1, { quiet: true });
   }
 
+  // the iPad piano outside note input: the selected note takes the key's exact pitch, then the next note is selected
+  function setSelectedPitch(p) {
+    const s = ctx.selected();
+    if (!s) { ctx.toast('Tap a note, then a key to give it that pitch'); return; }
+    const fifths = score().attrs(s.ev.pi, s.ev.mi).fifths;
+    const ok = s.ev.rest
+      ? ctx.act(() => { score().restToNote(s.ev, p); })
+      : ctx.act(() => score().setPitch(s.member.el, p, (p.alter || 0) !== keyAlter(fifths, p.step)));
+    if (!ok) return;
+    ctx.preview([midiOf(p)]);
+    ctx.stepSel(1, { quiet: true });
+  }
+
   function repeat() {
     if (S.mode !== 'add') {
       const s = ctx.selected();
@@ -519,13 +532,17 @@ export function createNoteInput(ctx) {
     }
     write([p]);
   }
+  function refPitchAt(ev) { const keep = S.caret; caretAt(ev); const r = refPitch(); S.caret = keep; return r; }
   function context() {
     if (!S.score) return null;
+    const s = S.mode !== 'add' ? ctx.selected() : null;
+    if (s) return { ref: s.ev.rest ? refPitchAt(s.ev) : s.member.pitch, fifths: score().attrs(s.ev.pi, s.ev.mi).fifths, staff: `${s.ev.pi}/${s.ev.staff}` };
+    if (S.mode !== 'add' && !S.caret) return { ref: { step: 'B', octave: 4, alter: 0 }, fifths: score().attrs(0, 0).fifths, staff: '0/1' };
     ensureCaret();
     return { ref: refPitch(), fifths: fifthsHere(), staff: `${S.caret.pi}/${S.caret.staff}` };
   }
 
-  return { moveToStaff, setVoice, writePitch, context, letter, repeat, tieOn, write, moveCaret, changeStaff, backspace, pitchKey, drawCaret, status, caretAt, caretAfter, startAtSelection, ensureCaret, resolve, findEv };
+  return { setSelectedPitch, moveToStaff, setVoice, writePitch, context, letter, repeat, tieOn, write, moveCaret, changeStaff, backspace, pitchKey, drawCaret, status, caretAt, caretAfter, startAtSelection, ensureCaret, resolve, findEv };
 }
 
 export { pitchName };

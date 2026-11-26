@@ -8,11 +8,11 @@ const WHITE = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const BLACK_AFTER = { C: 1, D: 1, F: 1, G: 1, A: 1 };   // a black key follows these white keys
 const LS = 'musicscan:pad';
 
-export function createPad(NI, { S, setDur }) {
-  const st = { base: null, staff: null, chord: false, open: true };
+export function createPad(NI, { S, setDur, makeRest, stepSel, del }) {
+  const st = { base: null, staff: null, chord: false, open: true, openSelect: false };
   // open by default on touch screens; with a mouse and keyboard it waits behind the Keyboard button
   st.open = matchMedia('(pointer: coarse)').matches;
-  try { const v = localStorage.getItem(LS); if (v) st.open = v === 'open'; } catch (e) { /* storage blocked */ }
+  try { const v = localStorage.getItem(LS); if (v) st.open = v === 'open'; st.openSelect = localStorage.getItem(LS + ':select') === 'open'; } catch (e) { /* storage blocked */ }
 
   const el = document.createElement('div');
   el.className = 'pad hidden';
@@ -42,9 +42,11 @@ export function createPad(NI, { S, setDur }) {
   show.textContent = '🎹 Keyboard';
   show.title = 'Show the on-screen keyboard';
   statusbar.insertBefore(show, statusbar.querySelector('.zoom'));
-  show.onclick = () => { st.open = true; save(); sync(); };
+  show.onclick = () => { setOpen(true); };
+  const isOpen = () => (S.mode === 'add' ? st.open : st.openSelect);
+  function setOpen(v) { if (S.mode === 'add') st.open = v; else st.openSelect = v; save(); sync(); }
 
-  function save() { try { localStorage.setItem(LS, st.open ? 'open' : 'closed'); } catch (e) { /* ignore */ } }
+  function save() { try { localStorage.setItem(LS, st.open ? 'open' : 'closed'); localStorage.setItem(LS + ':select', st.openSelect ? 'open' : 'closed'); } catch (e) { /* ignore */ } }
 
   // the keys, for octaves base and base+1 plus the top C
   function build() {
@@ -84,8 +86,10 @@ export function createPad(NI, { S, setDur }) {
     });
     mark();
   }
+  // note input: write at the caret. Select: the selected note takes this pitch (Chord adds it instead)
   function hit(p) {
-    NI.writePitch({ ...p }, st.chord);
+    if (S.mode === 'add' || st.chord) NI.writePitch({ ...p }, st.chord);
+    else NI.setSelectedPitch({ ...p });
   }
   // light up the keys of the selected note
   function mark() {
@@ -95,11 +99,13 @@ export function createPad(NI, { S, setDur }) {
   }
 
   function sync() {
-    const active = S.mode === 'add' && !!S.score;
-    el.classList.toggle('hidden', !active || !st.open);
-    show.classList.toggle('hidden', !active || st.open);
-    document.body.classList.toggle('pad-open', active && st.open);
-    if (!active || !st.open) return;
+    const active = (S.mode === 'add' || S.mode === 'select') && !!S.score && !document.querySelector('#viewEditor')?.classList.contains('hidden');
+    const open = isOpen();
+    el.classList.toggle('hidden', !active || !open);
+    show.classList.toggle('hidden', !active || open);
+    document.body.classList.toggle('pad-open', active && open);
+    el.dataset.mode = S.mode;
+    if (!active || !open) return;
     const ctx = NI.context();
     if (!ctx) return;
     // follow the staff: the note before the caret sits near the middle of the keyboard
@@ -113,7 +119,13 @@ export function createPad(NI, { S, setDur }) {
     const sb = el.querySelector('[data-p="staff"]');
     const nStaves = S.caret ? S.score.attrs(S.caret.pi, Math.min(S.caret.mi, S.score.nMeasures - 1)).staves || 1 : 1;
     sb.classList.toggle('hidden', nStaves < 2);
-    sb.textContent = S.caret?.staff === '1' ? 'Lower ⇣' : 'Upper ⇡';
+    const sel = S.mode !== 'add' && S.sel ? S.layout?.notes.find((n) => n.ev.el === S.sel || n.ev.chord.some((c) => c.el === S.sel)) : null;
+    const onStaff = S.mode === 'add' ? S.caret?.staff : sel?.ev.staff;
+    sb.textContent = S.mode === 'add' ? (onStaff === '1' ? 'Lower ⇣' : 'Upper ⇡') : (onStaff === '1' ? 'Move ⇣' : 'Move ⇡');
+    sb.title = S.mode === 'add' ? 'Write on the other staff (⌥⇧↑↓)' : 'Move the note to the other staff (⌘⇧↑↓)';
+    el.querySelector('[data-p="left"]').title = S.mode === 'add' ? 'Move the caret back (←)' : 'Previous note (←)';
+    el.querySelector('[data-p="right"]').title = S.mode === 'add' ? 'Move the caret on (→)' : 'Next note (→)';
+    el.querySelector('[data-p="back"]').title = S.mode === 'add' ? 'Step back and clear (Backspace)' : 'Delete the note (Delete)';
     el.querySelector('[data-p="voice"]').setAttribute('aria-pressed', String((S.caret?.vk || 1) > 1));
   }
 
@@ -124,15 +136,21 @@ export function createPad(NI, { S, setDur }) {
     const a = b.dataset.p;
     if (a === 'oct-') { st.base = Math.max(0, st.base - 1); build(); }
     else if (a === 'oct+') { st.base = Math.min(7, st.base + 1); build(); }
-    else if (a === 'staff') { const c = S.caret; NI.changeStaff(c && c.staff !== '1' ? -1 : 1); }
+    else if (a === 'staff') {
+      if (S.mode === 'add') { const c = S.caret; NI.changeStaff(c && c.staff !== '1' ? -1 : 1); }
+      else { const n = S.sel && S.layout?.notes.find((q) => q.ev.el === S.sel || q.ev.chord.some((c) => c.el === S.sel)); NI.moveToStaff(n && n.ev.staff !== '1' ? -1 : 1); }
+    }
     else if (a === 'chord') { st.chord = !st.chord; sync(); }
     else if (a === 'voice') NI.setVoice((S.caret?.vk || 1) > 1 ? 1 : 2);
+    else if (S.mode !== 'add' && a === 'rest') makeRest();
+    else if (S.mode !== 'add' && (a === 'left' || a === 'right')) stepSel(a === 'left' ? -1 : 1);
+    else if (S.mode !== 'add' && a === 'back') del();
     else if (a === 'rest') NI.write(null);
     else if (a === 'repeat') NI.repeat();
     else if (a === 'left') NI.moveCaret(-1);
     else if (a === 'right') NI.moveCaret(1);
     else if (a === 'back') NI.backspace();
-    else if (a === 'hide') { st.open = false; save(); sync(); }
+    else if (a === 'hide') setOpen(false);
   });
   // keys must not steal focus or start a page zoom on double tap
   el.addEventListener('pointerdown', (e) => { if (e.target.closest('button')) e.preventDefault(); });

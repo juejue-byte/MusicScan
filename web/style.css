@@ -474,3 +474,4 @@ i.mf { font-family: 'Times New Roman', Times, serif; font-weight: 700; font-size
   .photo-col { border-radius: 24px 24px 0 0; background: var(--panel); }
   .score-scroll { margin: 0 6px; }
 }
+.pad[data-mode="select"] [data-p="voice"] { display: none; }

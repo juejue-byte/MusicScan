@@ -57,6 +57,16 @@ function serve() {
     ok(await p.locator('#notePad').isVisible(), `${dev}: and it comes back`);
     await tap('[data-mode="select"]');
     ok(await p.locator('#notePad').isHidden(), `${dev}: piano goes away with note input`);
+    // the piano outside note input: opened from the Keyboard button, a key re-pitches the selected note and moves on
+    if (dev.startsWith('iPad')) {
+      ok(await p.locator('#btnPad').isVisible() && await p.locator('#notePad').isHidden(), `${dev}: in Select the piano waits behind the Keyboard button`);
+      await tap('#btnPad');
+      const first = await p.evaluate(() => { const S = window.__ms.S; const e = S.score.voiceEvents(0, 5, '1', null).filter((x) => !x.rest); S.sel = e[0].el; window.__ms.redraw(); return [e[0].el === S.sel, e[1].chord[0].pitch.step]; });
+      await tap('.pk.black >> nth=0');
+      const r2 = await p.evaluate(() => { const S = window.__ms.S; const e = S.score.voiceEvents(0, 5, '1', null).filter((x) => !x.rest); return { p: e[0].chord[0].pitch, next: S.sel === e[1].el }; });
+      ok(r2.p.alter !== 0 && r2.next, `${dev}: a black key re-pitches the selected note (${JSON.stringify(r2.p)}) and selects the next`);
+      await tap('#notePad [data-p="hide"]');
+    }
     // copy bar 2 and paste it over bar 4 from the Bar menu (touch only, no keyboard)
     if (dev.startsWith('iPad')) {
       const sig = (mi) => p.evaluate((mi) => { const s = window.__ms.S.score; return s.parts.map((pp, pi) => s.events(pi, mi).map((e) => (e.rest ? 'r' : e.chord.map((c) => c.pitch.step + c.pitch.octave).join('+')) + e.type).join(' ')).join('|'); }, mi);
