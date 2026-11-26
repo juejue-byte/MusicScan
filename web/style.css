@@ -534,3 +534,35 @@ body.capturing { overflow: hidden; }
   .cap-shutter { width: 76px; height: 76px; }
 }
 @media (max-height: 500px) { .cap-bottom { grid-template-columns: 1fr auto 1fr; } .cap-say { justify-self: end; } .cap-system { justify-self: start; } }
+
+/* ---------------------------------------------------------------- Your music: scores kept on this device (web/js/library.js) */
+.library { width: min(760px, 100%); margin: 0 auto 36px; }
+.lib-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.lib-head h2 { margin: 0; font: 900 30px var(--font-display); letter-spacing: -.02em; }
+.lib-tabs { display: inline-flex; padding: 4px; gap: 2px; border-radius: 14px; background: var(--sky-50); }
+.lib-tabs button { height: 36px; padding: 0 14px; border: 0; border-radius: 10px; background: none; color: var(--muted); font-weight: 600; font-size: 14px; cursor: pointer; }
+.lib-tabs button span { font-weight: 500; opacity: .8; margin-left: 2px; }
+.lib-tabs button[aria-selected="true"] { background: var(--panel); color: var(--accent-ink); box-shadow: 0 1px 2px rgba(14,34,56,.10), 0 2px 8px rgba(23,105,194,.12); }
+.lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+.lib-empty { color: var(--muted); margin: 8px 0; }
+.lib-card { position: relative; }
+.lib-open { display: flex; flex-direction: column; gap: 6px; width: 100%; height: 100%; padding: 10px 10px 12px; border: 1px solid var(--line); border-radius: 20px; background: var(--panel); text-align: left; cursor: pointer; color: var(--ink); font: inherit; }
+.lib-open:hover { border-color: var(--sky-200); box-shadow: var(--shadow); }
+.lib-thumb { display: block; height: 130px; border-radius: 12px; overflow: hidden; background: #fff; border: 1px solid #E6EFF8; margin-bottom: 4px; }
+.lib-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+.lib-thumb svg { width: 100%; height: 100%; display: block; }
+.lib-title { font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-meta { font-size: 12px; color: var(--muted); }
+.lib-status { align-self: flex-start; display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 99px; font-size: 12px; font-weight: 600; margin-top: 2px; }
+.lib-status.ok { background: var(--ok-soft); color: var(--ok); }
+.lib-status.check { background: var(--warn-soft); color: var(--warn-ink); }
+.lib-status.bad { background: var(--bad-soft); color: var(--bad); }
+.lib-del { position: absolute; top: 16px; right: 16px; width: 32px; height: 32px; border-radius: 99px; border: 0; background: rgba(255,255,255,.92); color: var(--muted); display: grid; place-items: center; cursor: pointer; opacity: 0; transition: opacity .15s; box-shadow: 0 1px 4px rgba(14,34,56,.15); }
+.lib-card:hover .lib-del, .lib-del:focus-visible { opacity: 1; }
+.lib-card.confirm .lib-del { opacity: 1; width: auto; padding: 0 12px; background: var(--bad); color: #fff; }
+.lib-card.confirm .lib-del::after { content: 'Remove'; font: 600 13px system-ui, sans-serif; margin-left: 4px; }
+@media (pointer: coarse) { .lib-del { opacity: 1; width: 40px; height: 40px; top: 14px; right: 14px; } }
+/* once there is music, the start screen leads with it and the scan area becomes a smaller "add" block */
+body.has-library .hero h1 { font-size: clamp(24px, 3.4vw, 32px); }
+body.has-library .drop { padding: 28px 20px; }
+@media (max-width: 600px) { .lib-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .lib-thumb { height: 96px; } .lib-head h2 { font-size: 26px; } }

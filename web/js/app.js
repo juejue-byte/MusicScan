@@ -1,5 +1,6 @@
 // MusicScan web app: upload -> transcribe -> edit on the staff -> play -> export.
 import * as capture from './capture.js';
+import * as library from './library.js';
 import { Score, pitchName, midiOf, clefTop, toMidi } from './score.js';
 import './edits.js';
 import { DYNAMICS, WORDS } from './markup.js';
@@ -70,7 +71,9 @@ function download(name, data, type) {
 }
 const baseName = () => (S.name || 'score').replace(/\.[^.]+$/, '').replace(/[^\w\- ]+/g, '').trim() || 'score';
 function saveLocal() {
-  try { localStorage.setItem(LS_KEY, JSON.stringify({ job: S.job, xml: S.score.toXML(), meta: S.meta, pages: S.pages, name: S.name, result: S.result ? { quality: S.result.quality, page_size: S.result.page_size, systems: S.result.systems, second_opinion: S.result.second_opinion } : null, t: Date.now() })); } catch (e) { /* storage full or blocked */ }
+  if (S.libId && S.score) library.save({ id: S.libId, name: S.name, xml: S.score.toXML(), meta: S.meta, pages: S.pages, job: S.job, bars: S.score.nMeasures, parts: S.score.parts.length, t: Date.now(),
+    result: S.result ? { quality: S.result.quality, page_size: S.result.page_size, systems: S.result.systems, second_opinion: S.result.second_opinion } : null });
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ libId: S.libId, job: S.job, xml: S.score.toXML(), meta: S.meta, pages: S.pages, name: S.name, result: S.result ? { quality: S.result.quality, page_size: S.result.page_size, systems: S.result.systems, second_opinion: S.result.second_opinion } : null, t: Date.now() })); } catch (e) { /* storage full or blocked */ }
 }
 
 // ---------------------------------------------------------------- upload flow
@@ -156,6 +159,7 @@ function openResult(res) {
 function openScore(xml, meta, quality, job, pages = null) {
   review.stop();
   S.score = new Score(xml);
+  S.libId = S.openLib || library.newId(); S.openLib = null; // a new scan or file gets its own place in Your music
   S.meta = (meta || []).map((m) => ({ ...m }));
   S.job = job;
   S.pages = pages || (job && S.result ? { [job]: pageRec(job, S.result, S.name) } : {});
@@ -2152,17 +2156,72 @@ function loadResume() {
   let last = null;
   try { last = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (e) { last = null; }
   $('#resume')?.remove();
-  if (!last?.xml) return;
+  $('#viewUpload').scrollTop = 0;
+  library.flush().then(renderLibrary);
+  if (!last?.xml || document.body.classList.contains('has-library')) return;
   const b = document.createElement('button');
   b.id = 'resume';
   b.className = 'btn';
   b.textContent = `↺ Continue editing ${last.name || 'your last score'}`;
   b.onclick = () => {
+    S.openLib = last.libId || null;
     S.name = last.name || 'score';
     S.result = last.result ? { ...last.result, xml: last.xml } : null;
     try { openScore(last.xml, last.meta, last.result?.quality, last.job, last.pages); } catch (e) { toast(e.message); }
   };
   $('.upload-row').appendChild(b);
+}
+
+// ---------------------------------------------------------------- Your music (web/js/library.js)
+const STAFF_ART = `<svg viewBox="0 0 120 80" preserveAspectRatio="none" aria-hidden="true"><g stroke="#B9D9F7" stroke-width="1.2"><path d="M8 14h104M8 19h104M8 24h104M8 29h104M8 34h104M8 48h104M8 53h104M8 58h104M8 63h104M8 68h104"/></g><g fill="#5FAEEB"><circle cx="30" cy="29" r="3"/><circle cx="50" cy="24" r="3"/><circle cx="70" cy="19" r="3"/><circle cx="90" cy="24" r="3"/><circle cx="30" cy="63" r="3"/><circle cx="70" cy="58" r="3"/></g></svg>`;
+let libFilter = 'all';
+async function renderLibrary() {
+  const box = $('#library');
+  if (!box) return;
+  let items = [];
+  try { items = await library.list(); } catch (e) { items = []; }
+  document.body.classList.toggle('has-library', items.length > 0);
+  if (items.length) $('#resume')?.remove();
+  box.classList.toggle('hidden', !items.length);
+  if (!items.length) return;
+  const toCheck = items.filter((e) => library.summary(e).status.kind !== 'ok').length;
+  const shown = libFilter === 'check' ? items.filter((e) => library.summary(e).status.kind !== 'ok') : items;
+  box.innerHTML = `<div class="lib-head"><h2>Your music</h2>
+    <div class="lib-tabs" role="tablist"><button role="tab" data-f="all" aria-selected="${libFilter === 'all'}">All <span>${items.length}</span></button><button role="tab" data-f="check" aria-selected="${libFilter === 'check'}">To check <span>${toCheck}</span></button></div></div>
+    <div class="lib-grid"></div>`;
+  for (const t of box.querySelectorAll('[data-f]')) t.onclick = () => { libFilter = t.dataset.f; renderLibrary(); };
+  const grid = box.querySelector('.lib-grid');
+  if (!shown.length) grid.innerHTML = '<p class="lib-empty">Nothing to check. Every score is ready to play.</p>';
+  for (const e of shown) {
+    const sm = library.summary(e);
+    const card = document.createElement('div');
+    card.className = 'lib-card';
+    card.dataset.id = e.id;
+    card.innerHTML = `<button class="lib-open"><span class="lib-thumb"></span><span class="lib-title"></span><span class="lib-meta"></span><span class="lib-status ${sm.status.kind}">${sm.status.text}</span></button>
+      <button class="lib-del" aria-label="Remove from Your music"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>`;
+    card.querySelector('.lib-title').textContent = (e.name || 'Score').replace(/\.(jpe?g|png|heic|heif|pdf|musicxml|xml)$/i, '').replace(/^\d+_/, '').replace(/_/g, ' ');
+    card.querySelector('.lib-meta').textContent = [`${sm.bars} bars`, sm.pages > 1 ? `${sm.pages} pages` : '', library.when(e.t)].filter(Boolean).join(' · ');
+    const th = card.querySelector('.lib-thumb');
+    if (e.job) { const im = new Image(); im.alt = ''; im.loading = 'lazy'; im.onerror = () => { th.innerHTML = STAFF_ART; }; im.src = jobFile(e.job, 'page.png'); th.appendChild(im); } else th.innerHTML = STAFF_ART;
+    card.querySelector('.lib-open').onclick = () => openFromLibrary(e.id);
+    const del = card.querySelector('.lib-del');
+    del.onclick = async () => {
+      if (!card.classList.contains('confirm')) { card.classList.add('confirm'); del.setAttribute('aria-label', 'Tap again to remove'); setTimeout(() => card.classList.remove('confirm'), 3000); return; }
+      await library.remove(e.id);
+      if (lsGet(LS_KEY)?.includes(`"libId":"${e.id}"`)) { try { localStorage.removeItem(LS_KEY); } catch (err) { /* blocked */ } }
+      renderLibrary();
+      toast(`Removed ${card.querySelector('.lib-title').textContent}`);
+    };
+    grid.appendChild(card);
+  }
+}
+async function openFromLibrary(id) {
+  const e = await library.get(id);
+  if (!e) return renderLibrary();
+  S.openLib = e.id;
+  S.name = e.name || 'score';
+  S.result = e.result ? { ...e.result, xml: e.xml } : null;
+  try { openScore(e.xml, e.meta, e.result?.quality, e.job, e.pages); } catch (err) { toast(err.message); }
 }
 
 const NI = createNoteInput({
@@ -2183,6 +2242,7 @@ installZoom({
 });
 
 wire();
+addEventListener('pagehide', () => library.flush());
 review.initReview({
   S, redraw, edit, toast, setMode, scrollToBar, scrollPhotoTo, rescan, pageOf: (mi) => pageInfo(pageIdOf(mi)), stopPlay, drawCursor, clearOverlay, barNumber, barReason, subScoreXML,
   haptic: native.haptic,
@@ -2194,4 +2254,4 @@ review.initReview({
 loadSamples();
 show('viewUpload');
 // for automated tests
-window.__ms = { S, audio, practice, openScore: (xml, meta) => { S.name = 'test.musicxml'; openScore(xml, meta || [], null, null); }, redraw };
+window.__ms = { S, audio, practice, library, renderLibrary, openScore: (xml, meta) => { S.name = 'test.musicxml'; openScore(xml, meta || [], null, null); }, redraw };
