@@ -864,6 +864,9 @@ const SHORTCUTS = [
     ['← →', 'Previous / next note (the caret in note input)'],
     ['⌘/Ctrl + ← →', 'Previous / next bar'],
     ['Delete', 'Delete the note (a rest stays in its place)'],
+    ['⌘/Ctrl + C, X, V', 'Copy, cut, paste: the selected note or chord, or whole bars'],
+    ['Shift + ← →', 'Select more bars'],
+    ['⌘/Ctrl + A', 'Select every bar'],
     ['⌘/Ctrl + Z,  ⇧⌘/Ctrl + Z', 'Undo, redo'],
     ['Esc', 'Leave note input, then clear the selection'],
   ]],
@@ -911,6 +914,10 @@ function onKey(e) {
   const add = S.mode === 'add';
   if (mod && (k === 'z' || k === 'Z')) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && k === 'y') { e.preventDefault(); redo(); return; }
+  if (mod && !e.shiftKey && !e.altKey && (k === 'c' || k === 'C')) { if (copySel()) e.preventDefault(); return; }
+  if (mod && !e.shiftKey && !e.altKey && (k === 'x' || k === 'X')) { if (copySel(true)) e.preventDefault(); return; }
+  if (mod && !e.shiftKey && !e.altKey && (k === 'v' || k === 'V')) { if (paste()) e.preventDefault(); return; }
+  if (mod && !e.shiftKey && (k === 'a' || k === 'A')) { e.preventDefault(); S.sel = null; S.measures = new Set(Array.from({ length: S.score.nMeasures }, (_, i) => i)); redraw(); toast(`All ${S.score.nMeasures} bars selected`, 1400); return; }
   if (mod && (k === 'ArrowUp' || k === 'ArrowDown')) { e.preventDefault(); NI.pitchKey(k === 'ArrowUp' ? 1 : -1, 'octave'); return; }
   if (mod && (k === 'ArrowLeft' || k === 'ArrowRight')) { e.preventDefault(); const d = k === 'ArrowRight' ? 1 : -1; if (add) NI.moveCaret(d, true); else stepBar(d); return; }
   if (mod) return;
@@ -932,8 +939,8 @@ function onKey(e) {
   switch (k) {
     case 'ArrowUp': e.preventDefault(); NI.pitchKey(1, e.shiftKey ? 'octave' : 'semi'); break;
     case 'ArrowDown': e.preventDefault(); NI.pitchKey(-1, e.shiftKey ? 'octave' : 'semi'); break;
-    case 'ArrowLeft': e.preventDefault(); if (add) NI.moveCaret(-1); else stepSel(-1); break;
-    case 'ArrowRight': e.preventDefault(); if (add) NI.moveCaret(1); else stepSel(1); break;
+    case 'ArrowLeft': e.preventDefault(); if (e.shiftKey && !add) extendBars(-1); else if (add) NI.moveCaret(-1); else stepSel(-1); break;
+    case 'ArrowRight': e.preventDefault(); if (e.shiftKey && !add) extendBars(1); else if (add) NI.moveCaret(1); else stepSel(1); break;
     case '.': toggleDot(); break;
     case '+': case '#': setAcc(1); break;
     case '-': case '_': setAcc(-1); break;
@@ -957,6 +964,68 @@ function onKey(e) {
     case 'l': case 'L': toggleLoop(); break;
     default: practice.key(e); break;
   }
+}
+// Copy and paste, as everywhere: a selected note or chord, or whole bars (every part). Cut clears the bars to rests.
+let CLIP = null;
+function copySel(cut = false) {
+  if (!S.score) return false;
+  const s = selected();
+  if (s && !cut) {
+    CLIP = { kind: 'note', rest: s.ev.rest, pitches: s.ev.chord.map((c) => ({ ...c.pitch })), type: s.ev.type || 'quarter', dots: s.ev.dots };
+    toast('Copied the ' + (s.ev.rest ? 'rest' : s.ev.chord.length > 1 ? 'chord' : 'note') + '. Select a note and press ⌘V to paste over it.', 2200);
+    return true;
+  }
+  const bars = s ? [s.ev.mi] : targetBars();
+  if (!bars.length) return false;
+  const lo = bars[0], hi = bars[bars.length - 1];
+  const idxs = Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+  CLIP = { kind: 'bars', xml: subScoreXML(S.score, idxs), n: idxs.length };
+  const label = idxs.length > 1 ? `${idxs.length} bars` : `bar ${barNumber(lo)}`;
+  if (cut) {
+    if (act(() => { for (const mi of idxs) S.score.parts.forEach((p, pi) => { for (const ev of S.score.events(pi, mi)) if (!ev.rest && !ev.grace) S.score.toRest(ev); }); })) toast(`Cut ${label}. Select a bar and press ⌘V to paste.`, 2200);
+  } else toast(`Copied ${label}. Select a bar and press ⌘V to paste.`, 2200);
+  return true;
+}
+function paste() {
+  if (!S.score || !CLIP) { if (S.score) toast('Copy a note or some bars first (⌘C)'); return !!S.score; }
+  if (CLIP.kind === 'note') {
+    const s = selected();
+    if (!s && !(S.mode === 'add' && S.caret)) { toast('Select where the note should go'); return true; }
+    if (s) NI.caretAt(s.ev);
+    NI.write(CLIP.rest ? null : CLIP.pitches.map((p) => ({ ...p })), { type: CLIP.type, dots: CLIP.dots });
+    return true;
+  }
+  const s = selected();
+  const start = s ? s.ev.mi : targetBars()[0];
+  if (start === undefined) { toast('Select the bar to paste into'); return true; }
+  const other = new Score(CLIP.xml);
+  const end = Math.min(S.score.nMeasures, start + CLIP.n);
+  const targets = Array.from({ length: end - start }, (_, i) => start + i);
+  if (act(() => {
+    S.score.spliceMeasures(targets, other);
+    for (let i = targets.length; i < CLIP.n; i++) metaInsert(start + i);
+    for (let i = 0; i < CLIP.n; i++) if (S.meta[start + i]) S.meta[start + i] = { ...S.meta[start + i], level: 'ok', low: [], low_n: 0, disagree: false, fixes: [] };
+  })) {
+    S.sel = null;
+    S.measures = new Set(Array.from({ length: CLIP.n }, (_, i) => start + i));
+    redraw();
+    toast(`Pasted ${CLIP.n > 1 ? CLIP.n + ' bars' : 'the bar'} at bar ${barNumber(start)}. Undo with ⌘Z.`, 2200);
+  }
+  return true;
+}
+// Shift+← / Shift+→: grow or shrink the bar selection
+function extendBars(dir) {
+  const n = selEvent();
+  if (!S.measures.size && n) S.measures = new Set([n.ev.mi]);
+  if (!S.measures.size) return;
+  if (S.anchor === undefined || !S.measures.has(S.anchor)) S.anchor = Math.min(...S.measures);
+  const lo = Math.min(...S.measures), hi = Math.max(...S.measures);
+  let a = S.anchor, b = S.anchor === lo ? hi : lo;
+  b = Math.max(0, Math.min(S.score.nMeasures - 1, b + dir));
+  S.sel = null;
+  S.measures = new Set(Array.from({ length: Math.abs(b - a) + 1 }, (_, i) => Math.min(a, b) + i));
+  redraw();
+  scrollToBar(b);
 }
 // ⌘← / ⌘→ outside note input: the first note of the previous / next bar
 function stepBar(dir) {

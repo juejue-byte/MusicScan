@@ -101,6 +101,24 @@ function serve() {
   await p.screenshot({ path: OUT + '/02_keys.png' });
   await key('Escape');
   ok(await p.evaluate(() => document.querySelector('#modal').classList.contains('hidden')), 'Esc closes it');
+  // 9. copy bar 2 (both staves) onto bar 6, then a note onto another note
+  const barSig = (mi) => p.evaluate((mi) => { const s = window.__ms.S.score; return s.parts.map((pp, pi) => s.events(pi, mi).map((e) => (e.rest ? 'r' : e.chord.map((c) => c.pitch.step + c.pitch.octave).join('+')) + e.type).join(' ')).join(' | '); }, mi);
+  await p.evaluate(() => { const S = window.__ms.S; S.sel = null; S.measures = new Set([1]); window.__ms.redraw(); });
+  await key('Control+c');
+  await p.evaluate(() => { const S = window.__ms.S; S.sel = null; S.measures = new Set([5]); window.__ms.redraw(); });
+  const nBars = await p.evaluate(() => window.__ms.S.score.nMeasures);
+  await key('Control+v');
+  ok(await barSig(5) === await barSig(1), 'pasted bar 2 over bar 6 in every staff');
+  ok(await p.evaluate(() => window.__ms.S.score.nMeasures) === nBars, 'bar count unchanged');
+  await key('Shift+ArrowRight', 'Shift+ArrowRight');
+  ok(await p.evaluate(() => window.__ms.S.measures.size) === 3, 'Shift+→ grows the bar selection');
+  await p.evaluate(() => { const S = window.__ms.S; S.measures = new Set(); S.sel = S.score.voiceEvents(0, 3, '1', null)[0].el; window.__ms.redraw(); });
+  await key('Control+c');
+  await p.evaluate(() => { const S = window.__ms.S; S.sel = S.score.voiceEvents(0, 4, '1', null)[0].el; window.__ms.redraw(); });
+  await key('Control+v');
+  const a4 = (await bar(3))[0], a5 = (await bar(4))[0];
+  ok(a4 === a5, `pasted a note over another (${a4} -> ${a5})`);
+  ok(JSON.stringify(await over()) === JSON.stringify(overBefore), 'still no bar overflows');
   // the XML still parses
   const xml = await p.evaluate(() => window.__ms.S.score.toXML());
   fs.writeFileSync(OUT + '/out.musicxml', xml);
