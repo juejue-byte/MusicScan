@@ -43,19 +43,24 @@ modern engravings.
 
 | Condition | Pages | Plays identically raw → MusicScan | Notes at the right beat, pitch and length raw → MusicScan | Key right | Time right |
 | --- | --- | --- | --- | --- | --- |
-| clean | 14 | 2/14 → **2/14** | 93.8% → **93.8%** | 14/14 | 13/14 |
-| photo | 14 | 0/14 → **2/14** | 82.3% → **92.8%** | 14/14 | 13/14 |
-| shadow | 14 | 0/14 → **1/14** | 39.8% → **94.8%** | 14/14 | 14/14 |
-| pen | 14 | 2/14 → **2/14** | 93.8% → **93.7%** | 14/14 | 13/14 |
-| pencil | 14 | 3/14 → **3/14** | 98.6% → **98.6%** | 14/14 | 13/14 |
-| combo | 14 | 0/14 → **2/14** | 74.7% → **95.1%** | 14/14 | 13/14 |
-| lowq | 14 | 0/14 → **0/14** | 0.3% → **9.7%** | 9/14 | 5/14 |
+| clean | 14 | 3/14 → **3/14** | 98.9% → **98.9%** | 14/14 | 13/14 |
+| photo | 14 | 0/14 → **3/14** | 82.3% → **95.7%** | 14/14 | 13/14 |
+| shadow | 14 | 0/14 → **1/14** | 42.0% → **96.0%** | 14/14 | 14/14 |
+| pen | 14 | 3/14 → **3/14** | 98.9% → **98.8%** | 14/14 | 13/14 |
+| pencil | 14 | 3/14 → **3/14** | 98.8% → **98.8%** | 14/14 | 13/14 |
+| combo | 14 | 0/14 → **2/14** | 75.4% → **95.8%** | 14/14 | 13/14 |
+| lowq | 14 | 0/14 → **0/14** | 0.3% → **10.9%** | 9/14 | 5/14 |
 
 
-Note accuracy is about 99%, but whole pages are rarely perfect: most pages have 1 to 4 slips (a 16th read as an
-8th, a note a semitone off, a missed barline). The "notes at the right beat" column is lower than note F1 because
-a missed or extra barline moves every later note into the wrong bar. In the app those bars show up red (they don't
-add up), and fixing them takes a click or two. Cut time (2/2) read as 4/4 on one piece plays identically.
+About 96–99% of notes land in the right bar, on the right beat, with the right pitch and length, and the key is
+right on every readable page. Whole pages are rarely perfect: most have 1 to 4 slips (a median of 2 edits per page).
+What they are, over 166 wrong bars: 46% a missed note (often one note of a chord), 28% a wrong pitch (usually a
+semitone), 12% a rest, 11% a wrong length. Cut time (2/2) read as 4/4 on one piece plays identically.
+
+Cascading: a wrong length shifts playback until it is fixed, but the bar no longer adds up and the editor draws it
+in red. A missed barline is split back into two bars by the sanitizer. Wrong pitches and missed notes stay in
+their bar.
+
 
 ## Is a bad photo caught?
 
@@ -64,21 +69,23 @@ rated good. On the bad photos MusicScan still reads 33% of notes (raw OMR: 1%), 
 
 ## Are wrong bars flagged?
 
-| Condition | Bars compared | Bars with an error | Wrong bars flagged | Flags that were wrong bars | Correct bars flagged |
+| Condition | Bars compared | Bars with an error | Wrong bars marked | Marks that were wrong bars | Correct bars marked |
 | --- | --- | --- | --- | --- | --- |
-| clean | 273 | 27 | 37% | 33% | 8% |
-| photo | 273 | 29 | 59% | 26% | 20% |
-| shadow | 273 | 29 | 34% | 22% | 15% |
-| pen | 273 | 29 | 34% | 31% | 9% |
-| pencil | 313 | 35 | 57% | 27% | 20% |
-| combo | 233 | 24 | 42% | 34% | 9% |
-| all | 1638 | 173 | 45% | 28% | 14% |
+| clean | 273 | 27 | 85% (70% red) | 35% (red 42%) | 17% |
+| photo | 273 | 28 | 93% (75% red) | 29% (red 52%) | 26% |
+| shadow | 273 | 28 | 86% (57% red) | 31% (red 41%) | 22% |
+| pen | 273 | 29 | 86% (72% red) | 36% (red 44%) | 18% |
+| pencil | 313 | 31 | 100% (68% red) | 31% (red 45%) | 25% |
+| combo | 233 | 23 | 78% (57% red) | 36% (red 46%) | 15% |
+| all | 1638 | 166 | 89% (67% red) | 32% (red 45%) | 21% |
 
-(72 pages where the bar count matched the ground truth.)
+(72 pages where the bar count matched the ground truth. On 43 of the 58 pages with an error, every wrong bar was marked.)
 
-This is the weakest part. Flags catch under half of the wrong bars, and about 1 in 7 correct bars gets a "check".
-Most misses are confident misreads (a semitone off, a wrong rhythm) and dropped whole-bar rests. Next step:
-calibrate on these results and add a "bar doesn't add up" signal (already drawn in red in the editor).
+Each page is read twice, by copista-28m and by the small copista-2m (about 3 s more). Two different models rarely
+make the same mistake, so a bar they read differently is marked red. Low confidence marks a bar amber (red below
+0.5), and bars the sanitizer had to repair are marked too. Before the second reading, the marks found only 50% of
+wrong bars; confidence alone can't do better, because most errors are confident misreads or missed symbols.
+
 
 ## Per piece (MusicScan, note F1)
 
