@@ -51,5 +51,36 @@ def main(d: Path):
         print(f"| {p} | " + " | ".join(cells) + " |")
 
 
+def flags(d: Path):
+    """Do the per-bar flags point at the bars that are wrong?"""
+    rows = [r for r in load(d) if r["mode"] == "musicscan" and r.get("bars") and r.get("bar_ok")
+            and len(r["bars"]) == len(r["bar_ok"])]
+    tot = {"wrong": 0, "right": 0, "wrong_flag": 0, "right_flag": 0, "wrong_bad": 0, "right_bad": 0}
+    per = defaultdict(lambda: {k: 0 for k in tot})
+    for r in rows:
+        for b, ok in zip(r["bars"], r["bar_ok"]):
+            flagged, bad = b["level"] != "ok", b["level"] == "bad"
+            for t in (tot, per[r["cond"]]):
+                k = "right" if ok else "wrong"
+                t[k] += 1
+                t[k + "_flag"] += flagged
+                t[k + "_bad"] += bad
+    def line(name, t):
+        rec = t["wrong_flag"] / max(t["wrong"], 1)
+        prec = t["wrong_flag"] / max(t["wrong_flag"] + t["right_flag"], 1)
+        fa = t["right_flag"] / max(t["right"], 1)
+        return (f"| {name} | {t['right'] + t['wrong']} | {t['wrong']} | {rec:.0%} | {prec:.0%} | {fa:.0%} |")
+    print("| Condition | Bars compared | Bars with an error | Wrong bars flagged | Flags that were wrong bars | Correct bars flagged |")
+    print("| --- | --- | --- | --- | --- | --- |")
+    for c in CONDS:
+        if c in per:
+            print(line(c, per[c]))
+    print(line("all", tot))
+    print(f"\n({len(rows)} pages where the bar count matched the ground truth.)")
+
+
 if __name__ == "__main__":
-    main(Path(sys.argv[1] if len(sys.argv) > 1 else "bench/results"))
+    d = Path(sys.argv[1] if len(sys.argv) > 1 else "bench/results")
+    main(d)
+    print()
+    flags(d)
