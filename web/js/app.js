@@ -144,6 +144,7 @@ function openResult(res) {
     return;
   }
   S.result = res;
+  res.job = S.job;
   openScore(res.xml, res.measures, res.quality, S.job, { [S.job]: pageRec(S.job, res, S.name) });
 }
 
@@ -1650,6 +1651,8 @@ function syncPages() {
   if (!list.some((r) => r.id === S.photoPage) && firstPhoto) { S.photoPage = null; showPhotoPage(firstPhoto.id); }
 }
 function markPages() { S.score.markPages(pageList().map((r) => r.lo)); }
+// ink strokes are pinned to bar indices: renumber them when pages move (map: old index -> new index or null)
+function inkRemap(map) { const l = ink.strokes(S.score); if (l.length) ink.setStrokes(S.score, l.map((st) => (map(st.mi) == null ? null : { ...st, mi: map(st.mi) })).filter(Boolean)); }
 
 function setReading(text) {
   let el = $('#pageReading');
@@ -1730,6 +1733,10 @@ function movePage(id, dir) {
     const block = S.meta.splice(r.lo, r.hi - r.lo + 1);
     const at = dir < 0 ? dest : dest - block.length;
     S.meta.splice(at, 0, ...block);
+    const order = Array.from({ length: S.meta.length }, (_, i) => i);
+    order.splice(at, 0, ...order.splice(r.lo, r.hi - r.lo + 1));
+    const to = new Map(order.map((old, i) => [old, i]));
+    inkRemap((mi) => to.get(mi) ?? mi);
     markPages();
   });
   S.measures = new Set(); S.sel = null;
@@ -1744,6 +1751,7 @@ function removePage(id) {
   edit(() => {
     S.score.deleteBars(r.lo, r.hi);
     S.meta.splice(r.lo, r.hi - r.lo + 1);
+    ink.onDelete(S.score, r.lo, r.hi);
     markPages();
   });
   S.measures = new Set(); S.sel = null;
@@ -1777,6 +1785,9 @@ function retakePage(id, file = null) {
       const ms = result.measures.slice(0, fresh.nMeasures).map((m) => ({ ...m, page: nid }));
       while (ms.length < fresh.nMeasures) ms.push(blankMeta(nid));
       S.meta.splice(r.lo, targets.length, ...ms);
+      // ink on the old reading of this page is dropped; ink on later pages moves with its bars
+      const delta = ms.length - targets.length;
+      inkRemap((mi) => (mi < r.lo ? mi : mi > r.hi ? mi + delta : null));
       markPages();
     });
     syncPages();

@@ -126,7 +126,10 @@ function rescanBar() {
 // the reading a bar came from: its page's (multi-page scores), else the score's own
 const pageOf = (mi) => (A.pageOf && A.pageOf(mi)) || A.S.result || null;
 function altScore(mi) {
-  const so = pageOf(mi)?.second_opinion;
+  const pg = pageOf(mi);
+  // a one-page score may carry it on the result only (saved before pages existed)
+  const own = A.S.result && (!pg?.job || A.S.result.job === pg.job || Object.keys(A.S.pages || {}).length <= 1) ? A.S.result.second_opinion : null;
+  const so = own || pg?.second_opinion;
   if (!so?.xml) return null;
   if (R.altFor !== so.xml) { R.altFor = so.xml; try { R.alt = new Score(so.xml); } catch (e) { R.alt = null; } }
   return R.alt;
