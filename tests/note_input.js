@@ -148,6 +148,15 @@ function serve() {
   const clef = await p.evaluate(() => window.__ms.S.score.attrs(0, 0).clefs['2'].sign);
   console.log('clef fix:', lowBefore.slice(0, 4).join(' '), '->', lowAfter.slice(0, 4).join(' '));
   ok(clef === 'F' && lowBefore[0] === 'C4' && lowAfter[0] === 'E2', 'misread clef fixed: C4 in treble is E2 in bass');
+  // 13. transpose the piece up a major 2nd and back down: C major -> D major, every pitch +2 semitones
+  const snap = () => p.evaluate(() => { const s = window.__ms.S.score; const out = []; for (let mi = 0; mi < s.nMeasures; mi++) for (const e of s.events(0, mi)) for (const c of e.chord) out.push(12 * (c.pitch.octave + 1) + { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[c.pitch.step] + (c.pitch.alter || 0)); return { m: out, f: s.attrs(0, 0).fifths }; });
+  const t0 = await snap();
+  await p.click('#btnKeyTime'); await p.selectOption('#trIv', 'M2'); await p.click('[data-m="transpose"]');
+  const t1 = await snap();
+  ok(t1.f === t0.f + 2 && t1.m.every((m, i) => m === t0.m[i] + 2), `transpose up a major 2nd (key ${t0.f} -> ${t1.f}, ${t1.m.length} notes +2)`);
+  await p.click('#btnKeyTime'); await p.selectOption('#trDir', '-1'); await p.selectOption('#trIv', 'M2'); await p.click('[data-m="transpose"]');
+  const t2 = await snap();
+  ok(t2.f === t0.f && t2.m.every((m, i) => m === t0.m[i]), 'and back down');
   // the XML still parses
   const xml = await p.evaluate(() => window.__ms.S.score.toXML());
   fs.writeFileSync(OUT + '/out.musicxml', xml);

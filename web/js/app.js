@@ -13,6 +13,7 @@ import { createNoteInput } from './input.js';
 import { createPad } from './pad.js';
 import { ARTICS } from './notations.js';
 import { CLEFS, clefId } from './clefs.js';
+import { INTERVALS } from './transpose.js';
 import { pageRanges } from './pages.js';
 
 const $ = (s) => document.querySelector(s);
@@ -1349,12 +1350,23 @@ function keyTimeDialog() {
       <fieldset class="kt-clef-how"><label><input type="radio" name="ktHow" value="place" checked> The clef was misread: keep the notes where they are printed</label>
       <label><input type="radio" name="ktHow" value="pitch"> A new clef: keep the notes' pitch</label></fieldset>
     </div>
+    <h2 class="kt-sub">Transpose the whole piece</h2>
+    <div class="form">
+      <label><select id="trDir"><option value="1">Up</option><option value="-1">Down</option></select> a <select id="trIv">${INTERVALS.map((iv) => `<option value="${iv.id}" ${iv.id === 'M2' ? 'selected' : ''}>${iv.name}</option>`).join('')}</select></label>
+      <button class="btn" data-m="transpose">Transpose</button>
+    </div>
     <div class="modal-actions"><button class="btn ghost" data-m="close">Cancel</button><button class="btn primary" data-m="apply">Apply</button></div>`;
   const stSel = $('#ktStaff');
   if (stSel) stSel.onchange = () => { const [pi, st] = stSel.value.split('/'); $('#ktClef').value = clefId(S.score.attrs(+pi, from).clefs[st]); };
   card.onclick = (ev) => {
     const m = ev.target.closest('[data-m]')?.dataset.m;
     if (m === 'close') closeModal();
+    if (m === 'transpose') {
+      const dir = +$('#trDir').value, iv = $('#trIv').value;
+      edit(() => S.score.transpose(iv, dir));
+      closeModal();
+      toast(`Transposed ${dir > 0 ? 'up' : 'down'} a ${INTERVALS.find((x) => x.id === iv).name.replace(/ \(.*/, '')}. Undo with ⌘Z.`);
+    }
     if (m === 'apply') {
       const f = +$('#ktKey').value, bt = +$('#ktBeats').value, ty = +$('#ktType').value;
       const [spi, sst] = ($('#ktStaff')?.value || `${cpi}/${cst}`).split('/');
