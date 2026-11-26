@@ -321,3 +321,55 @@ def test_regroup_with_different_divisions():
                  for n in s.recurse().notes)
     assert got == [(0.0, "C3", 1.0), (0.0, "E5", 2.0), (1.0, "D3", 3.0), (2.0, "G5", 2.0), (4.0, "A5", 4.0),
                    (4.0, "F3", 4.0)]
+
+
+def test_missed_barline_splits_bar_instead_of_trimming():
+    # 3/4: bar 2 holds two bars' worth (the reader missed a bar line); a half note crosses the missing line
+    x = score([[[(1, "1", "C4", 3)], [(1, "1", "D4", 1), (1, "1", "E4", 1), (1, "1", "F4", 2), (1, "1", "G4", 2)],
+                [(1, "1", "A4", 3)]]], beats=3)
+    y, rep = sanitize(x)
+    assert check(y) == []
+    assert rep["splits"] == [[1, 2]]
+    root = etree.fromstring(y.encode())
+    assert len(root.findall("part/measure")) == 4
+    import music21
+    s = music21.converter.parse(y, format="musicxml")
+    got = [(float(n.getOffsetInHierarchy(s)), n.pitch.nameWithOctave, float(n.quarterLength))
+           for n in s.stripTies().recurse().notes]
+    assert got == [(0.0, "C4", 3.0), (3.0, "D4", 1.0), (4.0, "E4", 1.0), (5.0, "F4", 2.0), (7.0, "G4", 2.0),
+                   (9.0, "A4", 3.0)]
+
+
+def test_small_overflow_is_still_trimmed_not_split():
+    x = score([[[(1, "1", "C4", 3), (1, "1", "D4", 1)]]], beats=3)
+    y, rep = sanitize(x)
+    assert rep["splits"] == [] and len(etree.fromstring(y.encode()).findall("part/measure")) == 1
+
+
+def test_repeats_and_fermatas_survive():
+    from musicscan.compare import repeat_marks
+    x = score([[[(1, "1", "C4", 2)], [(1, "1", "D4", 2)], [(1, "1", "E4", 2)]]], beats=2)
+    root = etree.fromstring(x.encode())
+    ms = root.findall("part/measure")
+    ms[0].append(etree.fromstring('<barline location="left"><bar-style>heavy-light</bar-style><repeat direction="forward"/></barline>'))
+    ms[1].append(etree.fromstring('<barline location="right"><bar-style>light-heavy</bar-style><repeat direction="backward"/></barline>'))
+    ms[1].find("note").append(etree.fromstring('<notations><fermata type="upright"/></notations>'))
+    x = etree.tostring(root).decode()
+    y, _ = sanitize(x)
+    assert repeat_marks(y) == repeat_marks(x) == [(0, "forward"), (1, "backward")]
+    assert len(etree.fromstring(y.encode()).findall(".//fermata")) == 1
+    # the backward repeat stays at the end of its bar, after the notes
+    m1 = etree.fromstring(y.encode()).findall("part/measure")[1]
+    assert [c.tag for c in m1][-1] == "barline"
+
+
+def test_dropped_repeat_sign_written_back():
+    from musicscan.compare import repeat_marks
+    from musicscan.omr import add_bar_signs
+    x = score([[[(1, "1", "C4", 2)], [(1, "1", "D4", 2)]], [[(1, "1", "C3", 2)], [(1, "1", "D3", 2)]]], beats=2,
+              clefs=[["G2"], ["F4"]])
+    y = add_bar_signs(x, [[0, "barLine_repeat_end"]])
+    root = etree.fromstring(y.encode())
+    assert [len(p.findall("measure")[0].findall("barline")) for p in root.findall("part")] == [1, 1]
+    assert repeat_marks(y) == [(0, "backward")]
+    assert add_bar_signs(y, [[0, "barLine_repeat_end"]]).count("backward") == 2      # not added twice

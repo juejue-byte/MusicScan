@@ -59,13 +59,15 @@ export function preview(midi) {
   hit(midi, c.currentTime + 0.01, 0.45, 75);
 }
 
-// events: [{time, dur, midi, measure}] in quarter notes; starts: measure start times in quarters
-export async function play({ events, starts }, { bpm = 90, fromMeasure = 0, onMeasure, onTime, onEnd } = {}) {
+// events: [{time, dur, midi, measure}] in quarter notes; starts: start time of each played bar in quarters;
+// order (optional): the bar played at each step, when repeats make the playing order differ from the page
+export async function play({ events, starts, order }, { bpm = 90, fromMeasure = 0, onMeasure, onTime, onEnd } = {}) {
   stop();
   const c = audioCtx();
   await loadPiano();
   const spq = 60 / bpm;
-  const t0q = starts[fromMeasure] || 0;
+  const step0 = order ? Math.max(0, order.indexOf(fromMeasure)) : fromMeasure;
+  const t0q = starts[step0] || 0;
   const base = c.currentTime + 0.12;
   for (const e of events) {
     if (e.time < t0q - 1e-6) continue;
@@ -77,9 +79,9 @@ export async function play({ events, starts }, { bpm = 90, fromMeasure = 0, onMe
   const tick = () => {
     const q = (c.currentTime - base) / spq + t0q;
     if (c.currentTime >= stopAt) { stop(); onEnd && onEnd(); return; }
-    let m = fromMeasure;
+    let m = step0;
     while (m + 1 < starts.length - 1 && starts[m + 1] <= q) m++;
-    if (m !== last && q >= t0q) { last = m; onMeasure && onMeasure(m); }
+    if (m !== last && q >= t0q) { last = m; onMeasure && onMeasure(order ? order[m] : m); }
     if (onTime && q >= t0q) onTime(q);
     timer = requestAnimationFrame(tick);
   };

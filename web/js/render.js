@@ -109,6 +109,19 @@ export function render(score, el, opts = {}) {
         if (k === 0 || a.changed?.key) { if (a.fifths !== 0 || a.changed?.key) stave.addKeySignature(KEYS[a.fifths + 7] || 'C'); }
         if (mi === 0 || a.changed?.time) stave.addTimeSignature(`${a.beats}/${a.beatType}`);
         if (k === row.length - 1 && mi === score.nMeasures - 1) stave.setEndBarType(VF.Barline.type.END);
+        const bl = score.barlines(s.pi, mi);
+        if (bl.left?.repeat === 'forward') stave.setBegBarType(VF.Barline.type.REPEAT_BEGIN);
+        else if (bl.left?.style === 'heavy-light' || bl.left?.style === 'light-light') stave.setBegBarType(VF.Barline.type.DOUBLE);
+        if (bl.right?.repeat === 'backward') stave.setEndBarType(VF.Barline.type.REPEAT_END);
+        else if (bl.right?.style === 'light-heavy') stave.setEndBarType(VF.Barline.type.END);
+        else if (bl.right?.style === 'light-light') stave.setEndBarType(VF.Barline.type.DOUBLE);
+        const ending = si === 0 ? score.endingAt(mi) : null;
+        if (ending) {
+          // first/second-time bracket over the top staff
+          const T = VF.VoltaType;
+          const type = ending.first && ending.last ? (ending.open ? T.BEGIN : T.BEGIN_END) : ending.first ? T.BEGIN : ending.last && !ending.open ? T.END : T.MID;
+          stave.setVoltaType(type, ending.first ? ending.numbers.join(', ') + '.' : '', -5);
+        }
         stave.setContext(ctx);
         vfStaves.push({ stave, s, clef, a });
       });
@@ -198,6 +211,12 @@ export function render(score, el, opts = {}) {
               });
             }
             if (dots) { try { VF.Dot.buildAndAttach([note], { all: true }); } catch (err) { /* older API */ } }
+            if (e.fermata) {
+              try {
+                const below = e.fermata === 'inverted';
+                note.addModifier(new VF.Articulation(below ? 'a@u' : 'a@a').setPosition(below ? VF.Modifier.Position.BELOW : VF.Modifier.Position.ABOVE), 0);
+              } catch (err) { /* ignore */ }
+            }
             const isSel = selNote && (selNote === e.el || e.chord.some((c) => c.el === selNote));
             if (isSel) note.setStyle({ fillStyle: '#2563eb', strokeStyle: '#2563eb' });
             tickables.push(note);

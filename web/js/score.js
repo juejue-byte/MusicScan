@@ -141,6 +141,7 @@ export class Score {
           chord: pitch ? [{ el: c, pitch }] : [],
           tieStop: [...c.querySelectorAll(':scope > tie')].some((t) => t.getAttribute('type') === 'stop'),
           explicitAcc: txt(c, 'accidental'),
+          fermata: (() => { const f = c.querySelector(':scope > notations > fermata'); return f ? (f.getAttribute('type') || 'upright') : null; })(),
         };
         if (!grace) { cur += dur; last = ev; }
         evs.push(ev);
@@ -607,12 +608,79 @@ export class Score {
     return s ? +s.getAttribute('tempo') : 90;
   }
 
-  // [{time (quarters), dur (quarters), midi, part, measure}] and measure start times
+  // bar lines of one bar: { left: {style, repeat}, right: {style, repeat, times}, ending: {numbers, start, stop} }
+  barlines(pi, mi) {
+    const m = this.parts[pi]?.measures[mi];
+    const out = { left: null, right: null, ending: null };
+    if (!m) return out;
+    for (const b of children(m, 'barline')) {
+      const loc = b.getAttribute('location') || 'right';
+      const rep = child(b, 'repeat');
+      const info = { style: txt(b, 'bar-style'), repeat: rep ? rep.getAttribute('direction') : null, times: rep ? +(rep.getAttribute('times') || 2) : 0 };
+      if (loc === 'left' || loc === 'right') out[loc] = info;
+      const end = child(b, 'ending');
+      if (end) {
+        const nums = (end.getAttribute('number') || '1').split(/[ ,]+/).map(Number).filter((x) => x > 0);
+        const type = end.getAttribute('type');
+        out.ending = out.ending || { numbers: nums, start: false, stop: false };
+        if (type === 'start') out.ending.start = true;
+        if (type === 'stop' || type === 'discontinue') { out.ending.stop = true; out.ending.open = type === 'discontinue'; }
+      }
+    }
+    return out;
+  }
+
+  // the first/second-time ending bar mi lies in: {numbers, first, last, open} or null
+  endingAt(mi) {
+    let cur = null;
+    for (let j = 0; j <= mi && j < this.nMeasures; j++) {
+      const e = this.barlines(0, j).ending;
+      if (e?.start) cur = { numbers: e.numbers, from: j };
+      if (j === mi) return cur ? { numbers: cur.numbers, first: cur.from === mi, last: !!e?.stop, open: !!e?.open } : null;
+      if (e?.stop) cur = null;
+    }
+    return null;
+  }
+
+  // The order bars are played in, with repeats and first/second endings unrolled (from the first part's bar lines).
+  playOrder() {
+    const n = this.nMeasures;
+    const endingOf = [];
+    let active = null;
+    for (let mi = 0; mi < n; mi++) {
+      const b = this.barlines(0, mi);
+      if (b.ending?.start) active = b.ending.numbers;
+      endingOf.push(active);
+      if (b.ending?.stop) active = null;
+    }
+    const order = [];
+    const done = {};
+    let i = 0, start = 0, pass = 1;
+    while (i < n && order.length < 8 * n) {
+      const b = this.barlines(0, i);
+      if (b.left?.repeat === 'forward' && pass === 1) start = i;
+      if (endingOf[i] && !endingOf[i].includes(pass)) { i++; continue; }
+      order.push(i);
+      if (b.right?.repeat === 'backward') {
+        const times = b.right.times || 2;
+        const k = done[i] || 1;
+        if (k < times) { done[i] = k + 1; pass = k + 1; i = start; continue; }
+        pass = 1;
+        start = i + 1;
+      } else if (endingOf[i] && b.ending?.stop && pass > 1 && !endingOf[i + 1]) {
+        pass = 1;
+        start = i + 1;
+      }
+      i++;
+    }
+    return order;
+  }
+
+  // [{time (quarters), dur (quarters), midi, part, measure, step}], the start time of every played bar (step), and
+  // `order`: the bar index played at each step (repeats unrolled; without repeats step === bar)
   playEvents() {
-    const starts = [];
-    let t = 0;
+    const lens = [];
     for (let mi = 0; mi < this.nMeasures; mi++) {
-      starts.push(t);
       let len = 0;
       for (let pi = 0; pi < this.parts.length; pi++) {
         const a = this.attrs(pi, mi);
@@ -622,29 +690,33 @@ export class Score {
         const implicit = this.parts[pi].measures[mi]?.getAttribute('implicit') === 'yes';
         len = Math.max(len, implicit && actual > 0 ? actual : Math.max(nominal, actual));
       }
-      t += len;
+      lens.push(len);
     }
+    const order = this.playOrder();
+    const starts = [];
+    let t = 0;
+    for (const mi of order) { starts.push(t); t += lens[mi]; }
     starts.push(t);
     const out = [];
     for (let pi = 0; pi < this.parts.length; pi++) {
       const open = {};
-      for (let mi = 0; mi < this.nMeasures; mi++) {
+      order.forEach((mi, step) => {
         for (const e of this.events(pi, mi)) {
           if (e.grace || e.rest) continue;
           for (const c of e.chord) {
             const midi = midiOf(c.pitch);
-            const time = starts[mi] + e.onset / e.div, dur = e.dur / e.div;
+            const time = starts[step] + e.onset / e.div, dur = e.dur / e.div;
             const tie = [...c.el.querySelectorAll(':scope > tie')].map((x) => x.getAttribute('type'));
             if (tie.includes('stop') && open[midi]) { open[midi].dur = time + dur - open[midi].time; if (!tie.includes('start')) delete open[midi]; continue; }
-            const ev = { time, dur, midi, part: pi, measure: mi, el: c.el };
+            const ev = { time, dur, midi, part: pi, measure: mi, step, el: c.el };
             out.push(ev);
             if (tie.includes('start')) open[midi] = ev;
           }
         }
-      }
+      });
     }
     out.sort((a, b) => a.time - b.time);
-    return { events: out, starts };
+    return { events: out, starts, order };
   }
 }
 

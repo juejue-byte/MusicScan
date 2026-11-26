@@ -100,6 +100,7 @@ def transcribe(im: Image.Image, detector: str = "28m") -> dict:
             xml = write.write(rd, image=g)
     out = analyse(rd)
     xml = add_system_breaks(xml, [s["measures"][0] for s in out["systems"][1:] if s["measures"]])
+    xml = add_bar_signs(xml, out.get("bar_signs", []))
     out["xml"] = fix_pickup(xml)
     out["seconds"] = round(time.time() - t0, 1)
     out["detector"] = detector
@@ -202,6 +203,68 @@ def add_system_breaks(xml: str, starts: list[int]) -> str:
     return head + etree.tostring(root, encoding="unicode")
 
 
+RIGHT_SIGNS = {"barLine_repeat_end": ("light-heavy", "backward"), "barLine_final": ("light-heavy", None),
+               "barLine_double": ("light-light", None)}
+
+
+def bar_signs(rd, first, n_meas) -> list:
+    """[global bar, sign class] for bar-closing signs (end repeat, final, double bar line), placed at the bar
+    line they stand on. The writer assigns a sign to the bar whose box holds its centre; a repeat sign drawn
+    right on the bar line can land in the next bar and be dropped (the choir sample lost its repeat this way)."""
+    L = rd.layout
+    out = {}
+    for s in L.syms:
+        tok = rd.tok.get(s.i) if hasattr(rd.tok, "get") else None
+        c = (tok or {}).get("cls", {}).get("v", s.cls) if isinstance(tok, dict) else s.cls
+        if c not in RIGHT_SIGNS or s.staff < 0:
+            continue
+        st = L.staves[s.staff]
+        if st.system < 0:
+            continue
+        best = None
+        for b in range(len(st.bars)):
+            try:
+                x0, _, x1, _ = L.bar_box(s.staff, b)
+                col = L.column(s.staff, b)
+            except Exception:
+                continue
+            d = abs(s.cx - x1)
+            if best is None or d < best[0]:
+                best = (d, col)
+        if best is None or best[0] > 2.5 * float(L.sp):
+            continue
+        gi = first[st.system] + best[1]
+        if 0 <= gi < n_meas:
+            out.setdefault(gi, c)
+    return sorted([gi, c] for gi, c in out.items())
+
+
+def add_bar_signs(xml: str, signs: list) -> str:
+    """Write the bar-closing signs the writer dropped as right <barline>s in every part."""
+    from lxml import etree
+    if not signs:
+        return xml
+    try:
+        root = etree.fromstring(xml.encode())
+    except etree.XMLSyntaxError:
+        return xml
+    for part in root.iter("part"):
+        ms = part.findall("measure")
+        for gi, c in signs:
+            if gi >= len(ms):
+                continue
+            m = ms[gi]
+            if any(b.get("location", "right") == "right" for b in m.findall("barline")):
+                continue
+            style, rep = RIGHT_SIGNS[c]
+            bl = etree.SubElement(m, "barline", location="right")
+            etree.SubElement(bl, "bar-style").text = style
+            if rep:
+                etree.SubElement(bl, "repeat", direction=rep)
+    head = xml[: xml.find("<score-partwise")] if "<score-partwise" in xml else ""
+    return head + etree.tostring(root, encoding="unicode")
+
+
 def analyse(rd) -> dict:
     L = rd.layout
     # columns per system -> global measure index
@@ -280,7 +343,7 @@ def analyse(rd) -> dict:
         pass
     staves_per_sys = [len(s.staves) for s in L.systems]
     return {
-        "measures": meas, "systems": systems,
+        "measures": meas, "systems": systems, "bar_signs": bar_signs(rd, first, n_meas),
         "stats": {"symbols": n, "low": n_low, "low_frac": round(n_low / max(n, 1), 4),
                   "mean_conf": round(float(np.mean(tok_conf)) if n else 0.0, 4),
                   "revisions": changes, "rev_frac": round(changes / max(n, 1), 4),

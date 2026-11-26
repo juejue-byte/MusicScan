@@ -237,6 +237,24 @@ def sounding(xml: str | bytes) -> dict:
             "tempo": float(tempo.get("tempo")) if tempo is not None else None}
 
 
+def repeat_marks(xml: str | bytes) -> list:
+    """[(bar index, 'forward'|'backward')] repeat signs, and [(bar index, ending numbers)] endings, of the first part."""
+    if isinstance(xml, str):
+        xml = xml.encode()
+    root = _strip_ns(etree.fromstring(xml, etree.XMLParser(recover=True, huge_tree=True)))
+    part = root.find("part")
+    out = []
+    for mi, m in enumerate(part.findall("measure") if part is not None else []):
+        for b in m.findall("barline"):
+            r = b.find("repeat")
+            if r is not None:
+                out.append((mi, r.get("direction")))
+            e = b.find("ending")
+            if e is not None and e.get("type") == "start":
+                out.append((mi, "ending " + (e.get("number") or "")))
+    return sorted(out)
+
+
 def plays_same(gt_xml: str, pred_xml: str) -> dict:
     """play_f1: notes in the same bar, at the same beat, with the same pitch and length, per part (parts paired for
     the best match). Counting beats within each bar keeps one wrong rhythm from shifting every later note.
@@ -259,4 +277,5 @@ def plays_same(gt_xml: str, pred_xml: str) -> dict:
     same_notes = best(g["parts"], p["parts"]) == ng == npred
     return {"play_f1": round(f1, 4), "same_notes": same_notes, "key_ok": g["key"] == p["key"],
             "time_ok": g["time"] == p["time"], "identical": same_notes and g["key"] == p["key"] and g["time"] == p["time"],
-            "gt_notes": ng, "pred_notes": npred, "tempo_gt": g["tempo"], "tempo_pred": p["tempo"]}
+            "gt_notes": ng, "pred_notes": npred, "tempo_gt": g["tempo"], "tempo_pred": p["tempo"],
+            "repeats_ok": repeat_marks(gt_xml) == repeat_marks(pred_xml)}
