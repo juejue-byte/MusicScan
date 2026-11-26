@@ -94,6 +94,10 @@ The web side of the bridge is [`web/js/native.js`](../web/js/native.js); in a no
 web app is unchanged. `tests/touch.js` runs the editor on an emulated iPhone with a fake bridge (drag, swap, add,
 export via the share sheet).
 
+## Handing off to another agent
+
+[AGENT_PROMPT.md](AGENT_PROMPT.md) is a ready-to-paste prompt for Claude Code on your Mac to continue in Xcode.
+
 ## Known limits of the prototype
 
 - Needs the server on the same network; no hosted server, accounts or offline reading yet.
