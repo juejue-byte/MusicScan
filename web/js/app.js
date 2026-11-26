@@ -14,6 +14,7 @@ import { createPad } from './pad.js';
 import { ARTICS } from './notations.js';
 import { CLEFS, clefId } from './clefs.js';
 import { INTERVALS } from './transpose.js';
+import { installZoom } from './zoom.js';
 import { pageRanges } from './pages.js';
 
 const $ = (s) => document.querySelector(s);
@@ -905,6 +906,7 @@ const SHORTCUTS = [
     ['⌘/Ctrl + C, X, V', 'Copy, cut, paste: the selected note or chord, or whole bars'],
     ['Shift + ← →', 'Select more bars'],
     ['⌘/Ctrl + A', 'Select every bar'],
+    ['Pinch, ⌘/Ctrl + scroll', 'Zoom the score'],
     ['⌘/Ctrl + Z,  ⇧⌘/Ctrl + Z', 'Undo, redo'],
     ['Esc', 'Leave note input, then clear the selection'],
   ]],
@@ -2144,6 +2146,17 @@ const NI = createNoteInput({
   preview: (midis) => midis.forEach((m, i) => setTimeout(() => audio.preview(m), i * 25)),
 });
 var PAD = createPad(NI, { S, setDur });
+installZoom({
+  S, redraw,
+  // a second finger turns a note drag (or a note being placed) into a pinch: put back anything the drag changed
+  cancelDrag: () => {
+    if (!S.drag) return;
+    const pushed = S.drag.pushed;
+    S.drag = null;
+    clearOverlay('ghost'); clearOverlay('drag');
+    if (pushed) { S.redo = []; restore(S.undo.pop()); }
+  },
+});
 
 wire();
 review.initReview({
