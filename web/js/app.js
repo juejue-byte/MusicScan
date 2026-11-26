@@ -87,7 +87,7 @@ async function startUpload(file) {
       const j = await (await api('api/jobs/' + id)).json();
       if (j.status === 'done') { setStep('done'); clearInterval(tick); $('#progressBar').style.width = '100%'; openResult(j.result); return; }
       if (j.status === 'error') throw new Error(j.error || 'Transcription failed');
-      setStep(/Clean/.test(j.status) ? 'clean' : /Read/.test(j.status) ? 'read' : 'upload');
+      setStep(/Clean/.test(j.status) ? 'clean' : /Read|Double/.test(j.status) ? 'read' : 'upload');
       $('#progressText').textContent = `${j.status}… ${Math.round((Date.now() - t0) / 1000)} s`;
     }
   } catch (e) {
@@ -137,13 +137,25 @@ function openScore(xml, meta, quality, job) {
   if (job) setTimeout(() => { const firstBad = S.meta.findIndex((m) => m.level === 'bad'); if (firstBad >= 0) focusBar(firstBad, false); }, 50);
 }
 
+// why a bar is marked, in words
+function barReason(m) {
+  if (m.level === 'ok') return 'read with confidence';
+  const r = [];
+  if (m.disagree) r.push('a second reading disagrees');
+  if (m.low_n) r.push(`${m.low_n} uncertain symbol${m.low_n === 1 ? '' : 's'}`);
+  if (m.fixes?.length) r.push('timing was repaired');
+  if (!r.length) r.push(m.n ? 'low confidence' : 'nothing was read here');
+  return r.join(' · ');
+}
+
 function renderBanner(q) {
   const b = $('#qualityBanner');
   if (!q) { b.classList.add('hidden'); return; }
   const flagged = S.meta.filter((m) => m.level !== 'ok').length;
+  const red = S.meta.filter((m) => m.level === 'bad').length;
   const icon = { good: '✓', check: '!', retake: '⚠' }[q.level];
   const title = {
-    good: flagged ? `Photo looks good. ${flagged} bar${flagged > 1 ? 's are' : ' is'} marked for a quick check.` : 'Photo looks good. Every bar was read with confidence.',
+    good: flagged ? `Photo looks good. ${red ? `${red} bar${red > 1 ? 's' : ''} likely wrong (red)` : 'No bars likely wrong'}, ${flagged - red} to glance at (amber).` : 'Photo looks good. Every bar was read with confidence.',
     check: `Parts of this photo were hard to read. Check the highlighted bars (${flagged}).`,
     retake: 'This photo is low quality, so the transcription is likely to have many mistakes.',
   }[q.level];
@@ -685,7 +697,7 @@ function drawPhotoOverlay() {
     Object.entries({ x: x0, y: y0 - 6, width: x1 - x0, height: y1 - y0 + 12, fill: col, 'fill-opacity': sel ? 0.18 : m.level === 'ok' ? 0.03 : 0.14, stroke: col, 'stroke-width': sel ? 4 : m.level === 'ok' ? 1 : 2.5, rx: 6 }).forEach(([k, v]) => r.setAttribute(k, v));
     r.addEventListener('click', () => { S.measures = new Set([mi]); S.sel = null; focusBar(mi, true); redraw(); });
     const t = document.createElementNS(SVGNS, 'title');
-    t.textContent = `Bar ${barNumber(mi)}: ${m.level === 'ok' ? 'read with confidence' : `${m.low_n} uncertain symbol${m.low_n === 1 ? '' : 's'}`}`;
+    t.textContent = `Bar ${barNumber(mi)}: ${barReason(m)}`;
     r.appendChild(t);
     svg.appendChild(r);
   });
@@ -739,7 +751,8 @@ function drawInspector(mi) {
   for (const b of m.low || []) g.fillRect(b[0], b[3] - sy + 2, Math.max(4, b[2] - b[0]), 3 / scale);
   g.globalAlpha = 1;
   $('#inspTitle').textContent = `Bar ${barNumber(mi)} in your photo`;
-  $('#inspConf').textContent = m.level === 'ok' ? 'Read with confidence' : `${m.low_n} uncertain symbol${m.low_n === 1 ? '' : 's'} (underlined)`;
+  const why = barReason(m);
+  $('#inspConf').textContent = why[0].toUpperCase() + why.slice(1) + (m.low_n ? ' (underlined)' : '');
 }
 
 // ---------------------------------------------------------------- rescan

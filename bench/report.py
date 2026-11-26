@@ -51,32 +51,69 @@ def main(d: Path):
         print(f"| {p} | " + " | ".join(cells) + " |")
 
 
-def flags(d: Path):
-    """Do the per-bar flags point at the bars that are wrong?"""
-    rows = [r for r in load(d) if r["mode"] == "musicscan" and r.get("bars") and r.get("bar_ok")
-            and len(r["bars"]) == len(r["bar_ok"])]
+def flags(d: Path, data: Path):
+    """Do the per-bar warnings point at the bars that are wrong? Uses the app's rule (omr.level): confidence, bars
+    the sanitizer repaired, and, where bench/results/pred2m holds the small model's reading, disagreement."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from musicscan.compare import compare
+    from musicscan.omr import fix_pickup, level, restore_bar_rests
+    from musicscan.sanitize import sanitize
+    prep = lambda x: restore_bar_rests(fix_pickup(x))  # noqa: E731
     tot = {"wrong": 0, "right": 0, "wrong_flag": 0, "right_flag": 0, "wrong_bad": 0, "right_bad": 0}
     per = defaultdict(lambda: {k: 0 for k in tot})
-    for r in rows:
-        for b, ok in zip(r["bars"], r["bar_ok"]):
-            flagged, bad = b["level"] != "ok", b["level"] == "bad"
+    pages = covered = n = 0
+    for r in load(d):
+        if r["mode"] != "musicscan" or r["cond"] == "lowq" or not r.get("bars"):
+            continue
+        f = d / "pred" / f"{r['id']}__{r['cond']}__musicscan.musicxml"
+        if not f.exists():
+            continue
+        x = prep(f.read_text())
+        c = compare((data / f"{r['id']}.musicxml").read_text(), x)
+        if c["bar_ok"] is None or len(c["bar_ok"]) != len(r["bars"]):
+            continue
+        n += 1
+        dis = set()
+        f2 = d / "pred2m" / f"{r['id']}__{r['cond']}.musicxml"
+        if f2.exists():
+            c2 = compare(x, prep(f2.read_text()))
+            if c2["bar_ok"] is not None:
+                dis = {i for i, ok in enumerate(c2["bar_ok"]) if not ok}
+        fixed = {int(k) for k in sanitize(x)[1].get("bars", {})}
+        wrong = set()
+        for i, (b, ok) in enumerate(zip(r["bars"], c["bar_ok"])):
+            lv = level({"n": 1, "min": b["min"], "disagree": i in dis})
+            if lv == "ok" and i in fixed:
+                lv = "check"
+            flagged, bad = lv != "ok", lv == "bad"
+            if not ok:
+                wrong.add(i)
             for t in (tot, per[r["cond"]]):
                 k = "right" if ok else "wrong"
                 t[k] += 1
                 t[k + "_flag"] += flagged
                 t[k + "_bad"] += bad
+            if not ok and not flagged:
+                wrong.add(-1)
+        if wrong:
+            pages += 1
+            covered += -1 not in wrong
     def line(name, t):
         rec = t["wrong_flag"] / max(t["wrong"], 1)
+        rec_bad = t["wrong_bad"] / max(t["wrong"], 1)
         prec = t["wrong_flag"] / max(t["wrong_flag"] + t["right_flag"], 1)
+        prec_bad = t["wrong_bad"] / max(t["wrong_bad"] + t["right_bad"], 1)
         fa = t["right_flag"] / max(t["right"], 1)
-        return (f"| {name} | {t['right'] + t['wrong']} | {t['wrong']} | {rec:.0%} | {prec:.0%} | {fa:.0%} |")
-    print("| Condition | Bars compared | Bars with an error | Wrong bars flagged | Flags that were wrong bars | Correct bars flagged |")
+        return (f"| {name} | {t['right'] + t['wrong']} | {t['wrong']} | {rec:.0%} ({rec_bad:.0%} red) | "
+                f"{prec:.0%} (red {prec_bad:.0%}) | {fa:.0%} |")
+    print("| Condition | Bars compared | Bars with an error | Wrong bars marked | Marks that were wrong bars | Correct bars marked |")
     print("| --- | --- | --- | --- | --- | --- |")
     for c in CONDS:
         if c in per:
             print(line(c, per[c]))
     print(line("all", tot))
-    print(f"\n({len(rows)} pages where the bar count matched the ground truth.)")
+    print(f"\n({n} pages where the bar count matched the ground truth. On {covered} of the {pages} pages with an "
+          "error, every wrong bar was marked.)")
 
 
 def plays(d: Path, data: Path):
@@ -84,7 +121,7 @@ def plays(d: Path, data: Path):
     plus the same key and time signature. Tempo is not compared: the ground-truth pages carry no tempo marking."""
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from musicscan.compare import plays_same
-    from musicscan.omr import fix_pickup
+    from musicscan.omr import fix_pickup, restore_bar_rests
     from musicscan.sanitize import sanitize
     per = defaultdict(list)
     for r in load(d):
@@ -94,7 +131,7 @@ def plays(d: Path, data: Path):
         if not f.exists():
             continue
         x = f.read_text()
-        x = sanitize(fix_pickup(x))[0]   # what the app does to every reading now; older result files predate it
+        x = sanitize(restore_bar_rests(fix_pickup(x)))[0]   # what the app does to every reading now; older result files predate it
         if r["cond"] == "clean":
             per[("clean", "raw")].append(plays_same((data / f"{r['id']}.musicxml").read_text(), x))
         per[(r["cond"], r["mode"])].append(plays_same((data / f"{r['id']}.musicxml").read_text(), x))
@@ -114,7 +151,8 @@ def plays(d: Path, data: Path):
 if __name__ == "__main__":
     d = Path(sys.argv[1] if len(sys.argv) > 1 else "bench/results")
     main(d)
+    data = Path(sys.argv[2] if len(sys.argv) > 2 else "bench/data")
     print()
-    flags(d)
+    flags(d, data)
     print()
-    plays(d, Path(sys.argv[2] if len(sys.argv) > 2 else "bench/data"))
+    plays(d, data)

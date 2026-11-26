@@ -45,6 +45,9 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
         pre["image"].save(d / "page.png")
         j["status"] = "Reading the music"
         r = omr.transcribe(pre["image"], detector=opts.get("detector", "28m"))
+        if opts.get("detector", "28m") == "28m":
+            j["status"] = "Double-checking"
+            omr.second_opinion(r, pre["image"])
         _clean(r)
         q = assess(pre, r)
         j["result"] = {"xml": r["xml"], "measures": r["measures"], "systems": r["systems"], "stats": r["stats"],

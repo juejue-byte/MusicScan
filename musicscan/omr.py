@@ -101,12 +101,55 @@ def transcribe(im: Image.Image, detector: str = "28m") -> dict:
     out = analyse(rd)
     xml = add_system_breaks(xml, [s["measures"][0] for s in out["systems"][1:] if s["measures"]])
     xml = add_bar_signs(xml, out.get("bar_signs", []))
-    out["xml"] = fix_pickup(xml)
+    out["xml"] = restore_bar_rests(fix_pickup(xml))
     out["seconds"] = round(time.time() - t0, 1)
     out["detector"] = detector
     out["device"] = pick_device()
     out["size"] = [im.width, im.height]
     return out
+
+
+def restore_bar_rests(xml: str) -> str:
+    """A bar the reader left completely empty (only a <forward> of silence) is almost always a whole-bar rest it did
+    not pick up. Write it back as a visible bar rest on every staff, so the page looks like the original."""
+    from lxml import etree
+    try:
+        root = etree.fromstring(xml.encode())
+    except etree.XMLSyntaxError:
+        return xml
+    changed = False
+    for part in root.iter("part"):
+        staves, div, beats, btype = 1, 1, 4, 4
+        for m in part.findall("measure"):
+            a = m.find("attributes")
+            if a is not None:
+                staves = int(a.findtext("staves", staves))
+                div = int(float(a.findtext("divisions", div)))
+                beats = int(a.findtext("time/beats", beats))
+                btype = int(a.findtext("time/beat-type", btype))
+            if m.find("note") is not None or m.get("implicit") == "yes":
+                continue
+            fw = m.findall("forward")
+            length = beats * 4 * div // btype
+            if not fw or sum(int(f.findtext("duration", "0")) for f in fw) != length:
+                continue
+            for f in fw:
+                m.remove(f)
+            for st in range(1, staves + 1):
+                if st > 1:
+                    b = etree.SubElement(m, "backup")
+                    etree.SubElement(b, "duration").text = str(length)
+                n = etree.SubElement(m, "note")
+                etree.SubElement(n, "rest").set("measure", "yes")
+                etree.SubElement(n, "duration").text = str(length)
+                etree.SubElement(n, "voice").text = str(1 if st == 1 else 5)
+                if staves > 1:
+                    etree.SubElement(n, "staff").text = str(st)
+            changed = True
+    if not changed:
+        return xml
+    head = xml[: xml.find("<score-partwise")] if "<score-partwise" in xml else ""
+    return head + etree.tostring(root, encoding="unicode")
 
 
 def fix_pickup(xml: str) -> str:
@@ -265,6 +308,43 @@ def add_bar_signs(xml: str, signs: list) -> str:
     return head + etree.tostring(root, encoding="unicode")
 
 
+# Per-bar warning levels, calibrated on the benchmark (bench/REPORT.md): confidence alone finds about half of the
+# wrong bars; adding "the small model reads this bar differently" finds about 85% of them.
+CHECK_BELOW, BAD_BELOW = 0.85, 0.5
+
+
+def level(m: dict) -> str:
+    if m.get("disagree") or (m["n"] > 0 and m["min"] < BAD_BELOW):
+        return "bad"
+    if m["n"] == 0 or m["min"] < CHECK_BELOW:
+        return "check"
+    return "ok"
+
+
+def second_opinion(r: dict, im: Image.Image) -> dict:
+    """Read the page again with the small detector and mark the bars where the two readings differ. Two different
+    models rarely make the same mistake, so a disagreement points at a likely error, including notes the big model
+    missed with full confidence. Adds a few seconds per page."""
+    try:
+        from .compare import compare
+        other = transcribe(im, detector="2m" if r.get("detector") != "2m" else "28m")
+        c = compare(r["xml"], other["xml"])
+    except Exception:
+        return r
+    if c.get("bar_ok") is None:          # the two readings found a different number of bars: can't line them up
+        r["second_opinion"] = {"aligned": False}
+        return r
+    n = 0
+    for m, ok in zip(r["measures"], c["bar_ok"]):
+        if not ok:
+            m["disagree"] = True
+            n += 1
+        m["level"] = level(m)
+    r["second_opinion"] = {"aligned": True, "bars": n, "seconds": other["seconds"]}
+    r["seconds"] = round(r["seconds"] + other["seconds"], 1)
+    return r
+
+
 def analyse(rd) -> dict:
     L = rd.layout
     # columns per system -> global measure index
@@ -326,7 +406,7 @@ def analyse(rd) -> dict:
         x0 = min((b[0] for b in m["boxes"]), default=0); y0 = min((b[1] for b in m["boxes"]), default=0)
         x1 = max((b[2] for b in m["boxes"]), default=0); y1 = max((b[3] for b in m["boxes"]), default=0)
         m["bbox"] = [x0, y0, x1, y1]
-        m["level"] = "ok" if m["low_n"] == 0 and m["n"] > 0 else ("check" if m["low_n"] <= 2 and m["min"] > 0.4 else "bad")
+        m["level"] = level(m)
     systems = []
     for si in range(len(L.systems)):
         ms = [m for m in meas if m["system"] == si]
