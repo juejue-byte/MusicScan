@@ -874,8 +874,8 @@ const SHORTCUTS = [
     ['Enter', 'This bar looks right'],
     ['[  ]', 'Previous / next flagged bar'],
     ['P', 'Play the bar'],
-    ['E', 'Edit the bar in the score'],
-    ['F or Esc', 'Close Fix it'],
+    ['E', 'Edit the bar in the score (A – G then change the selected note)'],
+    ['F or Esc', 'Close Fix it (with no note selected)'],
   ]],
   ['Play and mark up', [
     ['Space', 'Play / stop'],

@@ -110,6 +110,12 @@ function serve() {
   ok(xmlBefore !== xmlAfter, 'arrow key did not edit the selected note');
   ok((await p.locator('#rvAccept').textContent()).includes('Done'), 'accept button should read Done while editing');
   await p.screenshot({ path: path.join(OUT, '2_edit.png') });
+  // with a note selected, note letters (even E and F) go to the editor, not to Fix it
+  const before = await p.evaluate(() => window.__ms.S.score.toXML());
+  await p.keyboard.press('e');
+  s = await st();
+  ok(s.on, 'E with a note selected closed or re-entered Fix it');
+  ok(before !== (await p.evaluate(() => window.__ms.S.score.toXML())), 'E with a note selected did not change the note');
   await p.keyboard.press('Escape'); // deselect the note (stays in review)
   s = await st();
   ok(s.on, 'Esc with a note selected should only deselect');

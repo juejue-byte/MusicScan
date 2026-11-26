@@ -322,7 +322,8 @@ function onKey(e) {
     return;
   }
   const take = () => { e.preventDefault(); e.stopImmediatePropagation(); };
-  if (A.S.mode === 'add' && /^[a-gA-G]$/.test(k)) return;
+  // note letters belong to the editor in note input, and while editing a selected note of the bar (E and F too)
+  if ((A.S.mode === 'add' || A.S.sel) && /^[a-gA-G]$/.test(k)) return;
   if (k === 'Enter') { take(); accept(); }
   else if (k === ']' || k === 'PageDown') { take(); step(1); }
   else if (k === '[' || k === 'PageUp') { take(); step(-1); }
