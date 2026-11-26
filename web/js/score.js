@@ -33,6 +33,7 @@ function children(el, name) { return [...el.children].filter((c) => c.localName 
 function txt(el, name, d = null) { const c = child(el, name); return c ? c.textContent.trim() : d; }
 
 export class Score {
+  static _ids = 0;
   constructor(xml) {
     this.load(xml);
   }
@@ -48,11 +49,49 @@ export class Score {
     this.parts = children(this.root, 'part').map((p) => ({ id: p.getAttribute('id'), el: p, name: names[p.getAttribute('id')] || '', measures: children(p, 'measure') }));
     this.nMeasures = Math.max(0, ...this.parts.map((p) => p.measures.length));
     this._attrCache = null;
+    // events() is read many times per redraw (layout, widths, overflow checks): cache it per bar, and let a
+    // MutationObserver say which bars an edit touched. takeRecords() is synchronous, so the cache is never stale.
+    this._mo?.disconnect();
+    this._evCache = new WeakMap();
+    this._barVer = new WeakMap();
+    this._barId = new WeakMap();
+    this._rev = 0;
+    this._xml = null;
+    this._mo = typeof MutationObserver === 'undefined' ? null : new MutationObserver(() => {});
+    this._mo?.observe(doc, { subtree: true, childList: true, attributes: true, characterData: true });
+  }
+
+  _dropStaleEvents() {
+    if (!this._mo) return;
+    const recs = this._mo.takeRecords();
+    if (!recs.length) return;
+    this._rev++;
+    const touched = new Set();
+    for (const r of recs) {
+      let n = r.target;
+      while (n && n.localName !== 'measure') n = n.parentNode;
+      if (n) touched.add(n);
+      // a bar taken out of or put into a part
+      for (const x of [...r.addedNodes, ...r.removedNodes]) if (x.localName === 'measure') touched.add(x);
+    }
+    for (const m of touched) { this._evCache.delete(m); this._barVer.set(m, (this._barVer.get(m) || 0) + 1); }
+  }
+
+  // changes whenever the bar's MusicXML does (and differs between bar elements); null when edits are not tracked
+  barRevision(m) {
+    if (!this._mo || !m) return null;
+    this._dropStaleEvents();
+    let id = this._barId.get(m);
+    if (!id) { id = ++Score._ids; this._barId.set(m, id); }
+    return id + '.' + (this._barVer.get(m) || 0);
   }
 
   toXML() {
+    // the undo snapshot and the autosave both ask for it, often with nothing changed in between
+    if (this._mo) { this._dropStaleEvents(); if (this._xml && this._xml.rev === this._rev) return this._xml.s; }
     let s = new XMLSerializer().serializeToString(this.doc);
     if (!s.startsWith('<?xml')) s = '<?xml version="1.0" encoding="UTF-8"?>\n' + s;
+    if (this._mo) this._xml = { rev: this._rev, s };
     return s;
   }
 
@@ -107,8 +146,22 @@ export class Score {
   events(pi, mi) {
     const m = this.parts[pi]?.measures[mi];
     if (!m) return [];
-    let div = this.attrs(pi, mi).divisions;
-    const clefs = { ...this.attrs(pi, mi).clefs };
+    const a = this.attrs(pi, mi);
+    let key = null;
+    if (this._mo) {
+      this._dropStaleEvents();
+      key = `${pi}/${mi}/${a.divisions}/${JSON.stringify(a.clefs)}`;
+      const hit = this._evCache.get(m);
+      if (hit && hit.key === key) return hit.evs.slice();
+    }
+    const evs = this._readEvents(m, pi, mi, a);
+    if (key) this._evCache.set(m, { key, evs: evs.slice() });
+    return evs;
+  }
+
+  _readEvents(m, pi, mi, a) {
+    let div = a.divisions;
+    const clefs = { ...a.clefs };
     let cur = 0, last = null;
     const evs = [];
     for (const c of m.children) {

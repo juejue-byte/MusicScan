@@ -71,10 +71,27 @@ function download(name, data, type) {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
 const baseName = () => (S.name || 'score').replace(/\.[^.]+$/, '').replace(/[^\w\- ]+/g, '').trim() || 'score';
+// autosave after the frame is drawn, so it never adds to an edit's response time. The score and its details are
+// taken now (by reference; serializing is the slow part), so opening another score meanwhile cannot mix them up.
+let saveTimer = null, pending = null;
 function saveLocal() {
-  if (S.libId && S.score) library.save({ id: S.libId, name: S.name, xml: S.score.toXML(), meta: S.meta, pages: S.pages, job: S.job, bars: S.score.nMeasures, parts: S.score.parts.length, t: Date.now(),
-    result: S.result ? { quality: S.result.quality, page_size: S.result.page_size, systems: S.result.systems, second_opinion: S.result.second_opinion } : null });
-  try { localStorage.setItem(LS_KEY, JSON.stringify({ libId: S.libId, job: S.job, xml: S.score.toXML(), meta: S.meta, pages: S.pages, name: S.name, result: S.result ? { quality: S.result.quality, page_size: S.result.page_size, systems: S.result.systems, second_opinion: S.result.second_opinion } : null, t: Date.now() })); } catch (e) { /* storage full or blocked */ }
+  if (!S.score) return;
+  if (pending && pending.score !== S.score && pending.libId !== S.libId) saveLocalNow();
+  pending = { score: S.score, libId: S.libId, name: S.name, meta: S.meta, pages: S.pages, job: S.job, result: S.result };
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveLocalNow, 60);
+}
+function flushSave() { if (pending) saveLocalNow(); }
+addEventListener('pagehide', flushSave);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSave(); });
+function saveLocalNow() {
+  clearTimeout(saveTimer); saveTimer = null;
+  const P = pending; pending = null;
+  if (!P) return;
+  const xml = P.score.toXML();
+  const result = P.result ? { quality: P.result.quality, page_size: P.result.page_size, systems: P.result.systems, second_opinion: P.result.second_opinion } : null;
+  if (P.libId) library.save({ id: P.libId, name: P.name, xml, meta: P.meta, pages: P.pages, job: P.job, bars: P.score.nMeasures, parts: P.score.parts.length, t: Date.now(), result });
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ libId: P.libId, job: P.job, xml, meta: P.meta, pages: P.pages, name: P.name, result, t: Date.now() })); } catch (e) { /* storage full or blocked */ }
 }
 
 // ---------------------------------------------------------------- upload flow
@@ -232,7 +249,7 @@ function redraw() {
   if (S.selMark && !S.selMark.isConnected) S.selMark = null;
   // rows as printed: the zoom at which each row of the photo fits on one line, within a readable range
   if (S.autoZoom) S.zoom = Math.max(window.innerWidth < 600 ? 0.6 : 0.55, Math.min(1, Math.floor(fitZoom(S.score, scoreWidth()) * 20) / 20));
-  S.layout = render(S.score, el, { width: scoreWidth(), zoom: S.zoom, selected: S.measures, selectedNote: S.sel, selectedMark: S.selMark, meta: S.meta });
+  S.layout = render(S.score, el, { width: scoreWidth(), zoom: S.zoom, selected: S.measures, selectedNote: S.sel, selectedMark: S.selMark, meta: S.meta, prev: S.layout });
   const ov = $('#overlay');
   ov.setAttribute('width', S.layout.pxWidth);
   ov.setAttribute('height', S.layout.height * S.zoom);
@@ -2157,6 +2174,7 @@ async function loadSamples() {
   loadResume();
 }
 function loadResume() {
+  flushSave();
   let last = null;
   try { last = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (e) { last = null; }
   $('#resume')?.remove();

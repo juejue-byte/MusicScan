@@ -39,9 +39,20 @@ function readDirection(d) {
 }
 
 // Every marking in one measure of one part, with its onset in divisions (where it sits in time)
+// (cached per bar while the bar is unchanged: every redraw walks all of them)
+const marksCache = new WeakMap();
 Score.prototype.marksIn = function (pi, mi) {
   const m = this.parts[pi]?.measures[mi];
   if (!m) return [];
+  const rev = this.barRevision?.(m);
+  const key = rev && `${rev}/${pi}/${mi}`;
+  const hit = key && marksCache.get(m);
+  if (hit && hit.key === key) return hit.out.map((o) => ({ ...o }));
+  const out = readMarks(m, pi, mi);
+  if (key) marksCache.set(m, { key, out: out.map((o) => ({ ...o })) });
+  return out;
+};
+function readMarks(m, pi, mi) {
   const out = [];
   let cur = 0, last = null;
   for (const c of m.children) {
@@ -64,7 +75,7 @@ Score.prototype.marksIn = function (pi, mi) {
     }
   }
   return out;
-};
+}
 
 Score.prototype.allMarks = function () {
   const out = [];

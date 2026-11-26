@@ -102,31 +102,71 @@ export function render(score, el, opts = {}) {
   const { rows, staves } = layoutRows(score, inner);
   const rowH = ROW_PAD_TOP + (staves.length - 1) * STAFF_GAP + 40 + ROW_PAD_BOTTOM;
   const height = rows.length * rowH + 20;
-  el.innerHTML = '';
-  const renderer = new VF.Renderer(el, VF.Renderer.Backends.SVG);
-  renderer.resize(pxWidth, height * zoom);
-  const ctx = renderer.getContext();
-  if (zoom !== 1) ctx.scale(zoom, zoom);
-  const svg = el.querySelector('svg');
-  const bg = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-  bg.setAttribute('class', 'ms-bg');
-  svg.prepend(bg);
-  const layout = { width, height, zoom, pxWidth, rowH, rows: [], measures: [], staves: [], notes: [], svg };
   const sel = opts.selected || new Set();
   const selNote = opts.selectedNote || null;
   const meta = opts.meta || [];
   const playing = opts.playing ?? -1;
+  // Redraw only the rows whose bars changed when the layout is otherwise the same (an edit, a new selection):
+  // VexFlow formatting is the expensive part, and one row is a small part of the page.
+  const sigs = barSignatures(score, staves, selNote);
+  const rowKey = rows.map((r) => r.map((m) => m.mi).join(',')).join('|') + '#' + staves.map((s) => `${s.pi}/${s.staff}`).join(',');
+  const prev = opts.prev;
+  const incremental = !!(prev && prev.score === score && prev.svg?.isConnected && prev.svg.parentNode === el && prev.pxWidth === pxWidth && prev.zoom === zoom && prev.rowKey === rowKey);
+  const rowW = rows.map((r) => r.map((m) => m.w.toFixed(2)).join(','));
+  let layout, ctx, svg, dirty, bars;
+  if (incremental) {
+    layout = prev;
+    ({ ctx, svg } = prev);
+    // a bar is redrawn when it changed; its whole row when the row's spacing changed with it
+    dirty = new Set();
+    bars = new Set();
+    rows.forEach((row, ri) => {
+      const changed = row.filter((m) => sigs[m.mi] !== prev.sigs[m.mi]);
+      if (!changed.length) return;
+      dirty.add(ri);
+      for (const m of rowW[ri] === prev.rowW[ri] ? changed : row) bars.add(m.mi);
+    });
+    if (bars.size) {
+      layout.notes = layout.notes.filter((n) => !bars.has(n.ev.mi));
+      layout.staves = layout.staves.filter((st) => !bars.has(st.mi));
+      for (const mi of bars) svg.querySelector(`:scope > g[data-bar="${mi}"]`)?.remove();
+    }
+  } else {
+    el.innerHTML = '';
+    const renderer = new VF.Renderer(el, VF.Renderer.Backends.SVG);
+    renderer.resize(pxWidth, height * zoom);
+    ctx = renderer.getContext();
+    if (zoom !== 1) ctx.scale(zoom, zoom);
+    svg = el.querySelector('svg');
+    const bgRoot = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    bgRoot.setAttribute('class', 'ms-bg');
+    svg.prepend(bgRoot);
+    layout = { width, height, zoom, pxWidth, rowH, rows: [], measures: [], staves: [], notes: [], svg, ctx, score, rowKey };
+    dirty = new Set(rows.map((r, ri) => ri));
+    bars = new Set(rows.flat().map((m) => m.mi));
+  }
+  layout.sigs = sigs;
+  layout.rowW = rowW;
+  layout.redrawn = dirty.size;
+  layout.redrawnBars = bars.size;
+  const bg = svg.querySelector(':scope > g.ms-bg');
+  bg.innerHTML = '';
 
   rows.forEach((row, ri) => {
+    if (!dirty.has(ri)) return;
     const y0 = 10 + ri * rowH;
     const scale = inner / row.reduce((a, m) => a + m.w, 0);
     const stretch = ri === rows.length - 1 ? Math.min(scale, 1.35) : scale;
     let x = left;
-    const rowInfo = { y0, y1: y0 + rowH, measures: [] };
-    const rowStaves = [];
+    const rowInfo = layout.rows[ri] || { y0, y1: y0 + rowH, measures: [] };
     row.forEach((m, k) => {
       const w = m.w * stretch;
       const mi = m.mi;
+      if (!bars.has(mi)) { x += w; return; }
+      // each bar is its own group, so an edit can replace just that bar
+      const grp = ctx.openGroup('ms-bar');
+      grp.setAttribute('data-bar', String(mi));
+      grp.setAttribute('data-row', String(ri));
       const vfStaves = [];
       staves.forEach((s, si) => {
         const a = score.attrs(s.pi, mi);
@@ -299,26 +339,63 @@ export function render(score, el, opts = {}) {
       const top = y0 + ROW_PAD_TOP - 30 + vfStaves[0].stave.getYForLine(0) - vfStaves[0].stave.getY() - 14;
       const bottom = vfStaves[vfStaves.length - 1].stave.getYForLine(4) + 14;
       const info = { mi, x0: x, x1: x + w, y0: top, y1: bottom, rowIdx: ri };
-      rowInfo.measures.push(info);
+      rowInfo.measures[k] = info;
       layout.measures[mi] = info;
-      const level = meta[mi]?.level;
-      const problems = staves.some((s) => score.measureProblems(s.pi, mi).over);
-      const mk = (tag, attrs) => { const r = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [a, b] of Object.entries(attrs)) r.setAttribute(a, b); bg.appendChild(r); return r; };
-      if (sel.has(mi)) mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#1769C2', 'fill-opacity': '0.10', stroke: '#1769C2', 'stroke-width': 1.5, rx: 4 });
-      else if (level === 'bad') mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#C2362B', 'fill-opacity': '0.10', rx: 4 });
-      else if (level === 'check') mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#E39B1B', 'fill-opacity': '0.12', rx: 4 });
-      if (playing === mi) mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#5FAEEB', 'fill-opacity': '0.16', rx: 4 });
-      if (problems) mk('rect', { x: x + 2, y: top + 1, width: w - 4, height: bottom - top - 2, fill: 'none', stroke: '#C2362B', 'stroke-dasharray': '5 4', 'stroke-width': 1.5, rx: 4 });
-      const num = score.parts[0].measures[mi]?.getAttribute('number') ?? String(mi + 1);
-      const t = mk('text', { x: x + 4, y: top - 3, 'font-size': 11, fill: level === 'bad' ? '#C2362B' : level === 'check' ? '#8A5300' : '#4E647C', 'font-family': 'system-ui, sans-serif', class: 'ms-num' });
-      t.textContent = num + (level === 'bad' ? '  ⚠' : level === 'check' ? '  ?' : '') + (problems ? '  too long' : '');
+      ctx.closeGroup();
       x += w;
     });
-    layout.rows.push(rowInfo);
+    layout.rows[ri] = rowInfo;
   });
+  // bar highlights, flags and numbers for every bar (plain SVG, cheap), then ties, slurs and marks across rows
+  for (const info of layout.measures) if (info) drawBarOverlay(score, bg, info, { sel, meta, playing, staves });
+  // rows redrawn out of order go back into reading order (hit tests and note stepping walk these lists)
+  if (incremental && bars.size) { layout.notes.sort((a, b) => a.ev.mi - b.ev.mi); layout.staves.sort((a, b) => a.mi - b.mi); }
+  svg.querySelector(':scope > g[data-ties]')?.remove();
+  svg.querySelector(':scope > g.ms-marks')?.remove();
+  ctx.openGroup('ms-ties').setAttribute('data-ties', '1');
   drawTies(score, layout, ctx);
+  ctx.closeGroup();
   try { layout.marks = drawMarks(score, layout, { selected: opts.selectedMark }); } catch (err) { console.warn('marks', err); layout.marks = []; }
   return layout;
+}
+
+// what a bar looks like on the page: its MusicXML in every part, the clef/key/time in force, its ending bracket,
+// and which of its notes is selected (drawn blue). A row is redrawn only when one of its bars' signature changes.
+const XS = new XMLSerializer();
+function barSignatures(score, staves, selNote) {
+  const sigs = [];
+  const parts = [...new Set(staves.map((s) => s.pi))];
+  for (let mi = 0; mi < score.nMeasures; mi++) {
+    let sig = '';
+    for (const pi of parts) {
+      const m = score.parts[pi].measures[mi];
+      if (!m) continue;
+      sig += score.barRevision(m) ?? XS.serializeToString(m);
+      const a = score.attrs(pi, mi);
+      sig += JSON.stringify([a.fifths, a.beats, a.beatType, a.divisions, a.clefs, a.changed]);
+      if (selNote && selNote.parentNode === m) sig += '#sel' + [...m.children].indexOf(selNote);
+    }
+    try { sig += JSON.stringify(score.endingAt(mi)); } catch (err) { /* ignore */ }
+    if (mi === score.nMeasures - 1) sig += '#last';
+    sigs.push(sig);
+  }
+  return sigs;
+}
+
+// selection, flag colour, playhead, overflow warning and number of one bar, under the music
+function drawBarOverlay(score, bg, info, { sel, meta, playing, staves }) {
+  const { mi } = info, x = info.x0, w = info.x1 - info.x0, top = info.y0, bottom = info.y1;
+  const level = meta[mi]?.level;
+  const problems = staves.some((s) => score.measureProblems(s.pi, mi).over);
+  const mk = (tag, attrs) => { const r = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [a, b] of Object.entries(attrs)) r.setAttribute(a, b); bg.appendChild(r); return r; };
+  if (sel.has(mi)) mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#1769C2', 'fill-opacity': '0.10', stroke: '#1769C2', 'stroke-width': 1.5, rx: 4 });
+  else if (level === 'bad') mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#C2362B', 'fill-opacity': '0.10', rx: 4 });
+  else if (level === 'check') mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#E39B1B', 'fill-opacity': '0.12', rx: 4 });
+  if (playing === mi) mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#5FAEEB', 'fill-opacity': '0.16', rx: 4 });
+  if (problems) mk('rect', { x: x + 2, y: top + 1, width: w - 4, height: bottom - top - 2, fill: 'none', stroke: '#C2362B', 'stroke-dasharray': '5 4', 'stroke-width': 1.5, rx: 4 });
+  const num = score.parts[0].measures[mi]?.getAttribute('number') ?? String(mi + 1);
+  const t = mk('text', { x: x + 4, y: top - 3, 'font-size': 11, fill: level === 'bad' ? '#C2362B' : level === 'check' ? '#8A5300' : '#4E647C', 'font-family': 'system-ui, sans-serif', class: 'ms-num' });
+  t.textContent = num + (level === 'bad' ? '  ⚠' : level === 'check' ? '  ?' : '') + (problems ? '  too long' : '');
 }
 
 // ties: a curve from each tied note to the next one; across a line break, half a curve on each line
