@@ -471,7 +471,7 @@ export function createNoteInput(ctx) {
     } else if (r?.end) x = st.x1 - 6;
     else x = st.x0 + 14;
     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    Object.entries({ x, y: st.top - 12, width: 18, height: 64, rx: 3, fill: '#2563eb', 'fill-opacity': 0.16, stroke: '#2563eb', 'stroke-opacity': 0.7, 'stroke-width': 1.2, class: 'caret' }).forEach(([k, v]) => rect.setAttribute(k, v));
+    Object.entries({ x, y: st.top - 12, width: 18, height: 64, rx: 3, class: 'caret' }).forEach(([k, v]) => rect.setAttribute(k, v));
     ov.appendChild(rect);
   }
 
