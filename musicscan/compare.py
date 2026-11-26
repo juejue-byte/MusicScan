@@ -71,14 +71,14 @@ def parse(xml: str | bytes) -> dict:
                         if hidden:
                             ev = None
                         else:
-                            ev = ("r", dur)
+                            ev = ("r", Fraction(round(dur * 96), 96))   # as _q: triplets in odd divisions
                     else:
                         p = el.find("pitch")
                         if p is None:
                             ev = None
                         else:
                             midi = 12 * (int(p.findtext("octave")) + 1) + STEP[p.findtext("step")] + int(float(p.findtext("alter", "0") or 0))
-                            ev = (midi, dur)
+                            ev = (midi, Fraction(round(dur * 96), 96))
                     if ev is not None:
                         streams.setdefault((pi, staff), []).append((t0 + start, mi, ev))
                     if not chord:

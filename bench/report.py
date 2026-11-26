@@ -9,14 +9,60 @@ from pathlib import Path
 CONDS = ["clean", "photo", "shadow", "pen", "pencil", "combo", "lowq"]
 
 
+# What kind of page each test piece is. Piano and single-instrument pages are what MusicScan is for; songs (voice
+# and piano) and ensembles/choir are reported separately.
+GROUPS = {
+    "piano": ["mozart_k545", "clara_polonaise", "cpebach_h186", "joplin_rag", "schoenberg_op19", "chopin_mazurka"],
+    "single instrument": ["beethoven_18_vc", "beethoven_18_viola", "beethoven_59_2_vc", "beethoven_59_vn1",
+                          "haydn_1_viola", "haydn_74_viola", "haydn_74_vn1", "mozart_k155_vn2", "mozart_k80_vn1",
+                          "weber_clarinet"],
+    "voice and piano": ["schubert_lindenbaum", "schumann_dichterliebe2", "handel_lascia"],
+    "choir and ensemble": ["bach_bwv1_6", "bach_bwv269", "bach_bwv66", "bach_bwv7_7", "bach_bwv10_7", "johnson_lift",
+                           "mozart_k458_quartet", "corelli_trio", "schumann_op41_quartet"],
+}
+GROUP_OF = {p: g for g, ps in GROUPS.items() for p in ps}
+_DATA = Path("bench/data")
+
+
 def load(d: Path):
-    rows = [json.loads(x) for x in (d / "results.jsonl").read_text().splitlines() if x.strip()]
-    return [r for r in rows if "error" not in r]
+    """Rows of results.jsonl, the last one per (piece, condition, mode), with note F1 scored again from the saved
+    MusicXML so a fix to the scorer applies to old runs too."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from musicscan.compare import compare
+    rows = {}
+    for x in (d / "results.jsonl").read_text().splitlines():
+        if x.strip():
+            r = json.loads(x)
+            if "error" not in r or r.get("error") is None:
+                rows[(r["id"], r["cond"], r["mode"])] = r
+    for (pid, cond, mode), r in rows.items():
+        f, g = d / "pred" / f"{pid}__{cond}__{mode}.musicxml", _DATA / f"{pid}.musicxml"
+        if f.exists() and g.exists():
+            try:
+                c = compare(g.read_text(), f.read_text())
+                r.update({k: c[k] for k in ("note_f1", "pitch_f1", "ser")})
+            except Exception:
+                pass
+    return list(rows.values())
 
 
 def mean(xs):
     xs = list(xs)
     return sum(xs) / len(xs) if xs else float("nan")
+
+
+def groups(d: Path):
+    """Note F1 and whole bars right by kind of page, MusicScan pipeline."""
+    rows = [r for r in load(d) if r["mode"] == "musicscan"]
+    conds = [c for c in CONDS if c != "lowq"]
+    print("| Kind of page | Pieces | " + " | ".join(conds) + " |")
+    print("| --- | --- |" + " --- |" * len(conds))
+    for g in GROUPS:
+        rs = [r for r in rows if GROUP_OF.get(r["id"]) == g]
+        if not rs:
+            continue
+        cells = [f"{mean(r['note_f1'] for r in rs if r['cond'] == c):.1%}" for c in conds]
+        print(f"| {g} | {len({r['id'] for r in rs})} | " + " | ".join(cells) + " |")
 
 
 def main(d: Path):
@@ -147,8 +193,11 @@ def plays(d: Path, data: Path):
 
 if __name__ == "__main__":
     d = Path(sys.argv[1] if len(sys.argv) > 1 else "bench/results")
-    main(d)
     data = Path(sys.argv[2] if len(sys.argv) > 2 else "bench/data")
+    _DATA = data
+    main(d)
+    print()
+    groups(d)
     print()
     flags(d, data)
     print()
