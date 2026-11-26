@@ -902,6 +902,8 @@ const SHORTCUTS = [
     ['⌘/Ctrl + ↑ ↓', 'Up or down an octave'],
     ['← →', 'Previous / next note (the caret in note input)'],
     ['⌘/Ctrl + ← →', 'Previous / next bar'],
+    ['⌘/Ctrl + Shift + ↑ ↓', 'Move the note to the staff above / below (piano)'],
+    ['Alt + Shift + ↑ ↓', 'In note input: the caret goes to the staff above / below'],
     ['Delete', 'Delete the note (a rest stays in its place)'],
     ['⌘/Ctrl + C, X, V', 'Copy, cut, paste: the selected note or chord, or whole bars'],
     ['Shift + ← →', 'Select more bars'],
@@ -959,11 +961,13 @@ function onKey(e) {
   if (mod && !e.shiftKey && !e.altKey && (k === 'x' || k === 'X')) { if (copySel(true)) e.preventDefault(); return; }
   if (mod && !e.shiftKey && !e.altKey && (k === 'v' || k === 'V')) { if (paste()) e.preventDefault(); return; }
   if (mod && !e.shiftKey && (k === 'a' || k === 'A')) { e.preventDefault(); S.sel = null; S.measures = new Set(Array.from({ length: S.score.nMeasures }, (_, i) => i)); redraw(); toast(`All ${S.score.nMeasures} bars selected`, 1400); return; }
+  if (mod && e.shiftKey && (k === 'ArrowUp' || k === 'ArrowDown')) { e.preventDefault(); NI.moveToStaff(k === 'ArrowUp' ? -1 : 1); return; }
   if (mod && (k === 'ArrowUp' || k === 'ArrowDown')) { e.preventDefault(); NI.pitchKey(k === 'ArrowUp' ? 1 : -1, 'octave'); return; }
   if (mod && (k === 'ArrowLeft' || k === 'ArrowRight')) { e.preventDefault(); const d = k === 'ArrowRight' ? 1 : -1; if (add) NI.moveCaret(d, true); else stepBar(d); return; }
   if (mod) return;
   // Alt+3 / Alt+5 ...: tuplets (by key position, so it works with any keyboard layout's Alt characters)
   if (e.altKey && /^Digit[35679]$/.test(e.code)) { e.preventDefault(); tuplet(+e.code.slice(5)); return; }
+  if (e.altKey && e.shiftKey && add && (k === 'ArrowUp' || k === 'ArrowDown')) { e.preventDefault(); NI.changeStaff(k === 'ArrowUp' ? -1 : 1); return; }
   if (e.altKey && (k === 'ArrowUp' || k === 'ArrowDown')) { e.preventDefault(); NI.pitchKey(k === 'ArrowUp' ? 1 : -1, 'step'); return; }
   if (e.altKey) return;
   // number keys by position too, so Shift or a non-US layout still picks a length

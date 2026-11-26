@@ -31,6 +31,7 @@ export function createPad(NI, { S, setDur }) {
       <button class="pad-btn" data-p="left" title="Move the caret back (←)" aria-label="Caret back">◀</button>
       <button class="pad-btn" data-p="right" title="Move the caret on (→)" aria-label="Caret forward">▶</button>
       <button class="pad-btn" data-p="back" title="Step back and clear (Backspace)" aria-label="Step back and clear">⌫</button>
+      <button class="pad-btn pad-staff" data-p="staff" title="Write on the other staff (⌥⇧↑↓)">Bass ⇣</button>
     </div>
     <button class="pad-hide" data-p="hide" title="Hide the keyboard" aria-label="Hide the keyboard">⌄</button>`;
   const statusbar = document.querySelector('.statusbar');
@@ -108,6 +109,11 @@ export function createPad(NI, { S, setDur }) {
       build();
     } else mark();
     el.querySelector('[data-p="chord"]').setAttribute('aria-pressed', String(st.chord));
+    // piano: one tap switches between the treble and bass staff
+    const sb = el.querySelector('[data-p="staff"]');
+    const nStaves = S.caret ? S.score.attrs(S.caret.pi, Math.min(S.caret.mi, S.score.nMeasures - 1)).staves || 1 : 1;
+    sb.classList.toggle('hidden', nStaves < 2);
+    sb.textContent = S.caret?.staff === '1' ? 'Lower ⇣' : 'Upper ⇡';
     el.querySelector('[data-p="voice"]').setAttribute('aria-pressed', String((S.caret?.vk || 1) > 1));
   }
 
@@ -118,6 +124,7 @@ export function createPad(NI, { S, setDur }) {
     const a = b.dataset.p;
     if (a === 'oct-') { st.base = Math.max(0, st.base - 1); build(); }
     else if (a === 'oct+') { st.base = Math.min(7, st.base + 1); build(); }
+    else if (a === 'staff') { const c = S.caret; NI.changeStaff(c && c.staff !== '1' ? -1 : 1); }
     else if (a === 'chord') { st.chord = !st.chord; sync(); }
     else if (a === 'voice') NI.setVoice((S.caret?.vk || 1) > 1 ? 1 : 2);
     else if (a === 'rest') NI.write(null);

@@ -229,7 +229,20 @@ export function createNoteInput(ctx) {
   function write(pitches, { type = S.dur, dots = S.dot ? 1 : 0, tieFrom = null } = {}) {
     ensureCaret();
     let res = null;
-    const ok = ctx.act(() => {
+    const ok = ctx.act(() => { res = place(pitches, type, dots, tieFrom); return res.el; });
+    if (!ok || !res) return null;
+    S.sel = res.el;
+    S.measures = new Set([S.caret.mi]);
+    advance(res.ql);
+    if (res.fitted) ctx.toast(`Shortened to a ${res.dots ? 'dotted ' : ''}${TYPE_NAME[res.type]} to fit the bar`, 1800);
+    if (pitches) ctx.preview(pitches.map(midiOf));
+    ctx.redraw();
+    ctx.scrollToBar(Math.min(S.caret.mi, score().nMeasures - 1));
+    return res.el;
+  }
+  // the score edit behind write(), without undo or redraw (callers wrap it in one undo step)
+  function place(pitches, type, dots, tieFrom = null) {
+      let res;
       let r = resolve();
       if (r?.end) {
         const idx = score().insertBar(score().nMeasures - 1, 'after');
@@ -263,17 +276,43 @@ export function createNoteInput(ctx) {
         const from = findEv(tieFrom);
         if (from && !from.rest && !score().isTied(from)) score().toggleTie(from);
       }
-      return el;
+      return res;
+  }
+
+  // ⌘⇧↑↓: move the selected note or chord to the staff above or below (a scan often puts a piano note on the wrong
+  // staff). It joins a chord already there with the same length, fills a rest, or goes in its own voice.
+  function moveToStaff(dir) {
+    const s = ctx.selected();
+    if (!s || s.ev.rest) { ctx.toast('Select a note to move it to the other staff'); return; }
+    const ev = s.ev;
+    const n = score().attrs(ev.pi, ev.mi).staves || 1;
+    const target = String(+ev.staff + dir);
+    if (+target < 1 || +target > n) { ctx.toast(n > 1 ? `There is no staff ${dir < 0 ? 'above' : 'below'}` : 'This part has one staff'); return; }
+    if (ev.tuplet) { ctx.toast('Triplet notes stay on their staff for now'); return; }
+    const pitches = ev.chord.map((c) => ({ ...c.pitch }));
+    const q = ev.onset / ev.div, type = ev.type || 'quarter', dots = ev.dots;
+    let el = null;
+    const ok = ctx.act(() => {
+      score().toRest(ev);
+      const evs = score().voiceEvents(ev.pi, ev.mi, target, null);
+      const at = evs.find((e) => Math.abs(e.onset / e.div - q) < EPS);
+      if (at && !at.rest && !at.tuplet && Math.abs(at.dur / at.div - ev.dur / ev.div) < EPS) {
+        for (const p of pitches) score().addChordTone(score().events(ev.pi, ev.mi).find((e) => e.el === at.el), p);
+        el = at.el;
+        return;
+      }
+      const vs = staffVoices(ev.pi, ev.mi, target);
+      const vk = at && at.rest ? vs.indexOf(at.voice) + 1 : vs.length + 1;
+      const keep = S.caret;
+      S.caret = { pi: ev.pi, staff: target, voice: at?.voice || '1', vk: Math.max(1, vk), mi: ev.mi, q };
+      el = place(pitches, type, dots).el;
+      S.caret = keep;
     });
-    if (!ok || !res) return null;
-    S.sel = res.el;
-    S.measures = new Set([S.caret.mi]);
-    advance(res.ql);
-    if (res.fitted) ctx.toast(`Shortened to a ${res.dots ? 'dotted ' : ''}${TYPE_NAME[res.type]} to fit the bar`, 1800);
-    if (pitches) ctx.preview(pitches.map(midiOf));
+    if (!ok || !el) return;
+    S.sel = el;
+    ctx.preview(pitches.map(midiOf));
     ctx.redraw();
-    ctx.scrollToBar(Math.min(S.caret.mi, score().nMeasures - 1));
-    return res.el;
+    ctx.toast(`Moved to the ${dir < 0 ? 'upper' : 'lower'} staff`, 1200);
   }
 
   // the last note written (or selected) in note input, for chord tones and repeats
@@ -486,7 +525,7 @@ export function createNoteInput(ctx) {
     return { ref: refPitch(), fifths: fifthsHere(), staff: `${S.caret.pi}/${S.caret.staff}` };
   }
 
-  return { setVoice, writePitch, context, letter, repeat, tieOn, write, moveCaret, changeStaff, backspace, pitchKey, drawCaret, status, caretAt, caretAfter, startAtSelection, ensureCaret, resolve, findEv };
+  return { moveToStaff, setVoice, writePitch, context, letter, repeat, tieOn, write, moveCaret, changeStaff, backspace, pitchKey, drawCaret, status, caretAt, caretAfter, startAtSelection, ensureCaret, resolve, findEv };
 }
 
 export { pitchName };
