@@ -52,7 +52,8 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
         q = assess(pre, r)
         j["result"] = {"xml": r["xml"], "measures": r["measures"], "systems": r["systems"], "stats": r["stats"],
                        "quality": q, "steps": pre["steps"], "quad": pre["quad"], "seconds": r["seconds"],
-                       "page_size": list(pre["image"].size), "original_size": list(im.size)}
+                       "page_size": list(pre["image"].size), "original_size": list(im.size),
+                       "second_opinion": r.get("second_opinion")}
         j["status"] = "done"
     except Exception as e:
         traceback.print_exc()

@@ -340,7 +340,17 @@ def second_opinion(r: dict, im: Image.Image) -> dict:
             m["disagree"] = True
             n += 1
         m["level"] = level(m)
-    r["second_opinion"] = {"aligned": True, "bars": n, "seconds": other["seconds"]}
+    # keep the second reading so the editor can offer it bar by bar ("Use second reading" in Fix it); bar k of it
+    # lines up with measure index k of this reading (before any sanitizer split)
+    alt = other["xml"]
+    try:
+        from . import sanitize as san
+        cleaned, rep = san.sanitize(alt)
+        if not rep.get("splits"):
+            alt = cleaned
+    except Exception:
+        pass
+    r["second_opinion"] = {"aligned": True, "bars": n, "seconds": other["seconds"], "xml": alt}
     r["seconds"] = round(r["seconds"] + other["seconds"], 1)
     return r
 
