@@ -620,10 +620,10 @@ function drawGhost(x, y, finger = false) {
   for (let ly = top - 10; ly >= sy - 1; ly -= 10) g.appendChild(line(gx - 10, ly, gx + 10, ly));
   for (let ly = bot + 10; ly <= sy + 1; ly += 10) g.appendChild(line(gx - 10, ly, gx + 10, ly));
   const head = document.createElementNS(SVGNS, 'ellipse');
-  Object.entries({ cx: gx, cy: sy, rx: 6.2, ry: 4.6, fill: '#2563eb', 'fill-opacity': 0.45, transform: `rotate(-20 ${gx} ${sy})` }).forEach(([k, v]) => head.setAttribute(k, v));
+  Object.entries({ cx: gx, cy: sy, rx: 6.2, ry: 4.6, fill: '#1769C2', 'fill-opacity': 0.45, transform: `rotate(-20 ${gx} ${sy})` }).forEach(([k, v]) => head.setAttribute(k, v));
   g.appendChild(head);
   const t = document.createElementNS(SVGNS, 'text');
-  Object.entries({ x: gx - 10, y: Math.min(sy, top) - (finger ? 48 : 14), 'font-size': finger ? 16 : 12, fill: '#1e40af', 'font-family': 'system-ui, sans-serif', 'font-weight': 600 }).forEach(([k, v]) => t.setAttribute(k, v));
+  Object.entries({ x: gx - 10, y: Math.min(sy, top) - (finger ? 48 : 14), 'font-size': finger ? 16 : 12, fill: '#0F56A3', 'font-family': 'system-ui, sans-serif', 'font-weight': 600 }).forEach(([k, v]) => t.setAttribute(k, v));
   t.textContent = pitchName(pitch);
   t.setAttribute('paint-order', 'stroke');
   t.setAttribute('stroke', '#fff');
@@ -633,13 +633,13 @@ function drawGhost(x, y, finger = false) {
 }
 function line(x1, y1, x2, y2) {
   const l = document.createElementNS(SVGNS, 'line');
-  Object.entries({ x1, y1, x2, y2, stroke: '#2563eb', 'stroke-opacity': 0.5, 'stroke-width': 1.2 }).forEach(([k, v]) => l.setAttribute(k, v));
+  Object.entries({ x1, y1, x2, y2, stroke: '#1769C2', 'stroke-opacity': 0.5, 'stroke-width': 1.2 }).forEach(([k, v]) => l.setAttribute(k, v));
   return l;
 }
 function drawDragLabel(p, x, y) {
   clearOverlay('drag');
   const t = document.createElementNS(SVGNS, 'text');
-  Object.entries({ x: x + (S.touch ? -8 : 14), y: y - (S.touch ? 46 : 10), 'font-size': S.touch ? 16 : 13, fill: '#1e40af', 'font-weight': 700, 'font-family': 'system-ui, sans-serif', class: 'drag' }).forEach(([k, v]) => t.setAttribute(k, v));
+  Object.entries({ x: x + (S.touch ? -8 : 14), y: y - (S.touch ? 46 : 10), 'font-size': S.touch ? 16 : 13, fill: '#0F56A3', 'font-weight': 700, 'font-family': 'system-ui, sans-serif', class: 'drag' }).forEach(([k, v]) => t.setAttribute(k, v));
   t.textContent = pitchName(p);
   $('#overlay').appendChild(t);
 }
@@ -1158,7 +1158,7 @@ function drawPhotoOverlay() {
     const [x0, y0, x1, y1] = m.bbox;
     const r = document.createElementNS(SVGNS, 'rect');
     const sel = S.measures.has(mi);
-    const col = sel ? '#2563eb' : m.level === 'bad' ? '#dc2626' : m.level === 'check' ? '#d97706' : '#16a34a';
+    const col = sel ? '#1769C2' : m.level === 'bad' ? '#C2362B' : m.level === 'check' ? '#E39B1B' : '#1D7A4E';
     Object.entries({ x: x0, y: y0 - 6, width: x1 - x0, height: y1 - y0 + 12, fill: col, 'fill-opacity': sel ? 0.18 : m.level === 'ok' ? 0.03 : 0.14, stroke: col, 'stroke-width': sel ? 4 : m.level === 'ok' ? 1 : 2.5, rx: 6 }).forEach(([k, v]) => r.setAttribute(k, v));
     r.addEventListener('click', () => { S.measures = new Set([mi]); S.sel = null; focusBar(mi, true); redraw(); });
     const t = document.createElementNS(SVGNS, 'title');
@@ -1213,7 +1213,7 @@ function drawInspector(mi) {
   const g = c.getContext('2d');
   g.setTransform(devicePixelRatio * scale, 0, 0, devicePixelRatio * scale, 0, 0);
   g.drawImage(pageImg, sx, sy, sw, sh, 0, 0, sw, sh);
-  const col = m.level === 'bad' ? '#dc2626' : m.level === 'check' ? '#d97706' : '#2563eb';
+  const col = m.level === 'bad' ? '#C2362B' : m.level === 'check' ? '#E39B1B' : '#1769C2';
   g.strokeStyle = col; g.lineWidth = 3 / scale;
   g.strokeRect(m.bbox[0], m.bbox[1] - sy - 8, m.bbox[2] - m.bbox[0], m.bbox[3] - m.bbox[1] + 16);
   g.fillStyle = col; g.globalAlpha = 0.6;
@@ -1501,7 +1501,7 @@ function inkCursor(x, y, eraser = S.eraser) {
   const c = document.createElementNS(SVGNS, 'circle');
   const pen = penOf();
   const r = eraser ? 9 : Math.max(2, penWidth(pen) / 2);
-  Object.entries({ cx: x, cy: y, r, fill: eraser ? 'none' : pen.color, 'fill-opacity': eraser ? 0 : 0.5, stroke: eraser ? '#64748b' : 'none', 'stroke-width': 1.2, class: 'inkcursor' }).forEach(([k, v]) => c.setAttribute(k, v));
+  Object.entries({ cx: x, cy: y, r, fill: eraser ? 'none' : pen.color, 'fill-opacity': eraser ? 0 : 0.5, stroke: eraser ? '#4E647C' : 'none', 'stroke-width': 1.2, class: 'inkcursor' }).forEach(([k, v]) => c.setAttribute(k, v));
   $('#overlay').appendChild(c);
 }
 function clearInk() {
@@ -1653,7 +1653,7 @@ function togglePlay() {
         const p = pos.get(e.el);
         if (!p) continue;
         const c = document.createElementNS(SVGNS, 'circle');
-        Object.entries({ cx: p.x, cy: p.y, r: 8, fill: '#10b981', 'fill-opacity': 0.55, class: 'sounding' }).forEach(([k, v]) => c.setAttribute(k, v));
+        Object.entries({ cx: p.x, cy: p.y, r: 8, fill: '#5FAEEB', 'fill-opacity': 0.55, class: 'sounding' }).forEach(([k, v]) => c.setAttribute(k, v));
         $('#overlay').appendChild(c);
       }
     },
@@ -1680,7 +1680,7 @@ function drawCursor(mi) {
   const m = S.layout?.measures[mi];
   if (!m) return;
   const r = document.createElementNS(SVGNS, 'rect');
-  Object.entries({ x: m.x0 + 1, y: m.y0, width: m.x1 - m.x0 - 2, height: m.y1 - m.y0, fill: '#10b981', 'fill-opacity': 0.16, stroke: '#10b981', 'stroke-width': 2, rx: 4, class: 'cursor' }).forEach(([k, v]) => r.setAttribute(k, v));
+  Object.entries({ x: m.x0 + 1, y: m.y0, width: m.x1 - m.x0 - 2, height: m.y1 - m.y0, fill: '#5FAEEB', 'fill-opacity': 0.16, stroke: '#5FAEEB', 'stroke-width': 2, rx: 4, class: 'cursor' }).forEach(([k, v]) => r.setAttribute(k, v));
   $('#overlay').appendChild(r);
   scrollToBar(mi);
 }
@@ -1928,9 +1928,9 @@ function drawPageMarks() {
     g.setAttribute('class', 'pagemark');
     const x1 = S.layout.width - 6, w = 52;
     const bg = document.createElementNS(SVGNS, 'rect');
-    Object.entries({ x: x1 - w, y: m.y0 - 2, width: w, height: 18, rx: 9, fill: '#e2e8f0' }).forEach(([k, v]) => bg.setAttribute(k, v));
+    Object.entries({ x: x1 - w, y: m.y0 - 2, width: w, height: 18, rx: 9, fill: '#D8EAFC' }).forEach(([k, v]) => bg.setAttribute(k, v));
     const t = document.createElementNS(SVGNS, 'text');
-    Object.entries({ x: x1 - w / 2, y: m.y0 + 11, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 600, fill: '#475569' }).forEach(([k, v]) => t.setAttribute(k, v));
+    Object.entries({ x: x1 - w / 2, y: m.y0 + 11, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 600, fill: '#0F56A3' }).forEach(([k, v]) => t.setAttribute(k, v));
     t.textContent = `Page ${i + 1}`;
     g.append(bg, t);
     $('#overlay').appendChild(g);

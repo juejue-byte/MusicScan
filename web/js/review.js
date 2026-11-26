@@ -210,7 +210,7 @@ function drawCrop(canvas, mi, maxW, maxH) {
   g.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
   g.drawImage(img, x0, y0, sw, sh, 0, 0, sw, sh);
   const lvl = wasLevel(m);
-  const col = m.reviewed ? '#16a34a' : lvl === 'bad' ? '#dc2626' : '#d97706';
+  const col = m.reviewed ? '#1D7A4E' : lvl === 'bad' ? '#C2362B' : '#E39B1B';
   g.strokeStyle = col; g.lineWidth = 2.5 / scale;
   g.strokeRect(m.bbox[0] * k - x0, m.bbox[1] * k - y0 - 8, (m.bbox[2] - m.bbox[0]) * k, (m.bbox[3] - m.bbox[1]) * k + 16);
   // the symbols the reader was unsure of, underlined

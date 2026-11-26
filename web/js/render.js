@@ -248,7 +248,7 @@ export function render(score, el, opts = {}) {
             }
             if (!e.rest) addArticulations(VF, note, e);
             const isSel = selNote && (selNote === e.el || e.chord.some((c) => c.el === selNote));
-            if (isSel) note.setStyle({ fillStyle: '#2563eb', strokeStyle: '#2563eb' });
+            if (isSel) note.setStyle({ fillStyle: '#1769C2', strokeStyle: '#1769C2' });
             tickables.push(note);
             byEl.set(e.el, note);
             layout.notes.push({ ev: e, vf: note, stave: v.stave, top: eTop, clef: eclef, rowIdx: ri, staffIdx: staves.indexOf(v.s) });
@@ -302,13 +302,13 @@ export function render(score, el, opts = {}) {
       const level = meta[mi]?.level;
       const problems = staves.some((s) => score.measureProblems(s.pi, mi).over);
       const mk = (tag, attrs) => { const r = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [a, b] of Object.entries(attrs)) r.setAttribute(a, b); bg.appendChild(r); return r; };
-      if (sel.has(mi)) mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#3b82f6', 'fill-opacity': '0.10', stroke: '#3b82f6', 'stroke-width': 1.5, rx: 4 });
-      else if (level === 'bad') mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#ef4444', 'fill-opacity': '0.10', rx: 4 });
-      else if (level === 'check') mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#f59e0b', 'fill-opacity': '0.12', rx: 4 });
-      if (playing === mi) mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#10b981', 'fill-opacity': '0.16', rx: 4 });
-      if (problems) mk('rect', { x: x + 2, y: top + 1, width: w - 4, height: bottom - top - 2, fill: 'none', stroke: '#dc2626', 'stroke-dasharray': '5 4', 'stroke-width': 1.5, rx: 4 });
+      if (sel.has(mi)) mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#1769C2', 'fill-opacity': '0.10', stroke: '#1769C2', 'stroke-width': 1.5, rx: 4 });
+      else if (level === 'bad') mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#C2362B', 'fill-opacity': '0.10', rx: 4 });
+      else if (level === 'check') mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#E39B1B', 'fill-opacity': '0.12', rx: 4 });
+      if (playing === mi) mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#5FAEEB', 'fill-opacity': '0.16', rx: 4 });
+      if (problems) mk('rect', { x: x + 2, y: top + 1, width: w - 4, height: bottom - top - 2, fill: 'none', stroke: '#C2362B', 'stroke-dasharray': '5 4', 'stroke-width': 1.5, rx: 4 });
       const num = score.parts[0].measures[mi]?.getAttribute('number') ?? String(mi + 1);
-      const t = mk('text', { x: x + 4, y: top - 3, 'font-size': 11, fill: level === 'bad' ? '#b91c1c' : level === 'check' ? '#b45309' : '#6b7280', 'font-family': 'system-ui, sans-serif', class: 'ms-num' });
+      const t = mk('text', { x: x + 4, y: top - 3, 'font-size': 11, fill: level === 'bad' ? '#C2362B' : level === 'check' ? '#8A5300' : '#4E647C', 'font-family': 'system-ui, sans-serif', class: 'ms-num' });
       t.textContent = num + (level === 'bad' ? '  ⚠' : level === 'check' ? '  ?' : '') + (problems ? '  too long' : '');
       x += w;
     });

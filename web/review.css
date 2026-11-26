@@ -2,30 +2,30 @@
 /* the Fix it button sits in the header on wide screens (the iPad toolbar is full) and in the toolbar on narrow ones */
 .seg.fix { display: none; }
 @media (max-width: 860px) { .seg.fix { display: inline-flex; } .fix-top { display: none !important; } }
-.fix-btn { font-weight: 600; color: #92400e; }
-.fix-btn .n:not(:empty) { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; background: var(--warn); color: #fff; font-size: 12px; }
+.fix-btn { font-weight: 600; color: #8A5300; }
+.fix-btn .n:not(:empty) { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; background: var(--bad); color: #fff; font-size: 12px; }
 .fix-btn.done .n { background: var(--ok); }
 .fix-btn:disabled { color: inherit; font-weight: normal; }
 .fix-btn:disabled .n { display: none; }
-.fix-btn.on { background: var(--accent-soft); color: #1e40af; border-color: var(--accent); }
+.fix-btn.on { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--accent); }
 
 body.reviewing .hint, body.reviewing #qualityBanner, body.reviewing #inspector { display: none !important; }
 
 .review { background: var(--panel); border-bottom: 1px solid var(--line); padding: 8px 12px 10px; padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right));
-  box-shadow: 0 6px 18px rgba(15,23,42,.06); position: relative; z-index: 4; }
+  box-shadow: 0 6px 18px rgba(14,34,56,.06); position: relative; z-index: 4; }
 .rv-head { display: flex; align-items: center; gap: 10px; }
 .rv-title { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 0 1 auto; overflow: hidden; font-size: 15px; white-space: nowrap; }
 .rv-title .muted { font-size: 13px; }
 .rv-badge { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 99px; font-size: 12px; font-weight: 700; letter-spacing: .01em; }
-.rv-badge.bad { background: var(--bad-soft); color: #991b1b; }
-.rv-badge.check { background: var(--warn-soft); color: #92400e; }
-.rv-badge.ok { background: var(--ok-soft); color: #166534; }
+.rv-badge.bad { background: var(--bad-soft); color: #A32A21; }
+.rv-badge.check { background: var(--warn-soft); color: #8A5300; }
+.rv-badge.ok { background: var(--ok-soft); color: #1D7A4E; }
 .rv-progress { flex: none; margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); white-space: nowrap; }
-.rv-track { width: 110px; height: 6px; border-radius: 99px; background: #eef2f7; overflow: hidden; }
+.rv-track { width: 110px; height: 6px; border-radius: 99px; background: var(--sky-50); overflow: hidden; }
 .rv-track div { height: 100%; width: 0; background: var(--ok); transition: width .25s; }
 .rv-nav { font-size: 24px; line-height: 1; }
 .rv-sub { display: flex; align-items: flex-start; gap: 12px; margin: 6px 0 8px; }
-.rv-why { flex: 1; font-size: 14px; color: #334155; }
+.rv-why { flex: 1; font-size: 14px; color: #2A3F57; }
 .rv-auto { flex: none; }
 .rv-pics { display: flex; gap: 16px; align-items: flex-start; overflow-x: auto; }
 .rv-pics figure { margin: 0; flex: none; max-width: 100%; }
@@ -38,7 +38,7 @@ body.reviewing .hint, body.reviewing #qualityBanner, body.reviewing #inspector {
 .rv-actions .rv-gap { flex: 1; }
 .rv-actions kbd { margin-left: 2px; color: inherit; opacity: .65; }
 .rv-actions .btn.primary { min-width: 150px; justify-content: center; font-weight: 600; }
-#rvPlay.on, #rvEdit.on { background: var(--accent-soft); color: #1e40af; border-color: var(--accent); }
+#rvPlay.on, #rvEdit.on { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--accent); }
 .rv-auto { font-size: 13px; }
 .review.editing .rv-pics { opacity: 1; }
 
