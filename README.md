@@ -45,14 +45,16 @@ the server. Force it with `?demo`.
 
 | Do this | How |
 | --- | --- |
-| Change a pitch | Drag the note up/down, or select it and press ↑ ↓ (Shift: octave) |
+| Change a pitch | Drag the note up/down; or select it and type its letter A–G (moves on to the next note); ↑ ↓ semitone · Alt+↑ ↓ scale step · ⌘/Ctrl+↑ ↓ octave. On selected bars they move every note. iPad: tap the note, then a key on the piano (**Keyboard** button) |
 | Reorder | Drag a note left/right past its neighbour to swap them |
-| Change a duration | Select, then 1 whole · 2 half · 3 quarter · 4 eighth · 5 16th · 6 32nd · `.` dot |
+| Change a duration | Select, then 7 whole · 6 half · 5 quarter · 4 eighth · 3 16th · 2 32nd · `.` dot (MuseScore / Dorico numbering) |
 | Accidentals | `-` flat · `=` natural · `+` sharp (or the ♭ ♮ ♯ buttons) |
-| Write notes | **Add notes** (N), pick a duration, click on the staff. Clicking a rest fills it; following rests make room |
-| Chords | In Add mode, Shift-click on an existing note |
-| Note ↔ rest, delete | R · Delete |
-| Wrong key or meter | **Key / time** (notes that followed the misread key are re-spelled) |
+| Write notes | **Add notes** (N) puts a blue caret at the selection. Type A–G (nearest octave), 0 rest, R repeat, ← → move the caret, Backspace steps back. Or click / tap the staff, or the on-screen piano on iPad. Typing past the end adds a bar |
+| Chords, voices, staves | Shift+A–G (or Shift-click, or **+ Chord** on the piano) adds a chord tone · ⌘⌥1–4 or **Voice 2** writes a second melody on the staff · ⌘⇧↑ ↓ moves a note to the other piano staff · ⌥⇧↑ ↓ or **Lower/Upper** moves the caret |
+| Note ↔ rest, delete | 0 · Delete |
+| Copy and paste | ⌘/Ctrl+C X V: a note or chord, or whole bars (also in **Bar ▾**). Shift+← → grows the bar selection, ⌘A selects all |
+| Slurs, articulations | S slur · Shift+S staccato · Shift+V accent · Shift+N tenuto · Shift+O marcato (again removes it), or **Marks ▾** |
+| Wrong key, meter or clef; transpose | **Key / time** (notes that followed the misread key are re-spelled; a misread clef keeps the notes where they are printed). Transpose the whole piece there too |
 | Select bars | Click a bar number (Shift-click for a range), or a bar on the photo |
 | Rescan | Select bars → **Rescan bars** → compare → keep or try another way |
 | Check the flagged bars | **Fix it** (F): Enter looks right · `]` `[` next / previous flag · P play the bar · E edit it · Esc close. iPad keyboard: ⌘] ⌘[ ⌘⇧↵ ⌘⇧F |
@@ -63,6 +65,8 @@ the server. Force it with `?demo`.
 | Draw on the score | **Ink** (P): Apple Pencil, mouse or finger. Pens, highlighter, eraser (X, or Pencil double-tap). Ink never changes the notes |
 | Show / hide ink | **Ink: shown / hidden** in the status bar |
 | Undo / redo | Ctrl/Cmd+Z · Ctrl/Cmd+Shift+Z |
+| Zoom | Pinch on iPad · ⌘/Ctrl+scroll · − + in the status bar |
+| Every shortcut | ? |
 
 Bars that no longer add up are outlined in red dashes and listed in the status bar.
 
