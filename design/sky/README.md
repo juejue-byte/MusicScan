@@ -42,7 +42,7 @@ Run a test with `NODE_PATH=$(npm root -g) node tests/<name>.js`.
 
 - Capture on iOS should keep VisionKit's document camera. The live photo check in `capture.js` is for the web; its thresholds (sharpness, paper brightness, fill and motion) are a starting point if you add a check before upload.
 - Plans (Allen, 2026-11-26): Pro $15.99 a month or $99.99 a year (default, "Best value", 7-day free trial for intro-offer eligible users), up to 30 pages a month. New users get 1 free page with every feature; after that a scan previews the first half of the page and blurs the rest, and editing, playback and export ask to unlock. No weekly plan. Payments are not connected yet (see docs/AGENT_PROMPTS.md, Stream 5).
-- The two paywall wireframes (iPad 8, iPhone 5) still show the earlier weekly/monthly/yearly prices. Use their layout only; prices, plans and copy come from `PLAN` in `web/js/paywall.js` (see `screens/` for the built paywall).
+- The paywall wireframes (iPad 8, iPhone 5) and the free-page notes on Welcome and Library match these plans. The paywall shots in `screens/` show the built sheet, and `half_page_preview_ipad.png` shows the blurred half-page preview. `PLAN` in `web/js/paywall.js` is the source of truth for prices and copy.
 - On iPhone the editor puts durations in a bottom bar and the paywall is a bottom sheet. On iPad the photo sits beside the score.
 
 ## Assumptions to confirm
