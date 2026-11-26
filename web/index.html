@@ -39,16 +39,16 @@
   <!-- 1. upload -->
   <section id="viewUpload" class="view">
     <div class="hero">
-      <h1>Turn a photo of sheet music into a score you can edit and play.</h1>
-      <p class="sub">Printed music, piano or one instrument. Works with phone photos, scans and PDFs.</p>
+      <h1>Scan it. Fix it. <span class="accent">Play it.</span></h1>
+      <p class="sub">Turn a photo of printed sheet music into a score you can edit and play. Piano or one instrument, from phone photos, scans and PDFs.</p>
       <label class="drop" id="drop">
         <input type="file" id="fileInput" accept="image/*,.heic,.heif,.pdf,.musicxml,.xml,.mxl" hidden>
-        <div class="drop-icon">⤒</div>
+        <div class="drop-icon"><svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/><path d="M12 16V8M8.5 11.5 12 8l3.5 3.5"/></svg></div>
         <div class="drop-main">Drop a photo or PDF here</div>
         <div class="drop-sub">or <span class="link">choose a file</span> · JPG, PNG, HEIC, PDF · MusicXML to edit</div>
       </label>
       <div class="upload-row">
-        <label class="btn camera"><input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>📷 Take a photo</label>
+        <label class="btn camera"><input type="file" id="cameraInput" accept="image/*" capture="environment" hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg> Take a photo</label>
         <label class="check"><input type="checkbox" id="optFast"> Fast mode (smaller model, ~4× quicker)</label>
       </div>
       <div class="demo-note">Preview mode: the sample photos below open results the real reader produced earlier. Editing, playback and export all work. To read your own photos, run MusicScan with its server.</div>

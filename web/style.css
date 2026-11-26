@@ -475,3 +475,26 @@ i.mf { font-family: 'Times New Roman', Times, serif; font-weight: 700; font-size
   .score-scroll { margin: 0 6px; }
 }
 .pad[data-mode="select"] [data-p="voice"] { display: none; }
+
+/* Sky start screen: the five staff lines as a quiet motif, rounded headline, viewfinder drop zone */
+#viewUpload { background: var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='120' viewBox='0 0 1200 120'%3E%3Cg fill='none' stroke='%23D8EAFC' stroke-width='2'%3E%3Cpath d='M0 40C300 0 700 100 1200 30'/%3E%3Cpath d='M0 56C300 16 700 116 1200 46'/%3E%3Cpath d='M0 72C300 32 700 132 1200 62'/%3E%3Cpath d='M0 88C300 48 700 148 1200 78'/%3E%3Cpath d='M0 104C300 64 700 164 1200 94'/%3E%3C/g%3E%3C/svg%3E") no-repeat center bottom 24px / 100% auto; }
+.hero h1 { font-weight: 900; font-size: clamp(30px, 5vw, 48px); letter-spacing: -.025em; }
+.hero h1 .accent { color: var(--accent); }
+.sub { font-size: 17px; max-width: 600px; }
+.drop { border-color: var(--sky-200); border-radius: 24px; padding: 44px 20px; }
+.drop:hover, .drop.over { border-color: var(--accent); background: var(--sky-50); }
+.drop-icon { display: grid; place-items: center; width: 72px; height: 72px; margin: 0 auto 4px; border-radius: 20px; background: var(--sky-50); color: var(--accent); }
+.drop-main { font-family: var(--font-display); font-weight: 800; font-size: 20px; }
+.btn.camera svg, .btn.camera { vertical-align: middle; }
+.sample, .tip { border-radius: 16px; }
+.sample img { border-radius: 10px; }
+.sample:hover { border-color: var(--sky-200); box-shadow: var(--shadow); }
+.progress-card { border-radius: 24px; border: 0; }
+.progress-card img { background: var(--sky-50); border-radius: 14px; }
+.bar { height: 8px; background: var(--sky-50); }
+.step.done .dot { background: var(--ok); }
+@media (max-width: 600px) {
+  .banner { margin: 6px 6px 0; flex-wrap: wrap; gap: 6px 10px; padding-top: 8px; padding-bottom: 8px; font-size: 13px; }
+  .banner .b-body { flex: 1 1 calc(100% - 60px); }
+  .banner .b-actions { margin-left: 28px; }
+}

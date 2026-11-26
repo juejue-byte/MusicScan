@@ -1967,7 +1967,7 @@ function pagesDialog() {
       <div class="page-list">${rows}</div>
       <div class="modal-actions">
         <button class="btn" data-pg="file">＋ Add a photo or PDF</button>
-        <button class="btn" data-pg="camera">📷 ${native.isNative ? 'Scan pages' : 'Take a photo'}</button>
+        <button class="btn" data-pg="camera">${native.isNative ? 'Scan pages' : 'Take a photo'}</button>
         <button class="btn primary" data-pg="close">Done</button>
       </div>`;
   };
