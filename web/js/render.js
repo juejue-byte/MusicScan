@@ -2,7 +2,7 @@
 import { Score, STEPS, keyAlter, clefKey, clefTop, midiOf } from './score.js';
 import './edits.js';
 import { drawMarks } from './markup.js';
-import { addArticulations, drawSlurs } from './notations.js';
+import { addArticulations, drawSlurs, graceMap, addGraces } from './notations.js';
 
 const VF = window.Vex.Flow;
 const VF_CLEF = { G2: 'treble', F4: 'bass', C3: 'alto', C4: 'tenor', C1: 'soprano', F3: 'baritone-f', C2: 'mezzo-soprano', G1: 'french' };
@@ -176,6 +176,7 @@ export function render(score, el, opts = {}) {
       const formatter = new VF.Formatter();
       for (const v of vfStaves) {
         const evs = score.events(v.s.pi, mi).filter((e) => e.staff === v.s.staff && !e.grace);
+        const graces = graceMap(score, v.s.pi, mi);
         const top = clefTop(v.clef);
         const shownTop = top; // pitch already written as notated
         const voices = {};
@@ -247,6 +248,7 @@ export function render(score, el, opts = {}) {
               } catch (err) { /* ignore */ }
             }
             if (!e.rest) addArticulations(VF, note, e);
+            if (!e.rest && graces.has(e.el)) addGraces(VF, note, graces.get(e.el), { clef: eclef, fifths: v.a.fifths, keyAlter, vfClef });
             const isSel = selNote && (selNote === e.el || e.chord.some((c) => c.el === selNote));
             if (isSel) note.setStyle({ fillStyle: '#1769C2', strokeStyle: '#1769C2' });
             tickables.push(note);

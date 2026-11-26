@@ -142,3 +142,38 @@ export function drawSlurs(VF, ctx, score, layout) {
     }
   }
 }
+
+// ---------------------------------------------------------------- grace notes
+// grace notes of a bar, grouped onto the note they lead into (same staff and voice): Map(mainEl -> [grace events])
+export function graceMap(score, pi, mi) {
+  const out = new Map();
+  const pending = {};
+  for (const e of score.events(pi, mi)) {
+    const k = `${e.staff}/${e.voice}`;
+    if (e.grace) { (pending[k] ||= []).push(e); continue; }
+    if (pending[k]?.length) { out.set(e.el, pending[k]); pending[k] = []; }
+  }
+  return out;
+}
+
+// small notes before the main note, with a slash for acciaccaturas, beamed when there are several
+export function addGraces(VF, note, graces, { clef, fifths, keyAlter, vfClef }) {
+  if (!graces?.length) return;
+  try {
+    const dur = { whole: 'w', half: 'h', quarter: 'q', eighth: '8', '16th': '16', '32nd': '32' };
+    const gn = graces.filter((g) => !g.rest && g.chord.length).map((g) => {
+      const keys = g.chord.map((c) => `${c.pitch.step.toLowerCase()}/${c.pitch.octave - (clef?.octaveChange || 0)}`);
+      const slash = g.el.querySelector(':scope > grace')?.getAttribute('slash') === 'yes';
+      const n = new VF.GraceNote({ keys, duration: dur[g.type] || '8', slash, clef: vfClef });
+      g.chord.forEach((c, i) => {
+        const al = c.pitch.alter || 0;
+        if (al !== keyAlter(fifths, c.pitch.step) || c.el.querySelector(':scope > accidental')) n.addModifier(new VF.Accidental({ '-2': 'bb', '-1': 'b', 0: 'n', 1: '#', 2: '##' }[al]), i);
+      });
+      return n;
+    });
+    if (!gn.length) return;
+    const group = new VF.GraceNoteGroup(gn, true);
+    if (gn.length > 1) group.beamNotes();
+    note.addModifier(group, 0);
+  } catch (err) { /* this VexFlow cannot draw it */ }
+}
