@@ -18,6 +18,21 @@ def order_quad(pts) -> list:
     return _order(np.asarray(pts, np.float32)).tolist()
 
 
+def _hugs_frame(q: np.ndarray, shape, tol: float = 0.01) -> bool:
+    """True when a page outline runs along the photo's own edge: a corner sits on a corner of the frame, or two
+    neighbouring corners sit on the same side of it. On a wood table the bright grain merges with the page and the
+    biggest outline grabs the frame; warping to it keeps a strip of desk, tilts the page, and on single-staff music
+    bends rows so far that the reader splits a row into a second, made-up part. A real page can touch one side of
+    the photo, but its outline does not follow the frame."""
+    h, w = shape[:2]
+    t = tol * max(h, w)
+    sides = [{s for s, on in (("l", x <= t), ("r", x >= w - 1 - t), ("t", y <= t), ("b", y >= h - 1 - t)) if on}
+             for x, y in q]
+    if any(len(s) == 2 for s in sides):
+        return True
+    return any(sides[i] & sides[(i + 1) % 4] for i in range(4))
+
+
 def find_page(rgb: np.ndarray) -> np.ndarray | None:
     """The page's four corners (tl, tr, br, bl) in image pixels, or None when the page already fills the frame
     or no clear quadrilateral is found."""
@@ -42,7 +57,8 @@ def find_page(rgb: np.ndarray) -> np.ndarray | None:
             for eps in (0.02, 0.03, 0.05):
                 ap = cv2.approxPolyDP(hull, eps * peri, True)
                 if len(ap) == 4:
-                    cands.append((cv2.contourArea(ap), ap))
+                    if not _hugs_frame(_order(ap), gray.shape):
+                        cands.append((cv2.contourArea(ap), ap))
                     break
     if not cands:
         return None

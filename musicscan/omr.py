@@ -381,6 +381,8 @@ AMBER_DISAGREE = {"rests"}
 
 
 def level(m: dict, second_reading: bool = False) -> str:
+    if m.get("doubled"):
+        return "bad"
     d = m.get("disagree")
     if d is True or d in RED_DISAGREE:
         return "bad"
@@ -589,6 +591,20 @@ def second_opinion(r: dict, im: Image.Image) -> dict:
     return r
 
 
+def doubled_staff(boxes: list) -> bool:
+    """Two staff boxes of one bar that cover mostly the same height: a single staff the reader traced twice (seen on
+    a shadowed, slightly bowed photo of a one-staff part, where the staff-line finder lost the right half of a row).
+    The second copy becomes a made-up extra part, read in the wrong clef. Real systems (piano, quartets) have their
+    staves stacked with a gap, so their boxes don't overlap like this."""
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            a, b = boxes[i], boxes[j]
+            ov = min(a[3], b[3]) - max(a[1], b[1])
+            if ov > 0.5 * min(a[3] - a[1], b[3] - b[1]):
+                return True
+    return False
+
+
 def analyse(rd) -> dict:
     L = rd.layout
     # columns per system -> global measure index
@@ -650,6 +666,9 @@ def analyse(rd) -> dict:
         x0 = min((b[0] for b in m["boxes"]), default=0); y0 = min((b[1] for b in m["boxes"]), default=0)
         x1 = max((b[2] for b in m["boxes"]), default=0); y1 = max((b[3] for b in m["boxes"]), default=0)
         m["bbox"] = [x0, y0, x1, y1]
+        if doubled_staff(m["boxes"]):
+            m["doubled"] = True
+            m.setdefault("notes", []).append("one staff was read as two here; check the notes and the clef")
         m["level"] = level(m)
     systems = []
     for si in range(len(L.systems)):
