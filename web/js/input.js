@@ -417,12 +417,32 @@ export function createNoteInput(ctx) {
     const staffs = score().parts.reduce((n, p, pi) => n + (score().attrs(pi, 0).staves || 1), 0);
     const staffTxt = staffs > 1 ? ` · staff ${c.pi > 0 ? c.pi + 1 + '.' : ''}${c.staff}` : '';
     const keys = touch
-      ? 'Tap the staff to write it'
+      ? 'Tap a key below or the staff to write it'
       : 'A–G write · Shift+A–G chord · 0 rest · R repeat · 1–7 length · ↑↓ semitone · ⌘↑↓ octave · ←→ move · Esc done';
     return `Note input · ${where}${staffTxt} · ${what}.  ${keys}`;
   }
 
-  return { letter, repeat, tieOn, write, moveCaret, changeStaff, backspace, pitchKey, drawCaret, status, caretAt, caretAfter, startAtSelection, ensureCaret, resolve, findEv };
+  // the on-screen keyboard: write this exact pitch at the caret, or add it to the last note as a chord tone
+  function writePitch(p, chord = false) {
+    ensureCaret();
+    if (chord) {
+      const ln = lastNote();
+      if (!ln) { ctx.toast('Write a note first, then add chord tones to it'); return; }
+      ctx.act(() => score().addChordTone(ln, p));
+      S.sel = ln.el;
+      ctx.preview([midiOf(p)]);
+      ctx.redraw();
+      return;
+    }
+    write([p]);
+  }
+  function context() {
+    if (!S.score) return null;
+    ensureCaret();
+    return { ref: refPitch(), fifths: fifthsHere(), staff: `${S.caret.pi}/${S.caret.staff}` };
+  }
+
+  return { writePitch, context, letter, repeat, tieOn, write, moveCaret, changeStaff, backspace, pitchKey, drawCaret, status, caretAt, caretAfter, startAtSelection, ensureCaret, resolve, findEv };
 }
 
 export { pitchName };

@@ -10,6 +10,7 @@ import * as native from './native.js';
 import { api, jobFile, isDemo } from './demo.js';
 import * as review from './review.js';
 import { createNoteInput } from './input.js';
+import { createPad } from './pad.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -209,6 +210,7 @@ function redraw() {
   el.classList.toggle('mode-add', S.mode === 'add');
   drawPhotoOverlay();
   NI.drawCaret();
+  PAD?.sync();
   updateToolbar();
   updateStatus();
   updateUndoButtons();
@@ -832,9 +834,10 @@ function setMode(m) {
   const tap = matchMedia('(pointer: coarse)').matches;
   $('#hint').innerHTML = m === 'ink' ? inkHint() : m === 'add'
     ? (tap
-      ? 'Touch the staff and slide to the pitch you want; the <b>' + S.dur + (S.dot ? ' (dotted)' : '') + (S.restMode ? ' rest' : ' note') + '</b> is written when you lift. Tapping a rest fills it. Tap <b>Select</b> to stop.'
+      ? 'Tap a piano key to write a <b>' + S.dur + (S.dot ? ' (dotted)' : '') + '</b> note at the blue caret, or touch the staff and slide to the pitch; it is written when you lift. Tap <b>Select</b> to stop.'
       : 'Type <b>A–G</b> to write ' + S.dur + (S.dot ? ' (dotted)' : '') + ' notes at the blue caret, or click on the staff. <b>0</b> rest · <b>R</b> repeat · <b>Shift+letter</b> chord · <b>?</b> all shortcuts · <b>Esc</b> to stop.')
     : (tap ? 'Tap' : 'Click') + ' a note to select it. <b>Drag up/down</b> to change pitch, <b>left/right</b> to swap it. Pick a length, <b>Rest</b>, <b>Tie</b> or <b>Triplet</b> to turn it into that. <b>Bar ▾</b> splits, joins, adds or deletes bars.';
+  if (S.score && S.layout) { NI.drawCaret(); PAD?.sync(); updateStatus(); }
   clearOverlay('ghost');
 }
 
@@ -1665,6 +1668,7 @@ const NI = createNoteInput({
   S, act, redraw, toast, selected, stepSel, scrollToBar, noteX, barNumber, metaInsert,
   preview: (midis) => midis.forEach((m, i) => setTimeout(() => audio.preview(m), i * 25)),
 });
+var PAD = createPad(NI, { S, setDur });
 
 wire();
 review.initReview({
