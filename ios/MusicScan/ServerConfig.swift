@@ -5,13 +5,21 @@ import Foundation
 enum ServerConfig {
     static let storageKey = "serverURL"
 
-    /// Default from Info.plist (`MusicScanServerURL`). The simulator shares the Mac's network, so localhost works there.
+    /// Default from Info.plist (`MusicScanServerURL` + `MusicScanAccessKey`, filled from ios/Secrets.xcconfig by
+    /// scripts/use_server.sh). With a key set (a hosted server) the simulator uses it too; without one the simulator
+    /// uses the Mac's own server at localhost, since it shares the Mac's network.
+    /// The key is built into the app: fine for your own test builds, never for an App Store build (sign-in replaces it).
     static var defaultURL: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let url = (info["MusicScanServerURL"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+        let key = (info["MusicScanAccessKey"] as? String ?? "").trimmingCharacters(in: .whitespaces)
         #if targetEnvironment(simulator)
-        return "http://localhost:8000"
-        #else
-        return (Bundle.main.object(forInfoDictionaryKey: "MusicScanServerURL") as? String) ?? "http://localhost:8000"
+        if key.isEmpty { return "http://localhost:8000" }
         #endif
+        if url.isEmpty { return "http://localhost:8000" }
+        if key.isEmpty { return url }
+        let base = url.hasSuffix("/") ? url : url + "/"
+        return base + "?key=" + key
     }
 
     /// Accepts "192.168.1.20:8000", "mac.local:8000" or a full URL, including a hosted one with its access key

@@ -24,6 +24,8 @@
 	<true/>
 	<key>MusicScanServerURL</key>
 	<string>$(MUSICSCAN_SERVER_URL)</string>
+	<key>MusicScanAccessKey</key>
+	<string>$(MUSICSCAN_ACCESS_KEY)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>MusicScan uses the camera to photograph sheet music and turn it into an editable score.</string>
 	<key>NSLocalNetworkUsageDescription</key>

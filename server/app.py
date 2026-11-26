@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT))
 from musicscan import imageio, omr, preprocess  # noqa: E402
 from musicscan import sanitize as san  # noqa: E402
 from musicscan.quality import assess  # noqa: E402
+from server import auth  # noqa: E402
 
 # Jobs (photo, cleaned page, reading) live here. A hosted server points it at a persistent volume.
 WORK = Path(os.environ.get("MUSICSCAN_WORK", ROOT / "work"))
@@ -29,31 +30,42 @@ WORK.mkdir(parents=True, exist_ok=True)
 JOBS: dict[str, dict] = {}
 app = FastAPI(title="MusicScan")
 
-# Optional shared access key for a server on the public internet (deploy/modal_app.py sets it), so strangers can't
-# use the GPU. Open the app once as  https://host/?key=KEY  and a cookie keeps it; API clients can send the
-# X-MusicScan-Key header instead. Unset (the default on your own computer) means no key is needed.
+# Who may use the API on a server on the public internet (deploy/modal_app.py):
+#  - signed-in users: a Supabase access token (server/auth.py, on when SUPABASE_URL is set), the launch setup;
+#  - a shared access key (MUSICSCAN_ACCESS_KEY) while testing: open the app once as  https://host/?key=KEY  and a
+#    cookie keeps it, or send the X-MusicScan-Key header.
+# Neither set (the default on your own computer) means the API is open.
 ACCESS_KEY = os.environ.get("MUSICSCAN_ACCESS_KEY", "")
 OPEN_API = ("/api/health", "/api/samples")
 KEY_COOKIE = "musicscan_key"
 
 
+def _given_key(request: Request) -> str:
+    return (request.query_params.get("key") or request.headers.get("x-musicscan-key")
+            or request.cookies.get(KEY_COOKIE) or "")
+
+
 def _key_ok(request: Request) -> bool:
-    if not ACCESS_KEY:
+    return bool(ACCESS_KEY) and hmac.compare_digest(_given_key(request).encode(), ACCESS_KEY.encode())
+
+
+def _authorized(request: Request) -> bool:
+    request.state.user = auth.user_from(request)
+    if request.state.user or _key_ok(request):
         return True
-    given = (request.query_params.get("key") or request.headers.get("x-musicscan-key")
-             or request.cookies.get(KEY_COOKIE) or "")
-    return hmac.compare_digest(given.encode(), ACCESS_KEY.encode())
+    return not ACCESS_KEY and not auth.enabled()
 
 
 @app.middleware("http")
-async def access_key(request: Request, call_next):
-    ok = _key_ok(request)
+async def access_check(request: Request, call_next):
+    ok = _authorized(request)
     path = request.url.path
     if not ok and path.startswith("/api/") and path not in OPEN_API:
-        return JSONResponse({"detail": "This MusicScan server needs its access key. Open it once with ?key=… "
-                                       "at the end of the address."}, status_code=401)
+        msg = ("Please sign in again." if auth.enabled() and not ACCESS_KEY else
+               "This MusicScan server needs its access key. Open it once with ?key=… at the end of the address.")
+        return JSONResponse({"detail": msg}, status_code=401)
     resp = await call_next(request)
-    if ACCESS_KEY and ok and request.cookies.get(KEY_COOKIE) != ACCESS_KEY:
+    if _key_ok(request) and request.cookies.get(KEY_COOKIE) != ACCESS_KEY:
         https = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
         resp.set_cookie(KEY_COOKIE, ACCESS_KEY, max_age=400 * 86400, httponly=True, secure=https, samesite="lax")
     return resp
@@ -62,7 +74,9 @@ async def access_key(request: Request, call_next):
 @app.get("/api/health")
 def health(request: Request):
     """Liveness plus whether this request carries the access key (the iOS app's "Test connection" uses it)."""
-    return {"ok": True, "app": "musicscan", "authorized": _key_ok(request), "key_required": bool(ACCESS_KEY),
+    user = request.state.user
+    return {"ok": True, "app": "musicscan", "authorized": _authorized(request), "key_required": bool(ACCESS_KEY),
+            "sign_in": auth.enabled(), "user": user["id"] if user else None,
             "device": omr.pick_device() if omr._DEV else None}
 
 
