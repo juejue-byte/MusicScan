@@ -150,6 +150,37 @@ async def create_job(file: UploadFile = File(...), detector: str = Form("28m"), 
     return {"id": jid, "pages": n_pdf or 1, "page": page if n_pdf else 0}
 
 
+@app.post("/api/jobs/{jid}/reread")
+async def reread(jid: str, quad: str = Form(...), detector: str = Form("28m"), context: str | None = Form(None)):
+    """Read a page again from its stored photo, with page corners the user placed (the automatic page finder missed
+    the page, or cut a row off). quad: JSON [[x, y] x4] in original.jpg pixels, any order; an empty list reads the
+    whole photo without flattening. Returns a new job, like POST /api/jobs."""
+    old = _job(jid)
+    src = WORK / jid / "original.jpg"
+    if not src.exists():
+        raise HTTPException(404, "The photo of this page is no longer on the server")
+    try:
+        q = json.loads(quad)
+        assert isinstance(q, list) and (not q or (len(q) == 4 and all(len(p) == 2 for p in q)))
+        q = [[float(x), float(y)] for x, y in q]
+    except (ValueError, AssertionError, TypeError):
+        raise HTTPException(400, "quad must be four [x, y] corners")
+    ctx = None
+    if context:
+        try:
+            ctx = json.loads(context)
+        except ValueError:
+            ctx = None
+    nid = uuid.uuid4().hex[:12]
+    (WORK / nid).mkdir()
+    JOBS[nid] = {"id": nid, "status": "queued", "name": old.get("name"), "created": time.time(), "page": 0, "pages": 1}
+    opts = {"detector": detector if detector in ("28m", "2m") else "28m", "flatten": None, "strip_pen": True,
+            "page": 0, "pdf": False, "context": ctx, "lock_page": bool(q),
+            "quad": preprocess.order_quad(q) if q else None}
+    threading.Thread(target=_run, args=(nid, src.read_bytes(), "original.jpg", opts), daemon=True).start()
+    return {"id": nid, "pages": 1, "page": 0}
+
+
 def _job(jid):
     j = JOBS.get(jid)
     if j is None:

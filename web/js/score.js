@@ -86,6 +86,26 @@ export class Score {
     return id + '.' + (this._barVer.get(m) || 0);
   }
 
+  // the piece's title: <work><work-title>, else <movement-title>; '' when the file has none
+  get title() {
+    const w = child(this.root, 'work');
+    return (w && txt(w, 'work-title', '')) || txt(this.root, 'movement-title', '') || '';
+  }
+
+  // write the title where every notation app looks: <work><work-title> (first in the header, as the schema wants)
+  // and an existing <movement-title>; an empty title removes both
+  set title(t) {
+    t = String(t || '').trim();
+    let w = child(this.root, 'work');
+    const mt = child(this.root, 'movement-title');
+    if (!t) { w?.remove(); mt?.remove(); return; }
+    if (!w) { w = this.doc.createElement('work'); this.root.insertBefore(w, this.root.firstElementChild); }
+    let wt = child(w, 'work-title');
+    if (!wt) { wt = this.doc.createElement('work-title'); w.appendChild(wt); }
+    wt.textContent = t;
+    if (mt) mt.textContent = t;
+  }
+
   toXML() {
     // the undo snapshot and the autosave both ask for it, often with nothing changed in between
     if (this._mo) { this._dropStaleEvents(); if (this._xml && this._xml.rev === this._rev) return this._xml.s; }

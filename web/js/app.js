@@ -20,6 +20,7 @@ import { CLEFS, clefId } from './clefs.js';
 import { INTERVALS } from './transpose.js';
 import { installZoom } from './zoom.js';
 import { pageRanges } from './pages.js';
+import { openCorners } from './corners.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -71,7 +72,37 @@ function download(name, data, type) {
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
-const baseName = () => (S.name || 'score').replace(/\.[^.]+$/, '').replace(/[^\w\- ]+/g, '').trim() || 'score';
+// a file or score name as people read it: no extension, no upload prefix, spaces for underscores
+const prettyName = (n) => String(n || '').replace(/\.(jpe?g|png|heic|heif|pdf|musicxml|xml|mxl|tiff?|webp)$/i, '').replace(/^\d+_/, '').replace(/_/g, ' ').trim();
+const baseName = () => prettyName(S.name).replace(/[^\w\- ]+/g, '').replace(/\s+/g, ' ').trim() || 'score';
+function showTitle() {
+  const el = $('#docTitle');
+  el.textContent = prettyName(S.name) || 'Untitled score';
+  el.title = 'Rename this score';
+}
+// tap the title to rename the score: written into the MusicXML (<work-title>), Your music and export file names
+function renameScore() {
+  if (!S.score) return;
+  const card = $('#modalCard');
+  $('#modal').classList.remove('hidden');
+  card.innerHTML = `<h2>Name this score</h2>
+    <input class="text" id="titleInput" maxlength="120" autocomplete="off" placeholder="Title">
+    <p class="muted small">Used in Your music, for exported files, and as the title other notation apps show.</p>
+    <div class="modal-actions"><button class="btn ghost" data-m="close">Cancel</button><button class="btn primary" data-m="ok">Save</button></div>`;
+  const inp = $('#titleInput');
+  inp.value = S.score.title || prettyName(S.name);
+  setTimeout(() => { inp.focus(); inp.select(); }, 30);
+  const ok = () => {
+    const t = inp.value.trim();
+    closeModal();
+    if (!t || t === S.score.title) return;
+    S.name = t;
+    edit(() => { S.score.title = t; });
+    showTitle();
+  };
+  inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); ok(); } };
+  card.onclick = (ev) => { const b = ev.target.closest('[data-m]'); if (!b) return; if (b.dataset.m === 'ok') ok(); else closeModal(); };
+}
 // autosave after the frame is drawn, so it never adds to an edit's response time. The score and its details are
 // taken now (by reference; serializing is the slow part), so opening another score meanwhile cannot mix them up.
 let saveTimer = null, pending = null;
@@ -141,8 +172,8 @@ async function startUpload(file) {
   }
 }
 // upload one page (fd: the job form) and wait for its reading; onStatus gets the server's progress text
-async function readPage(fd, onStatus) {
-  const r = await api('api/jobs', { method: 'POST', body: fd });
+async function readPage(fd, onStatus, path = 'api/jobs') {
+  const r = await api(path, { method: 'POST', body: fd });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Upload failed');
   const { id, pages } = await r.json();
   for (;;) {
@@ -194,8 +225,10 @@ function openScore(xml, meta, quality, job, pages = null) {
   scoreSession++;
   setReading(null);
   S.sel = null; S.measures = new Set(); S.focus = -1; S.undo = []; S.redo = []; S.caret = null;
-  $('#docTitle').textContent = S.name;
+  S.fileName = S.name;
+  if (S.score.title) S.name = S.score.title;
   show('viewEditor');
+  showTitle();
   renderBanner(quality);
   setupPhoto();
   setMode('select');
@@ -233,7 +266,7 @@ function renderBanner(q, pid = null) {
   }[q.level];
   b.className = 'banner ' + q.level;
   b.innerHTML = `<div class="b-icon">${icon}</div><div class="b-body"><div class="b-title"></div>${q.reasons.length ? '<ul></ul>' : ''}</div>
-    <div class="b-actions">${flagged ? `<button class="btn small primary" data-b="fix">✓ Fix it: check ${flagged} bar${flagged > 1 ? 's' : ''}</button>` : ''}${q.level !== 'good' ? '<button class="btn small" data-b="retake">Retake photo</button>' : ''}<button class="btn small ghost" data-b="close">✕</button></div>`;
+    <div class="b-actions">${flagged ? `<button class="btn small primary" data-b="fix">✓ Fix it: check ${flagged} bar${flagged > 1 ? 's' : ''}</button>` : ''}${q.level !== 'good' && !isDemo() && pageInfo(pid || S.job) ? '<button class="btn small" data-b="edges" title="Drag the corners onto the page and read it again">Adjust edges</button>' : ''}${q.level !== 'good' ? '<button class="btn small" data-b="retake">Retake photo</button>' : ''}<button class="btn small ghost" data-b="close">✕</button></div>`;
   const pno = pid ? pageNumber(pid) : 0;
   b.querySelector('.b-title').textContent = `${pno ? `Page ${pno}: ` : ''}${title} (quality ${q.score}/100)`;
   const ul = b.querySelector('ul');
@@ -242,6 +275,7 @@ function renderBanner(q, pid = null) {
     const a = e.target.closest('[data-b]')?.dataset.b;
     if (a === 'close') b.classList.add('hidden');
     if (a === 'fix') { b.classList.add('hidden'); review.start(); }
+    if (a === 'edges') { adjustEdges(pid || S.job); return; }
     if (a === 'retake' && pid && pageList().length > 1) { retakePage(pid); return; }
     if (a === 'retake') { audio.stop(); show('viewUpload'); }
   };
@@ -405,6 +439,8 @@ function restore(s) {
   S.meta = JSON.parse(s.meta);
   S.sel = elFromPath(pathOfSel);
   S.selMark = null;
+  const nm = S.score.title || S.fileName || S.name;
+  if (nm !== S.name) { S.name = nm; showTitle(); }
   syncPages();
   redraw();
   saveLocal();
@@ -1226,6 +1262,7 @@ function pageImgOf(id) {
 function setupPhoto() {
   const has = !!S.job;
   $('#btnPhoto').disabled = !has;
+  $('#btnEdges').classList.toggle('hidden', !has || isDemo());
   $('#photoCol').classList.toggle('closed', !has || window.innerWidth < 860);
   S.autoZoom = true; // until the reader zooms by hand, keep the photo's rows whole (see redraw)
   if (!has) return;
@@ -1495,7 +1532,7 @@ function keyTimeDialog() {
     }
   };
 }
-function closeModal() { $('#modal').classList.add('hidden'); $('#modalCard').innerHTML = ''; }
+function closeModal() { $('#modal').classList.add('hidden'); $('#modalCard').innerHTML = ''; $('#modalCard').classList.remove('corners-card'); }
 
 // ---------------------------------------------------------------- markup: freehand ink (its own layer)
 function closeMenus() { for (const m of ['#exportMenu', '#barMenu', '#marksMenu']) $(m).classList.remove('open'); }
@@ -1814,7 +1851,7 @@ function noteIcon(type) {
 // Each page is its own reading (job); its bars are appended to the one score, so editing, playback and export cover
 // the whole piece. meta[mi].page says which page (job) bar mi came from; the bar order gives the page order.
 function pageRec(job, res, name) {
-  return { job, name: name || '', page_size: res.page_size, systems: res.systems, quality: res.quality, pdf_page: res.pdf_page ?? null, second_opinion: res.second_opinion };
+  return { job, name: name || '', page_size: res.page_size, systems: res.systems, quality: res.quality, pdf_page: res.pdf_page ?? null, second_opinion: res.second_opinion, quad: res.quad ?? null, original_size: res.original_size ?? null };
 }
 const pageInfo = (id) => (id && S.pages[id]) || null;
 const pageIdOf = (mi) => (mi == null ? null : S.meta[mi]?.page ?? S.job);
@@ -1943,26 +1980,36 @@ function removePage(id) {
   redraw();
   toast(`Removed page ${list.indexOf(r) + 1}. Undo brings it back.`);
 }
-// read a new photo of page `id` and put it in that page's place
-function retakePage(id, file = null) {
-  if (!file) { pickFile((f) => retakePage(id, f), 'image/*,.heic,.heif'); return; }
+const EDGES_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3v15h15"/><path d="M3 6h15v15"/></svg>';
+// drag the page's corners on the original photo and read it again (the page finder missed the page or cut a row)
+function adjustEdges(id = S.photoPage || S.job) {
+  if (!id || !pageInfo(id)) { toast('This score has no photo to adjust.'); return; }
+  if (isDemo()) { toast('Adjusting the page edges needs the reading server (scripts/run.sh). The preview only has the sample readings.', 4200); return; }
+  $('#modal').classList.remove('hidden');
+  openCorners({ card: $('#modalCard'), src: jobFile(id, 'original.jpg'), quad: pageInfo(id).quad, onClose: closeModal, onRead: (quad) => retakePage(id, null, { quad }) });
+}
+// read a new photo of page `id` (or the same photo with corners placed by hand: opts.quad) and put it in its place
+function retakePage(id, file = null, opts = {}) {
+  const byHand = Array.isArray(opts.quad);
+  if (!file && !byHand) { pickFile((f) => retakePage(id, f), 'image/*,.heic,.heif'); return; }
   const session = scoreSession;
   pageQueue = pageQueue.then(async () => {
     const r0 = pageList().find((x) => x.id === id);
     if (!r0) return;
     const no = pageNumber(id);
-    setReading(`Reading the new photo of page ${no}…`);
+    setReading(byHand ? `Reading page ${no} again inside the new edges…` : `Reading the new photo of page ${no}…`);
     const fd = new FormData();
-    fd.append('file', file, file.name || 'page.jpg');
+    if (byHand) fd.append('quad', JSON.stringify(opts.quad));
+    else fd.append('file', file, file.name || 'page.jpg');
     fd.append('detector', $('#optFast').checked ? '2m' : '28m');
-    fd.append('context', JSON.stringify(rescanContext(S.score, r0.lo)));
-    const { id: nid, result } = await readPage(fd, (st) => setReading(`Page ${no}: ${st.toLowerCase()}…`));
+    if (r0.lo > 0 || !byHand) fd.append('context', JSON.stringify(rescanContext(S.score, r0.lo)));
+    const { id: nid, result } = await readPage(fd, (st) => setReading(`Page ${no}: ${st.toLowerCase()}…`), byHand ? `api/jobs/${id}/reread` : 'api/jobs');
     setReading(null);
     if (session !== scoreSession) return;
     const r = pageList().find((x) => x.id === id);
     if (!r || !result.stats?.measures) { toast('No music was found in that photo; the page was kept.'); return; }
     const fresh = new Score(result.xml);
-    S.pages[nid] = pageRec(nid, result, file.name);
+    S.pages[nid] = pageRec(nid, result, file ? file.name : pageInfo(id)?.name);
     edit(() => {
       const targets = Array.from({ length: r.hi - r.lo + 1 }, (_, i) => r.lo + i);
       S.score.spliceMeasures(targets, fresh);
@@ -1977,7 +2024,7 @@ function retakePage(id, file = null) {
     syncPages();
     if (S.photoPage === id) { S.photoPage = null; showPhotoPage(nid); }
     renderBanner(result.quality, nid);
-    toast(`Page ${no} was read again from the new photo. Undo puts the old reading back.`, 3600);
+    toast(byHand ? `Page ${no} was read again inside the new edges: ${fresh.nMeasures} bars. Undo puts the old reading back.` : `Page ${no} was read again from the new photo. Undo puts the old reading back.`, 3600);
   }).catch((e) => { setReading(null); toast('Could not read the new photo: ' + e.message, 5000); });
 }
 function pickFile(onFile, accept = 'image/*,.heic,.heif,.pdf', capture = false) {
@@ -2066,6 +2113,7 @@ function pagesDialog() {
         <div class="page-btns">
           <button class="btn icon" data-pg="up" title="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
           <button class="btn icon" data-pg="down" title="Move down" ${i === list.length - 1 ? 'disabled' : ''}>↓</button>
+          ${pg && !isDemo() ? `<button class="btn icon" data-pg="edges" title="Adjust the page edges and read it again" aria-label="Adjust page edges">${EDGES_ICON}</button>` : ''}
           ${pg ? '<button class="btn" data-pg="retake" title="Read this page again from a new photo">Retake</button>' : ''}
           <button class="btn icon" data-pg="remove" title="Remove this page" ${list.length < 2 ? 'disabled' : ''}>✕</button>
         </div></div>`;
@@ -2090,6 +2138,7 @@ function pagesDialog() {
     if (a === 'file') { closeModal(); pickFile((f) => addPages(f)); return; }
     if (a === 'camera') { closeModal(); addFromCamera(); return; }
     if (a === 'retake') { closeModal(); retakePage(id); return; }
+    if (a === 'edges') { closeModal(); adjustEdges(id); return; }
     if (a === 'up' || a === 'down') movePage(id, a === 'up' ? -1 : 1);
     if (a === 'remove') removePage(id);
     draw();
@@ -2158,6 +2207,7 @@ function wire() {
   sc.addEventListener('pointercancel', onPointerUp);
   sc.addEventListener('pointerleave', () => { clearOverlay('ghost'); clearOverlay('inkcursor'); });
   document.addEventListener('keydown', onKey);
+  $('#docTitle').onclick = () => { if (document.body.classList.contains('editing')) renameScore(); };
 
   for (const b of $$('[data-mode]')) b.onclick = () => setMode(b.dataset.mode);
   for (const b of $$('[data-dur]')) b.onclick = () => setDur(b.dataset.dur);
@@ -2184,6 +2234,8 @@ function wire() {
   for (const b of $$('[data-ph]')) b.onclick = () => setPhotoKind(b.dataset.ph);
   $('#zoomIn').onclick = () => { S.autoZoom = false; S.zoom = Math.min(1.6, +(S.zoom + 0.1).toFixed(2)); redraw(); };
   $('#zoomOut').onclick = () => { S.autoZoom = false; S.zoom = Math.max(0.5, +(S.zoom - 0.1).toFixed(2)); redraw(); };
+  $('#btnEdges').innerHTML = EDGES_ICON;
+  $('#btnEdges').onclick = () => adjustEdges();
   $('#photoClose').onclick = () => { $('#photoCol').classList.add('closed'); redraw(); if (S.focus >= 0) focusBar(S.focus, false); };
   for (const b of $$('[data-dur]')) b.querySelector('.g').innerHTML = noteIcon(b.dataset.dur);
   $('#btnUndo').onclick = undo;

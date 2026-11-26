@@ -13,6 +13,11 @@ def _order(pts: np.ndarray) -> np.ndarray:
     return np.array([pts[s.argmin()], pts[d.argmin()], pts[s.argmax()], pts[d.argmax()]], np.float32)  # tl tr br bl
 
 
+def order_quad(pts) -> list:
+    """Four corners in any order -> [tl, tr, br, bl] as plain lists (for corners placed by hand)."""
+    return _order(np.asarray(pts, np.float32)).tolist()
+
+
 def find_page(rgb: np.ndarray) -> np.ndarray | None:
     """The page's four corners (tl, tr, br, bl) in image pixels, or None when the page already fills the frame
     or no clear quadrilateral is found."""
