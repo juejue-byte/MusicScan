@@ -165,3 +165,8 @@ kbd { font: 10px ui-monospace, monospace; color: var(--muted); }
   .seg button { min-width: 40px; height: 38px; }
   #viewUpload { padding-top: 24px; }
 }
+
+.form { display: flex; flex-wrap: wrap; gap: 16px; margin: 12px 0; }
+.form label { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.form select, .form input { height: 34px; border: 1px solid var(--line2); border-radius: 8px; padding: 0 8px; background: var(--panel); }
+.form input { width: 64px; }

@@ -60,7 +60,7 @@ export function preview(midi) {
 }
 
 // events: [{time, dur, midi, measure}] in quarter notes; starts: measure start times in quarters
-export async function play({ events, starts }, { bpm = 90, fromMeasure = 0, onMeasure, onEnd } = {}) {
+export async function play({ events, starts }, { bpm = 90, fromMeasure = 0, onMeasure, onTime, onEnd } = {}) {
   stop();
   const c = audioCtx();
   await loadPiano();
@@ -80,6 +80,7 @@ export async function play({ events, starts }, { bpm = 90, fromMeasure = 0, onMe
     let m = fromMeasure;
     while (m + 1 < starts.length - 1 && starts[m + 1] <= q) m++;
     if (m !== last && q >= t0q) { last = m; onMeasure && onMeasure(m); }
+    if (onTime && q >= t0q) onTime(q);
     timer = requestAnimationFrame(tick);
   };
   timer = requestAnimationFrame(tick);

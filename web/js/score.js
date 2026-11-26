@@ -425,6 +425,55 @@ export class Score {
     return n;
   }
 
+  // ---------- key / time for the whole piece ----------
+  // Set the key from bar `from` on. Notes that followed the old key follow the new one (so a misread key is fixed
+  // with one change); notes with a printed accidental keep their pitch.
+  setKey(fifths, from = 0) {
+    for (let pi = 0; pi < this.parts.length; pi++) {
+      const old = this.attrs(pi, from).fifths;
+      const ms = this.parts[pi].measures;
+      for (let mi = from; mi < ms.length; mi++) {
+        const a = this.attrs(pi, mi);
+        if (mi > from && a.changed?.key) break;
+        for (const e of this.events(pi, mi)) {
+          for (const c of e.chord) {
+            const hasAcc = !!c.el.querySelector(':scope > accidental');
+            if (!hasAcc && (c.pitch.alter || 0) === keyAlter(old, c.pitch.step)) this.setPitch(c.el, { ...c.pitch, alter: keyAlter(fifths, c.pitch.step) });
+          }
+        }
+      }
+      const at = this._attrsEl(ms[from]);
+      let k = at.querySelector(':scope > key');
+      if (!k) { k = this.doc.createElement('key'); const f = this.doc.createElement('fifths'); k.appendChild(f); const d = at.querySelector(':scope > divisions'); at.insertBefore(k, d ? d.nextSibling : at.firstChild); }
+      let f = k.querySelector(':scope > fifths');
+      if (!f) { f = this.doc.createElement('fifths'); k.insertBefore(f, k.firstChild); }
+      f.textContent = String(fifths);
+      this._attrCache = null;
+    }
+  }
+
+  setTime(beats, beatType, from = 0) {
+    for (let pi = 0; pi < this.parts.length; pi++) {
+      const at = this._attrsEl(this.parts[pi].measures[from]);
+      let t = at.querySelector(':scope > time');
+      if (!t) {
+        t = this.doc.createElement('time');
+        const after = at.querySelector(':scope > key') || at.querySelector(':scope > divisions');
+        at.insertBefore(t, after ? after.nextSibling : at.firstChild);
+      }
+      t.textContent = '';
+      for (const [n, v] of [['beats', beats], ['beat-type', beatType]]) { const e = this.doc.createElement(n); e.textContent = String(v); t.appendChild(e); }
+    }
+    this._attrCache = null;
+  }
+
+  _attrsEl(m) {
+    let at = null;
+    for (const c of m.children) { if (c.localName === 'note') break; if (c.localName === 'attributes') { at = c; break; } }
+    if (!at) { at = this.doc.createElement('attributes'); m.insertBefore(at, m.firstChild); }
+    return at;
+  }
+
   // ---------- rescan splice ----------
   spliceMeasures(targets, other) {
     // replace bars `targets` (consecutive global indices) with all bars of `other` (a Score), part by part
@@ -520,7 +569,7 @@ export class Score {
             const time = starts[mi] + e.onset / e.div, dur = e.dur / e.div;
             const tie = [...c.el.querySelectorAll(':scope > tie')].map((x) => x.getAttribute('type'));
             if (tie.includes('stop') && open[midi]) { open[midi].dur = time + dur - open[midi].time; if (!tie.includes('start')) delete open[midi]; continue; }
-            const ev = { time, dur, midi, part: pi, measure: mi };
+            const ev = { time, dur, midi, part: pi, measure: mi, el: c.el };
             out.push(ev);
             if (tie.includes('start')) open[midi] = ev;
           }

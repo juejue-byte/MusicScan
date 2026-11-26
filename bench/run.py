@@ -29,6 +29,8 @@ def main():
     ap.add_argument("--modes", default="raw,musicscan")
     ap.add_argument("--conds", default=",".join(CONDITIONS))
     ap.add_argument("--only", default="")
+    ap.add_argument("--redo-missing-bars", action="store_true",
+                    help="re-run MusicScan rows written before per-bar confidence was recorded")
     a = ap.parse_args()
     data, out = Path(a.data), Path(a.out)
     (out / "images").mkdir(parents=True, exist_ok=True)
@@ -36,8 +38,11 @@ def main():
     res = out / "results.jsonl"
     done = set()
     if res.exists():
-        for line in res.read_text().splitlines():
-            r = json.loads(line)
+        rows = [json.loads(x) for x in res.read_text().splitlines() if x.strip()]
+        if a.redo_missing_bars:
+            rows = [r for r in rows if not (r["mode"] == "musicscan" and "bars" not in r)]
+            res.write_text("".join(json.dumps(r) + "\n" for r in rows))
+        for r in rows:
             done.add((r["id"], r["cond"], r["mode"]))
     meta = json.loads((data / "index.json").read_text())
     for pi, m in enumerate(meta):

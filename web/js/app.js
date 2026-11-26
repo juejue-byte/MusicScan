@@ -1,5 +1,5 @@
 // MusicScan web app: upload -> transcribe -> edit on the staff -> play -> export.
-import { Score, pitchName, midiOf, clefTop, STEPS, TYPES, toMidi } from './score.js';
+import { Score, pitchName, midiOf, clefTop, toMidi } from './score.js';
 import { render, pitchAtY, noteYs } from './render.js';
 import * as audio from './audio.js';
 
@@ -117,6 +117,7 @@ function openScore(xml, meta, quality, job) {
   renderBanner(quality);
   setupPhoto();
   setMode('select');
+  $('#tempo').value = Math.round(S.score.tempo());
   redraw();
   saveLocal();
   if (job) setTimeout(() => { const firstBad = S.meta.findIndex((m) => m.level === 'bad'); if (firstBad >= 0) focusBar(firstBad, false); }, 50);
@@ -753,6 +754,35 @@ async function rescan(attempt = 0, file = null) {
     }
   };
 }
+const KEY_NAMES = { '-7': 'C♭ major / A♭ minor', '-6': 'G♭ major / E♭ minor', '-5': 'D♭ major / B♭ minor', '-4': 'A♭ major / F minor', '-3': 'E♭ major / C minor', '-2': 'B♭ major / G minor', '-1': 'F major / D minor', 0: 'C major / A minor', 1: 'G major / E minor', 2: 'D major / B minor', 3: 'A major / F♯ minor', 4: 'E major / C♯ minor', 5: 'B major / G♯ minor', 6: 'F♯ major / D♯ minor', 7: 'C♯ major / A♯ minor' };
+function keyTimeDialog() {
+  const from = S.measures.size ? Math.min(...S.measures) : 0;
+  const a = S.score.attrs(0, from);
+  const card = $('#modalCard');
+  $('#modal').classList.remove('hidden');
+  let opts = '';
+  for (let f = -7; f <= 7; f++) opts += `<option value="${f}" ${f === a.fifths ? 'selected' : ''}>${f > 0 ? f + '♯' : f < 0 ? -f + '♭' : 'no ♯/♭'} · ${KEY_NAMES[f]}</option>`;
+  card.innerHTML = `<h2>Key and time signature</h2>
+    <p class="muted">Applies from bar ${barNumber(from)} to the next change. Notes that followed the old key move to the new key, so a misread key is fixed in one step.</p>
+    <div class="form">
+      <label>Key <select id="ktKey">${opts}</select></label>
+      <label>Time <input id="ktBeats" type="number" min="1" max="32" value="${a.beats}"> / <select id="ktType">${[1, 2, 4, 8, 16, 32].map((v) => `<option ${v === a.beatType ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+    </div>
+    <div class="modal-actions"><button class="btn ghost" data-m="close">Cancel</button><button class="btn primary" data-m="apply">Apply</button></div>`;
+  card.onclick = (ev) => {
+    const m = ev.target.closest('[data-m]')?.dataset.m;
+    if (m === 'close') closeModal();
+    if (m === 'apply') {
+      const f = +$('#ktKey').value, bt = +$('#ktBeats').value, ty = +$('#ktType').value;
+      edit(() => {
+        if (f !== a.fifths) S.score.setKey(f, from);
+        if (bt !== a.beats || ty !== a.beatType) S.score.setTime(bt, ty, from);
+      });
+      closeModal();
+      toast('Updated. Undo with Ctrl+Z.');
+    }
+  };
+}
 function closeModal() { $('#modal').classList.add('hidden'); $('#modalCard').innerHTML = ''; }
 
 // ---------------------------------------------------------------- playback + export
@@ -763,15 +793,35 @@ function togglePlay() {
   const bpm = Math.max(30, Math.min(240, +$('#tempo').value || 90));
   $('#btnPlay').querySelector('.pi').textContent = '■';
   $('#btnPlay').querySelector('.pl').textContent = 'Stop';
-  audio.play(S.score.playEvents(), {
+  const pe = S.score.playEvents();
+  // where each sounding note sits on screen
+  const pos = new Map();
+  for (const n of S.layout.notes) if (!n.ghost && !n.ev.rest) for (const m of noteYs(n)) pos.set(m.el, { x: noteX(n), y: m.y });
+  let lastKey = '';
+  audio.play(pe, {
     bpm, fromMeasure: from,
     onMeasure: (m) => drawCursor(m),
+    onTime: (q) => {
+      const on = pe.events.filter((e) => e.time <= q && q < e.time + Math.max(e.dur, 0.05));
+      const key = on.map((e) => e.time + ':' + e.midi).join(',');
+      if (key === lastKey) return;
+      lastKey = key;
+      clearOverlay('sounding');
+      for (const e of on) {
+        const p = pos.get(e.el);
+        if (!p) continue;
+        const c = document.createElementNS(SVGNS, 'circle');
+        Object.entries({ cx: p.x, cy: p.y, r: 8, fill: '#10b981', 'fill-opacity': 0.55, class: 'sounding' }).forEach(([k, v]) => c.setAttribute(k, v));
+        $('#overlay').appendChild(c);
+      }
+    },
     onEnd: () => stopPlay(),
   });
 }
 function stopPlay() {
   audio.stop();
   clearOverlay('cursor');
+  clearOverlay('sounding');
   $('#btnPlay').querySelector('.pi').textContent = '▶';
   $('#btnPlay').querySelector('.pl').textContent = 'Play';
 }
@@ -833,6 +883,7 @@ function wire() {
   $('[data-act="rest"]').onclick = toggleRest;
   $('[data-act="delete"]').onclick = del;
   $('#btnRescan').onclick = () => rescan(0);
+  $('#btnKeyTime').onclick = keyTimeDialog;
   $('#inspRescan').onclick = () => { if (S.focus >= 0 && !S.measures.has(S.focus)) S.measures = new Set([S.focus]); rescan(0); };
   $('#inspClose').onclick = hideInspector;
   $('#btnPhoto').onclick = () => { $('#photoCol').classList.toggle('closed'); setTimeout(() => { redraw(); if (S.focus >= 0) focusBar(S.focus, false); }, 0); };
