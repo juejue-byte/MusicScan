@@ -43,7 +43,7 @@ function serve() {
     return { on: R.isActive(), cur: R.state.cur, flags: R.flagged().length, checked: S.meta.filter((m) => m.reviewed).length, undo: S.undo.length,
       count: document.querySelector('#rvCount').textContent, why: document.querySelector('#rvWhy').textContent, bar: document.querySelector('#rvBar').textContent,
       sel: [...S.measures], note: !!S.sel, crop: document.querySelector('#rvCrop').width, read: !!document.querySelector('#rvRead svg'),
-      fixN: document.querySelector('#btnFix .n').textContent, modal: !document.querySelector('#modal').classList.contains('hidden') };
+      fixN: [...document.querySelectorAll('.fix-btn')].find((x) => x.offsetParent).querySelector('.n').textContent, modal: !document.querySelector('#modal').classList.contains('hidden') };
   });
   const s0 = await st();
   ok(s0.flags >= 5, `expected flags on the blurry sample, got ${s0.flags}`);
@@ -164,7 +164,7 @@ function serve() {
   await q.locator('.sample').nth(3).tap();
   await q.waitForSelector('#viewEditor:not(.hidden)', { timeout: 15000 });
   await q.waitForTimeout(500);
-  await q.locator('#btnFix').tap();
+  await q.locator('.fix-btn:visible').tap();
   await q.waitForTimeout(400);
   const fit = await q.evaluate(() => { const r = document.querySelector('#review').getBoundingClientRect(); return { h: r.height, sw: document.documentElement.scrollWidth, w: innerWidth }; });
   ok(fit.sw <= fit.w + 1, `iPhone: page scrolls sideways (${fit.sw} > ${fit.w})`);

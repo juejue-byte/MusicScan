@@ -1,11 +1,13 @@
 /* Fix it review mode (web/js/review.js): a panel above the score that steps flag to flag */
-.seg.fix { margin-left: auto; }
-.seg.fix + .seg.right { margin-left: 0; }
-#btnFix { font-weight: 600; color: #92400e; }
-#btnFix .n:not(:empty) { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; background: var(--warn); color: #fff; font-size: 12px; }
-#btnFix:disabled { color: inherit; font-weight: normal; }
-#btnFix:disabled .n { display: none; }
-#btnFix.on { background: var(--accent-soft); color: #1e40af; }
+/* the Fix it button sits in the header on wide screens (the iPad toolbar is full) and in the toolbar on narrow ones */
+.seg.fix { display: none; }
+@media (max-width: 860px) { .seg.fix { display: inline-flex; } .fix-top { display: none !important; } }
+.fix-btn { font-weight: 600; color: #92400e; }
+.fix-btn .n:not(:empty) { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; background: var(--warn); color: #fff; font-size: 12px; }
+.fix-btn.done .n { background: var(--ok); }
+.fix-btn:disabled { color: inherit; font-weight: normal; }
+.fix-btn:disabled .n { display: none; }
+.fix-btn.on { background: var(--accent-soft); color: #1e40af; border-color: var(--accent); }
 
 body.reviewing .hint, body.reviewing #qualityBanner, body.reviewing #inspector { display: none !important; }
 

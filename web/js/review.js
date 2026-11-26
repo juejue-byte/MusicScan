@@ -260,7 +260,7 @@ function refresh(done = false) {
   badge.className = 'rv-badge ' + (m.reviewed ? 'ok' : m.level === 'ok' ? 'ok' : lvl);
   badge.textContent = m.reviewed ? (m.used === 'second' ? '✓ Second reading used' : '✓ Checked') : m.level === 'ok' ? '✓ Now reads clearly' : lvl === 'bad' ? 'Likely wrong' : 'Worth a look';
   $('#rvBar').textContent = `Bar ${A.barNumber(mi)}`;
-  $('#rvWhy').textContent = all && done ? 'All flagged bars are checked. You can still step through them, or close Fix it.' : capital(reasonText(m)) + (m.low_n ? '. Unsure symbols are underlined in the photo.' : '.');
+  $('#rvWhy').textContent = all ? 'All flagged bars are checked. You can still step through them, or close Fix it.' : capital(reasonText(m)) + (m.low_n ? '. Unsure symbols are underlined in the photo.' : '.');
   // actions
   const acc = $('#rvAccept');
   acc.innerHTML = m.reviewed ? (all ? '✓ All checked' : 'Next unchecked <kbd>↵</kbd>') : R.editing ? '✓ Done, next <kbd>↵</kbd>' : '✓ Looks right <kbd>↵</kbd>';
@@ -292,14 +292,15 @@ const capital = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 /** Number of flags still to check, shown on the Fix it button. */
 export function updateButton() {
   const S = A.S;
-  const b = $('#btnFix');
-  if (!b) return;
   const list = S.score ? flagged(S.meta) : [];
   const open = list.filter(isOpen).length;
-  b.disabled = !list.length;
-  b.classList.toggle('on', R.on);
-  b.querySelector('.n').textContent = list.length ? (open ? String(open) : '✓') : '';
-  b.title = list.length ? (open ? `Fix it: check the ${open} flagged bar${open > 1 ? 's' : ''} one by one (F)` : 'Every flagged bar is checked (F to step through them again)') : 'No flagged bars';
+  for (const b of document.querySelectorAll('.fix-btn')) {
+    b.disabled = !list.length;
+    b.classList.toggle('on', R.on);
+    b.classList.toggle('done', !!list.length && !open);
+    b.querySelector('.n').textContent = list.length ? (open ? String(open) : '✓') : '';
+    b.title = list.length ? (open ? `Fix it: check the ${open} flagged bar${open > 1 ? 's' : ''} one by one (F)` : 'Every flagged bar is checked (F to step through them again)') : 'No flagged bars';
+  }
 }
 
 /** Called after every redraw of the score. */
@@ -334,7 +335,7 @@ function onKey(e) {
  */
 export function initReview(hooks) {
   A = hooks;
-  $('#btnFix').onclick = () => (R.on ? stop() : start());
+  for (const b of document.querySelectorAll('.fix-btn')) b.onclick = () => (R.on ? stop() : start());
   $('#rvClose').onclick = stop;
   $('#rvPrev').onclick = () => step(-1);
   $('#rvNext').onclick = () => step(1);

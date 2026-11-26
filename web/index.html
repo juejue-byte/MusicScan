@@ -15,6 +15,7 @@
   <div class="doc-title" id="docTitle"></div>
   <div class="top-actions">
     <button class="btn ghost" id="btnNew" title="Scan another page">New<span class="wide-only">&nbsp;scan</span></button>
+    <button class="btn fix-btn fix-top" title="Fix it: check the flagged bars one by one (F)" disabled>✓ Fix it <span class="n"></span></button>
     <div class="sep"></div>
     <button class="btn icon" id="btnUndo" title="Undo (Ctrl+Z)" aria-label="Undo" disabled><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
     <button class="btn icon" id="btnRedo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
@@ -110,7 +111,7 @@
             <button data-act="bar" id="btnBar" title="Split, join, add or delete bars">𝄀 Bar ▾</button>
           </div>
           <div class="seg fix">
-            <button id="btnFix" title="Fix it: check the flagged bars one by one (F)" disabled>✓ Fix it <span class="n"></span></button>
+            <button class="fix-btn" title="Fix it: check the flagged bars one by one (F)" disabled>✓ Fix it <span class="n"></span></button>
           </div>
           <div class="seg right">
             <button data-act="keytime" id="btnKeyTime" title="Fix the key or time signature">♯ Key / time</button>
