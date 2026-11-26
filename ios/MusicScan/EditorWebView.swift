@@ -75,7 +75,7 @@ struct EditorWebView: UIViewRepresentable {
             guard let webView, url != loadedURL || token != loadedToken else { return }
             loadedURL = url
             loadedToken = token
-            webView.load(URLRequest(url: url, cachePolicy: .reloadRevalidatingCacheData, timeoutInterval: 8))
+            webView.load(URLRequest(url: url, cachePolicy: .reloadRevalidatingCacheData, timeoutInterval: 60))  // a hosted server may be waking up
         }
 
         // MARK: navigation
