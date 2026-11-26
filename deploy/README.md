@@ -175,5 +175,5 @@ tokens with the legacy secret (then add `SUPABASE_JWT_SECRET` to the Modal secre
 Apple configuration also needs `APPLE_BUNDLE_ID` and numeric `APPLE_APP_ID` in the server secret. Add a Superwall
 public SDK key to the iOS app (never a Superwall secret key). The auth/sign-in stream owns Supabase session creation
 and exposing its user UUID plus access token to this purchase flow. StoreKit configuration and the StoreKit products
-must use `com.musicscan.pro.monthly` and `com.musicscan.pro.yearly`; create the 7-day introductory offer on the yearly
-product and route the app's paywall placements to the Superwall paywall.
+must use `com.musicscan.pro.monthly` and `com.musicscan.pro.yearly`; don't create an introductory offer (no free trial;
+the free page is the free offer) and route the app's paywall placements to the Superwall paywall.

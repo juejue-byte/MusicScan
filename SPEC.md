@@ -15,7 +15,7 @@ One paid plan, **MusicScan Pro**, as an Apple auto-renewing subscription (no wee
 | --- | --- | --- |
 | Free | $0 | 1 full page with every feature for new users; after that each scan previews the first half of the page and blurs the rest, and edit / play / export ask to unlock |
 | Pro monthly | $15.99 / month | up to 30 pages a month, whole pages, editing, rescans, practice playback, export, multi-page scores |
-| Pro yearly | $99.99 / year ($8.33 / month) | the same, with a 7-day free trial for intro-offer eligible users |
+| Pro yearly | $99.99 / year ($8.33 / month) | the same, $8.33 a month (no free trial: the free page is the free offer) |
 
 Built: the paywall UI (`web/js/paywall.js`, `PLAN` holds prices and copy; off unless `?paywall`). To do before App
 Review: StoreKit 2 purchase / restore / manage, server-side entitlement check and page counting, the server sending

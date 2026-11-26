@@ -33,8 +33,8 @@ Product facts (do not change without asking Allen):
   shown inside a native SwiftUI shell on iOS (WKWebView). Reading runs on the server (Python, copisteria).
 - Scope: printed music only. Piano (treble + bass grand staff) and single-staff parts, row by row. Choir/SATB:
   keep what works, no new effort. Lyrics: skipped for now.
-- Pricing: MusicScan Pro $15.99 a month or $99.99 a year (7-day free trial on the yearly plan, intro-offer
-  eligible users only), up to 30 pages a month. New users get 1 free page with every feature. After that a scan
+- Pricing: MusicScan Pro $15.99 a month or $99.99 a year, no free trial (the 1 free page is
+  the free offer), up to 30 pages a month. New users get 1 free page with every feature. After that a scan
   shows the first half of the page and blurs the rest; editing, playback and export ask to unlock. Must follow
   Apple's App Review Guidelines (StoreKit in-app purchase, Restore Purchases, clear terms and privacy policy).
 - Design: the "Sky" light blue system in design/sky/ (README.md is the entry point, tokens.json the values).
@@ -162,13 +162,13 @@ Your stream: turning the paywall UI into real purchases that pass App Review. Yo
 object holds prices and copy), new ios/MusicScan/Store*.swift files, a new server/billing.py and docs/legal/.
 Today the paywall is UI only and off unless the URL has ?paywall.
 
-The plan (decided by Allen): Pro $15.99 a month or $99.99 a year, 7-day free trial on the yearly plan for
-intro-offer eligible users, up to 30 pages a month. 1 free page with every feature for new users; after that a scan
+The plan (decided by Allen): Pro $15.99 a month or $99.99 a year, no free trial and no introductory offer
+(the free page is the free offer), up to 30 pages a month. 1 free page with every feature for new users; after that a scan
 previews the first half of the page and blurs the rest, and editing, playback and export ask to unlock.
 
 Jobs:
 1. StoreKit 2 in the iOS app: two auto-renewable subscriptions in one group, a StoreKit configuration file for the
-   simulator, purchase, Restore Purchases, manage subscription, intro-offer eligibility for the trial badge.
+   simulator, purchase, Restore Purchases, manage subscription.
    Pass the entitlement to the web editor through native.js (one small bridge message).
 2. Server check: App Store Server API / signed transaction verification in server/billing.py; the page counter
    (30 a month) lives on the server keyed by the install id from Stream 4.
@@ -176,7 +176,7 @@ Jobs:
    on the paywall, no dark patterns, the free page really includes every feature.
 4. Web: keep the paywall off on the web unless a flag is set; no card payments on the web for now.
 
-Done when: a sandbox purchase, restore and trial work on a simulator with the StoreKit config; tests/paywall.js
+Done when: a sandbox purchase and restore work on a simulator with the StoreKit config; tests/paywall.js
 passes; docs/legal/ has the two pages; a checklist of the relevant App Review guidelines (3.1.1, 3.1.2, 5.1.1) is
 in docs/legal/REVIEW_CHECKLIST.md with each item ticked or explained.
 ```

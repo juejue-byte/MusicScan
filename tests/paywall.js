@@ -76,9 +76,9 @@ function serve() {
   await p.screenshot({ path: path.join(OUT, 'ipad_paywall.png') });
   const plans = await p.$$eval('.pw-plan', (xs) => xs.map((x) => x.querySelector('.pw-price').textContent));
   ok(plans.join() === '$99.99,$15.99', `two plans, no weekly (${plans.join(' ')})`);
-  ok(/Start 7-day free trial/.test(await p.locator('.pw-go').textContent()), 'Yearly is picked by default and offers the 7-day trial');
-  ok(/Free for 7 days, then \$99\.99 per year\. Renews automatically.*before the trial ends/.test(await p.locator('.pw-terms').textContent()), 'trial terms say the length, the price after and how to cancel');
-  ok(/7 days free/.test(await p.locator('.pw-plan[data-plan="year"] .pw-best').textContent()), 'the yearly card says 7 days free');
+  ok(/Continue with Yearly/.test(await p.locator('.pw-go').textContent()), 'Yearly is picked by default');
+  ok(/^\$99\.99 per year\. Renews automatically/.test(await p.locator('.pw-terms').textContent()), 'renewal terms shown with the price');
+  ok(!/trial/i.test(await p.locator('.pw-card').textContent()), 'no free trial anywhere on the sheet');
   ok(await p.locator('.pw-foot a', { hasText: 'Terms of Use' }).count() === 1 && await p.locator('[data-a=restore]').count() === 1, 'Terms of Use and Restore purchases are on the sheet');
   await tap('.pw-plan[data-plan="month"]');
   ok(/Monthly/.test(await p.locator('.pw-go').textContent()) && /\$15\.99 per month/.test(await p.locator('.pw-terms').textContent()), 'tapping a plan picks it and updates the terms');
@@ -97,19 +97,10 @@ function serve() {
   ok((await sheet()) === 1 && await p.locator('#exportMenu.open').count() === 0, 'Export asks to unlock');
   await tap('.pw-go');
   await p.waitForTimeout(500);
-  ok((await sheet()) === 0 && await p.evaluate(() => window.__ms.paywall.isPro()), 'Starting the trial unlocks the preview');
-  ok(/7-day free trial has started/.test(await p.locator('#toast').textContent()), 'says the trial started');
+  ok((await sheet()) === 0 && await p.evaluate(() => window.__ms.paywall.isPro()), 'Continue unlocks the preview');
   ok(await p.locator('#lockVeil').count() === 0, 'the whole page shows after unlocking');
   dl = await exportXml();
   ok(!!dl, 'after unlocking the export goes through');
-
-  // a trial is once only: after it, the sheet shows the plain price
-  await p.evaluate(() => localStorage.removeItem('musicscan:pro'));
-  await p.evaluate(() => { window.__ms.paywall.show(); });
-  await p.waitForTimeout(300);
-  ok(/Continue with Yearly/.test(await p.locator('.pw-go').textContent()) && /^\$99\.99 per year/.test(await p.locator('.pw-terms').textContent()), 'no second trial: plain price after a trial was used');
-  await tap('.pw-go');
-  await p.waitForTimeout(300);
 
   // 4. Pro allowance: 30 pages a month
   await tap('#btnNew');
