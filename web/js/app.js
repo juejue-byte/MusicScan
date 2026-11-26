@@ -11,6 +11,7 @@ import { api, jobFile, isDemo } from './demo.js';
 import * as review from './review.js';
 import { createNoteInput } from './input.js';
 import { createPad } from './pad.js';
+import { ARTICS } from './notations.js';
 import { pageRanges } from './pages.js';
 
 const $ = (s) => document.querySelector(s);
@@ -882,6 +883,8 @@ const SHORTCUTS = [
     ['+  −  =', 'Sharp, flat, natural'],
     ['T', 'Tie (in note input: a tied note of the same pitch)'],
     ['Alt + 3', 'Triplet (Alt+5, 6, 7, 9 for other tuplets)'],
+    ['S', 'Slur to the next note (or over the selected bars); again removes it'],
+    ['Shift + S, V, N, O', 'Staccato, accent, tenuto, marcato (again removes it)'],
     ['Backspace', 'In note input: step back and clear that note'],
     ['⌘/Ctrl + Alt + 1 – 4', 'Write in voice 1 – 4 of the staff (two melodies on one staff)'],
   ]],
@@ -958,6 +961,10 @@ function onKey(e) {
   const dk = /^Digit[0-7]$/.test(e.code) ? e.code.slice(5) : /^[0-7]$/.test(k) ? k : null;
   if (dk === '0') { e.preventDefault(); if (add) NI.write(null); else makeRest(); return; }
   if (dk && DUR_KEYS[dk]) { e.preventDefault(); setDur(DUR_KEYS[dk]); return; }
+  // articulations and slurs, as in MuseScore
+  const ART_KEYS = { S: 'staccato', V: 'accent', N: 'tenuto', O: 'strong-accent' };
+  if (e.shiftKey && ART_KEYS[k]) { e.preventDefault(); articulation(ART_KEYS[k]); return; }
+  if (k === 's' && !e.shiftKey) { e.preventDefault(); slur(); return; }
   // note names
   if (/^[a-gA-G]$/.test(k)) {
     if (S.mode === 'ink') return;
@@ -1055,6 +1062,30 @@ function extendBars(dir) {
   S.measures = new Set(Array.from({ length: Math.abs(b - a) + 1 }, (_, i) => Math.min(a, b) + i));
   redraw();
   scrollToBar(b);
+}
+// Shift+S/V/N/O: staccato, accent, tenuto, marcato on the selected note (again removes it)
+function articulation(kind) {
+  const s = selected();
+  if (!s || s.ev.rest) { toast(`Select a note, then add a ${ARTICS[kind].name.toLowerCase()}`); return; }
+  let on = false;
+  if (act(() => { on = S.score.toggleArticulation(s.ev, kind); })) toast(`${ARTICS[kind].name} ${on ? 'added' : 'removed'}`, 1200);
+}
+// S: slur the selected note to the next one (again removes it); with bars selected, over the whole selection
+function slur() {
+  const s = selected();
+  if (s) {
+    let on = false;
+    if (act(() => { on = S.score.toggleSlur(s.ev); })) toast(on ? 'Slur to the next note. Select a later note and press S again to start another.' : 'Slur removed', 1800);
+    return;
+  }
+  const bars = targetBars();
+  if (!bars.length) { toast('Select a note (or some bars), then press S for a slur'); return; }
+  const evs = (mi) => S.score.voiceEvents(0, mi, '1', null).filter((e) => !e.rest);
+  const first = evs(bars[0])[0];
+  const lastList = evs(bars[bars.length - 1]).filter((e) => e.voice === first?.voice);
+  const last = lastList[lastList.length - 1];
+  if (!first || !last || first.el === last.el) { toast('A slur needs two notes'); return; }
+  if (act(() => S.score.toggleSlur(first, last))) toast(`Slur over ${bars.length > 1 ? bars.length + ' bars' : 'the bar'} (top staff)`, 1600);
 }
 // ⌘← / ⌘→ outside note input: the first note of the previous / next bar
 function stepBar(dir) {
@@ -1492,6 +1523,7 @@ function openMarksMenu(btn) {
   menu.innerHTML = `<div class="mk-head"></div>
     <div class="mk-row"><span class="mk-label">Dynamics</span>${DYNAMICS.map((d) => `<button data-mk="dyn" data-v="${d}" class="dyn${curDyn === d ? ' on' : ''}"${dis(t)}>${d}</button>`).join('')}</div>
     <div class="mk-row"><span class="mk-label">Hairpin · ${span}</span><button data-mk="wedge" data-v="crescendo"${dis(t)} title="Crescendo">&lt;&nbsp; cresc.</button><button data-mk="wedge" data-v="diminuendo"${dis(t)} title="Diminuendo">&gt;&nbsp; dim.</button></div>
+    <div class="mk-row"><span class="mk-label">Articulation</span>${['staccato', 'accent', 'tenuto', 'strong-accent'].map((a) => `<button data-mk="artic" data-v="${a}" class="art${note && S.score.hasArticulation(t.ev, a) ? ' on' : ''}"${dis(note)} title="${ARTICS[a].name} (${ARTICS[a].key})">${{ staccato: '·', accent: '>', tenuto: '–', 'strong-accent': '^' }[a]}&nbsp;${ARTICS[a].name}</button>`).join('')}<button data-mk="slur"${dis(note || bars.length)} title="Slur (S)">⌒ Slur</button></div>
     <div class="mk-row"><span class="mk-label">Fingering</span>${[1, 2, 3, 4, 5].map((f) => `<button data-mk="finger" data-v="${f}" class="${curFinger === String(f) ? 'on' : ''}"${dis(note)}>${f}</button>`).join('')}<button data-mk="finger" data-v=""${dis(note && curFinger)} title="Remove the fingering">✕</button></div>
     <div class="mk-row"><span class="mk-label">Text</span>${WORDS.map((w) => `<button data-mk="words" data-v="${w}" class="words"${dis(t)}>${w}</button>`).join('')}<button data-mk="words-custom"${dis(t)}>${m?.kind === 'words' ? 'Edit text…' : 'Your own…'}</button></div>
     <div class="mk-row"><span class="mk-label">Bar</span><button data-mk="rehearsal"${dis(t || bars.length)}><span class="reh">${S.score.nextRehearsal()}</span> Rehearsal mark</button>${m ? `<button data-mk="remove" class="danger">Remove ${MARK_NAMES[m.kind].toLowerCase()}</button>` : ''}</div>`;
@@ -1509,6 +1541,8 @@ function markAction(kind, v) {
   let made = null;
   const done = (msg) => { closeMenus(); S.sel = keepNote && keepNote.isConnected ? keepNote : null; if (made && !S.sel) S.selMark = made; redraw(); if (msg) toast(msg, 2200); };
   if (kind === 'remove') { closeMenus(); removeSelMark(); return; }
+  if (kind === 'artic') { closeMenus(); articulation(v); return; }
+  if (kind === 'slur') { closeMenus(); slur(); return; }
   if (kind === 'words-custom') { closeMenus(); textDialog(m?.kind === 'words' ? m : null, t); return; }
   if (!t && kind !== 'rehearsal') { toast('Select a note or a bar first'); return; }
   if (kind === 'dyn') {

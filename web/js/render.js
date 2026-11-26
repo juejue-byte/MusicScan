@@ -2,6 +2,7 @@
 import { Score, STEPS, keyAlter, clefKey, clefTop, midiOf } from './score.js';
 import './edits.js';
 import { drawMarks } from './markup.js';
+import { addArticulations, drawSlurs } from './notations.js';
 
 const VF = window.Vex.Flow;
 const VF_CLEF = { G2: 'treble', F4: 'bass', C3: 'alto', C4: 'tenor', C1: 'soprano', F3: 'baritone-f', C2: 'mezzo-soprano', G1: 'french' };
@@ -245,6 +246,7 @@ export function render(score, el, opts = {}) {
                 note.addModifier(new VF.Articulation(below ? 'a@u' : 'a@a').setPosition(below ? VF.Modifier.Position.BELOW : VF.Modifier.Position.ABOVE), 0);
               } catch (err) { /* ignore */ }
             }
+            if (!e.rest) addArticulations(VF, note, e);
             const isSel = selNote && (selNote === e.el || e.chord.some((c) => c.el === selNote));
             if (isSel) note.setStyle({ fillStyle: '#2563eb', strokeStyle: '#2563eb' });
             tickables.push(note);
@@ -343,6 +345,7 @@ function drawTies(score, layout, ctx) {
       for (const t of ties) { try { new VF.StaveTie(t).setContext(ctx).draw(); } catch (err) { /* ignore */ } }
     }
   }
+  drawSlurs(VF, ctx, score, layout);
 }
 
 // pitch under a point on a stave

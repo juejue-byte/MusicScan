@@ -130,6 +130,14 @@ function serve() {
   ok(JSON.stringify(await over()) === JSON.stringify(overBefore), 'no bar overflows with two voices');
   await p.screenshot({ path: OUT + '/03_voice2.png' });
   await key('Control+Alt+Digit1', 'Escape');
+  // 11. slur and articulations
+  await p.evaluate(() => { const S = window.__ms.S; S.measures = new Set(); S.sel = S.score.voiceEvents(0, 2, '1', null)[0].el; window.__ms.redraw(); });
+  await key('s', 'Shift+S', 'Shift+V');
+  const nt = await p.evaluate(() => { const S = window.__ms.S; const el = S.sel; return { slurs: S.score.slurs(0).filter((x) => x.start === el).length, arts: [...el.querySelectorAll('notations > articulations > *')].map((x) => x.localName) }; });
+  ok(nt.slurs === 1 && nt.arts.join() === 'accent,staccato', 'S slurs to the next note, Shift+S/V add staccato and accent: ' + JSON.stringify(nt));
+  await key('s', 'Shift+S');
+  const nt2 = await p.evaluate(() => { const S = window.__ms.S; const el = S.sel; return { slurs: S.score.slurs(0).filter((x) => x.start === el).length, arts: [...el.querySelectorAll('notations > articulations > *')].map((x) => x.localName) }; });
+  ok(nt2.slurs === 0 && nt2.arts.join() === 'accent', 'pressing them again removes them');
   // the XML still parses
   const xml = await p.evaluate(() => window.__ms.S.score.toXML());
   fs.writeFileSync(OUT + '/out.musicxml', xml);
