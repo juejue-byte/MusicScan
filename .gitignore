@@ -9,3 +9,4 @@ bench/results/images/
 bench/results/pred/
 node_modules/
 .DS_Store
+.venv.old.*/
