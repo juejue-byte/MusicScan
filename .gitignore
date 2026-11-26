@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+third_party/
+work/
+bench/data/*.png
+bench/results/images/
+bench/results/pred/
+node_modules/
+.DS_Store

@@ -1,9 +1,18 @@
-homr>=0.7.1
-onnxruntime>=1.18.0
-music21>=9.0.0
-Pillow>=10.0.0
-pillow-heif>=0.18.0
-opencv-python-headless>=4.10.0
-fastapi>=0.115.0
-uvicorn>=0.30.0
+# MusicScan server + benchmark (Python 3.12+)
+fastapi>=0.115
+uvicorn>=0.30
 python-multipart>=0.0.9
+numpy>=1.26
+scipy>=1.11
+opencv-python-headless>=4.10
+Pillow>=10.0
+pi-heif>=0.18          # HEIC decode only (avoid pillow-heif: its wheels bundle the GPL x265 encoder)
+pypdfium2>=4.30
+lxml>=5.0
+torch>=2.3             # copisteria runtime (CPU is fine)
+torchvision>=0.18
+huggingface_hub>=0.24  # weights download
+# benchmark only
+music21>=9.1
+verovio>=4.3
+cairosvg>=2.7

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MusicScan</title>
+<meta name="theme-color" content="#0f172a">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%232563eb'/><path d='M12 22V9l10-2v13' stroke='white' stroke-width='2.4' fill='none'/><circle cx='9.5' cy='22' r='3' fill='white'/><circle cx='19.5' cy='20' r='3' fill='white'/></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">♪</span><span>MusicScan</span></div>
+  <div class="doc-title" id="docTitle"></div>
+  <div class="top-actions">
+    <button class="btn ghost" id="btnNew" title="Scan another page">New scan</button>
+    <div class="sep"></div>
+    <button class="btn icon" id="btnUndo" title="Undo (Ctrl+Z)" disabled>↶</button>
+    <button class="btn icon" id="btnRedo" title="Redo (Ctrl+Shift+Z)" disabled>↷</button>
+    <div class="sep"></div>
+    <button class="btn primary play" id="btnPlay" title="Play (Space)" disabled><span class="pi">▶</span><span class="pl">Play</span></button>
+    <label class="tempo" title="Tempo (beats per minute)"><span>♩=</span><input id="tempo" type="number" min="30" max="240" value="90"></label>
+    <div class="menu">
+      <button class="btn" id="btnExport" disabled>Export ▾</button>
+      <div class="menu-pop" id="exportMenu">
+        <button data-x="xml">MusicXML (.musicxml)</button>
+        <button data-x="mid">MIDI (.mid)</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main id="app">
+  <!-- 1. upload -->
+  <section id="viewUpload" class="view">
+    <div class="hero">
+      <h1>Turn a photo of sheet music into a score you can edit and play.</h1>
+      <p class="sub">Printed music, piano or one instrument. Works with phone photos, scans and PDFs.</p>
+      <label class="drop" id="drop">
+        <input type="file" id="fileInput" accept="image/*,.heic,.heif,.pdf,.musicxml,.xml,.mxl" hidden>
+        <div class="drop-icon">⤒</div>
+        <div class="drop-main">Drop a photo or PDF here</div>
+        <div class="drop-sub">or <span class="link">choose a file</span> · JPG, PNG, HEIC, PDF · MusicXML to edit</div>
+      </label>
+      <div class="upload-row">
+        <label class="btn camera"><input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>📷 Take a photo</label>
+        <label class="check"><input type="checkbox" id="optFast"> Fast mode (smaller model, ~4× quicker)</label>
+      </div>
+      <div class="samples" id="samples"></div>
+      <div class="tips">
+        <div class="tip"><b>Flat and square.</b> Lay the page flat and fill the frame with it.</div>
+        <div class="tip"><b>Even light.</b> Avoid your own shadow; daylight is best.</div>
+        <div class="tip"><b>Sharp.</b> Tap to focus; the staff lines should look crisp.</div>
+        <div class="tip"><b>Pen marks are fine.</b> Colored pen is removed automatically.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. progress -->
+  <section id="viewProgress" class="view hidden">
+    <div class="progress-card">
+      <img id="progressThumb" alt="">
+      <div class="steps">
+        <div class="step" data-s="upload"><span class="dot"></span>Uploading</div>
+        <div class="step" data-s="clean"><span class="dot"></span>Cleaning up the photo</div>
+        <div class="step" data-s="read"><span class="dot"></span>Reading the music</div>
+      </div>
+      <div class="bar"><div id="progressBar"></div></div>
+      <div class="muted" id="progressText">This takes about 15 seconds.</div>
+    </div>
+  </section>
+
+  <!-- 3. editor -->
+  <section id="viewEditor" class="view hidden">
+    <div id="qualityBanner" class="banner hidden"></div>
+    <div class="workspace">
+      <div class="score-col">
+        <div class="toolbar" id="toolbar">
+          <div class="seg" role="group" aria-label="Mode">
+            <button data-mode="select" class="on" title="Select and drag notes (V)">↖ Select</button>
+            <button data-mode="add" title="Click on the staff to add notes (N)">✎ Add notes</button>
+          </div>
+          <div class="seg durs" role="group" aria-label="Duration">
+            <button data-dur="whole" title="Whole (1)"><span class="g">𝅝</span><kbd>1</kbd></button>
+            <button data-dur="half" title="Half (2)"><span class="g">𝅗𝅥</span><kbd>2</kbd></button>
+            <button data-dur="quarter" class="on" title="Quarter (3)"><span class="g">♩</span><kbd>3</kbd></button>
+            <button data-dur="eighth" title="Eighth (4)"><span class="g">♪</span><kbd>4</kbd></button>
+            <button data-dur="16th" title="16th (5)"><span class="g">𝅘𝅥𝅯</span><kbd>5</kbd></button>
+            <button data-dur="32nd" title="32nd (6)"><span class="g">𝅘𝅥𝅰</span><kbd>6</kbd></button>
+            <button data-act="dot" title="Dotted (.)"><span class="g">•</span><kbd>.</kbd></button>
+          </div>
+          <div class="seg" role="group" aria-label="Accidentals">
+            <button data-acc="-1" title="Flat (-)"><span class="g">♭</span></button>
+            <button data-acc="0" title="Natural (=)"><span class="g">♮</span></button>
+            <button data-acc="1" title="Sharp (+)"><span class="g">♯</span></button>
+          </div>
+          <div class="seg" role="group" aria-label="Edit">
+            <button data-act="rest" title="Note ↔ rest (R)">𝄽 Rest</button>
+            <button data-act="delete" title="Delete (Del)">⌫</button>
+          </div>
+          <div class="seg right">
+            <button data-act="rescan" id="btnRescan" title="Re-read the selected bars from the photo" disabled>⟳ Rescan bars</button>
+            <button data-act="photo" id="btnPhoto" title="Show the photo next to the score">🖼 Photo</button>
+          </div>
+        </div>
+        <div class="hint" id="hint">Click a note to select it, then drag it up or down. Use <b>Add notes</b> to write new ones.</div>
+        <div class="inspector hidden" id="inspector">
+          <div class="insp-head"><span id="inspTitle">Bar</span><span class="muted" id="inspConf"></span><button class="btn small" id="inspRescan">⟳ Rescan this row</button><button class="btn small ghost" id="inspClose">✕</button></div>
+          <div class="insp-img"><canvas id="inspCanvas"></canvas></div>
+        </div>
+        <div class="score-scroll" id="scoreScroll">
+          <div id="score" class="score"></div>
+          <svg id="overlay" class="overlay"></svg>
+        </div>
+        <div class="statusbar"><div class="status" id="status"></div><div class="zoom"><button class="btn icon small" id="zoomOut" title="Smaller">−</button><span id="zoomVal">100%</span><button class="btn icon small" id="zoomIn" title="Larger">+</button></div></div>
+      </div>
+      <aside class="photo-col" id="photoCol">
+        <div class="photo-head"><span>Photo</span>
+          <div class="seg small"><button data-ph="page" class="on">Cleaned</button><button data-ph="orig">Original</button></div><button class="btn icon small ghost" id="photoClose" title="Hide photo">✕</button>
+        </div>
+        <div class="photo-wrap" id="photoWrap"><img id="photoImg" alt="Your photo"><svg id="photoSvg"></svg></div>
+        <div class="legend"><span class="sw ok"></span>sure <span class="sw check"></span>check <span class="sw bad"></span>likely wrong · click a bar to jump to it</div>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<div class="modal hidden" id="modal"><div class="modal-card" id="modalCard"></div></div>
+<div class="toast hidden" id="toast"></div>
+<footer class="credit">OMR by <a href="https://github.com/kobimusic/copisteria" target="_blank" rel="noopener">copisteria</a> © KobiMusic (Apache-2.0) · engraving by VexFlow</footer>
+
+<script src="vendor/vexflow.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

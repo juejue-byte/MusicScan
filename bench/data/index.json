@@ -1,0 +1,74 @@
+[
+ {
+  "id": "bach_bwv66",
+  "source": "bach/bwv66.6",
+  "part": null,
+  "measures": 24
+ },
+ {
+  "id": "bach_bwv269",
+  "source": "bach/bwv269",
+  "part": null,
+  "measures": 18
+ },
+ {
+  "id": "bach_bwv1_6",
+  "source": "bach/bwv1.6",
+  "part": null,
+  "measures": 7
+ },
+ {
+  "id": "mozart_k545",
+  "source": "mozart/k545/movement1_exposition",
+  "part": null,
+  "measures": 20
+ },
+ {
+  "id": "clara_polonaise",
+  "source": "schumann_clara/polonaise_op1n1",
+  "part": null,
+  "measures": 16
+ },
+ {
+  "id": "joplin_rag",
+  "source": "joplin/maple_leaf_rag",
+  "part": null,
+  "measures": 16
+ },
+ {
+  "id": "mozart_k80_vn1",
+  "source": "mozart/k80/movement1",
+  "part": 0,
+  "measures": 40
+ },
+ {
+  "id": "haydn_74_vn1",
+  "source": "haydn/opus74no1/movement1",
+  "part": 0,
+  "measures": 40
+ },
+ {
+  "id": "beethoven_18_vc",
+  "source": "beethoven/opus18no1/movement1",
+  "part": 3,
+  "measures": 40
+ },
+ {
+  "id": "weber_clarinet",
+  "source": "weber/concertino_clarinet",
+  "part": 0,
+  "measures": 40
+ },
+ {
+  "id": "mozart_k458_quartet",
+  "source": "mozart/k458/movement1",
+  "part": null,
+  "measures": 14
+ },
+ {
+  "id": "handel_lascia",
+  "source": "handel/rinaldo/Lascia_chio_pianga",
+  "part": null,
+  "measures": 14
+ }
+]
