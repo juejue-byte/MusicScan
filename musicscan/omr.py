@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-COPISTERIA_ROOT = Path(os.environ.get("COPISTERIA_ROOT", Path(__file__).resolve().parents[1] / "third_party" / "copisteria"))
+COPISTERIA_ROOT = Path(os.environ.get("COPISTERIA_ROOT", "/home/user/ext/copisteria"))
 LOW = 0.85            # a reading head below this probability makes the symbol "uncertain"
 _LOCK = threading.Lock()
 _MODEL = {}
@@ -21,6 +21,21 @@ _DETS = {}
 
 # heads whose mistakes change what you hear or see
 HEADS = ("cls", "pos", "dots", "alter")
+
+
+def pick_device() -> str:
+    """Where the detector runs: MUSICSCAN_DEVICE (cpu/mps/cuda) or the fastest one available."""
+    if _DEV:
+        return _DEV[0]
+    import torch
+    want = os.environ.get("MUSICSCAN_DEVICE", "auto")
+    if want == "auto":
+        want = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    _DEV.append(want)
+    return want
+
+
+_DEV: list[str] = []
 
 
 def _setup():
@@ -39,8 +54,9 @@ def _setup():
 
         def cached(weights=None, device=None):
             key = (str(weights), os.environ.get("COPISTERIA_DETECTOR", "28m"))
+            key = key + (pick_device(),)
             if key not in _DETS:
-                _DETS[key] = Orig(weights, device)
+                _DETS[key] = Orig(weights, pick_device())
             return _DETS[key]
         detect.Detector = cached
         detect._musicscan_patched = True
@@ -70,7 +86,15 @@ def transcribe(im: Image.Image, detector: str = "28m") -> dict:
             png = Path(td) / "page.png"
             g = im.convert("L")
             g.save(png)
-            dets, cands, feats = pipeline.inputs(png, model)
+            try:
+                dets, cands, feats = pipeline.inputs(png, model)
+            except (RuntimeError, NotImplementedError):
+                if pick_device() == "cpu":
+                    raise
+                # an op the GPU backend lacks: fall back to the CPU for the rest of this run
+                _DEV[:] = ["cpu"]
+                pipeline._DET[:] = []
+                dets, cands, feats = pipeline.inputs(png, model)
             rd = read_revised(dets, g.width, g.height, model, device="cpu", attention=False, image=g,
                               cands=cands, feats=feats)
             xml = write.write(rd, image=g)
@@ -78,6 +102,7 @@ def transcribe(im: Image.Image, detector: str = "28m") -> dict:
     out["xml"] = xml
     out["seconds"] = round(time.time() - t0, 1)
     out["detector"] = detector
+    out["device"] = pick_device()
     out["size"] = [im.width, im.height]
     return out
 

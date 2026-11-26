@@ -3,4 +3,6 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [ -d .venv ] && . .venv/bin/activate
+# Use the GPU when there is one (Apple Silicon: MPS); unsupported ops fall back to the CPU.
+export MUSICSCAN_DEVICE="${MUSICSCAN_DEVICE:-auto}" PYTORCH_ENABLE_MPS_FALLBACK=1
 exec uvicorn server.app:app --host "${HOST:-127.0.0.1}" --port "${PORT:-8000}"

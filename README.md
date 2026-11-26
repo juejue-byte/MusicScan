@@ -25,7 +25,8 @@ scripts/run.sh       # http://localhost:8000
 ```
 
 Python 3.12+. A page takes about 15–20 s on a 4-core CPU with copista-28m and about 4 s in fast mode (copista-2m);
-an NVIDIA GPU is used automatically when present. Sample photos are on the start screen.
+the GPU is used automatically when present (NVIDIA CUDA, or MPS on Apple Silicon Macs, with a CPU fallback for any op MPS
+lacks). Force a device with `MUSICSCAN_DEVICE=cpu|mps|cuda scripts/run.sh`. Sample photos are on the start screen.
 
 ## Editing cheatsheet
 
