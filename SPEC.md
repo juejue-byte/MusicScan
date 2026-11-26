@@ -37,7 +37,7 @@ only the first half of a preview page, public privacy policy and terms (see `doc
 ## Core flows
 1. **Upload**: drag/drop, file picker, phone camera with a live photo check (light, sharpness, steadiness, page fill),
    paste; VisionKit document camera on iOS; samples and Your music (every score kept on the device) on the start screen.
-2. **Transcribe**: job → cleanup → OMR → confidence → editor. Typical 15–20 s CPU (28m), ~4 s fast mode.
+2. **Transcribe**: job → cleanup → OMR → confidence → editor. Typical 9–12 s on a 4-core CPU for a scan (28m plus the second reading; the big detector reads the page once, see `omr.page_inputs`), 15–20 s for a hard photo, ~4 s fast mode.
 3. **Quality warning**: banner good / check / retake with reasons (too small, blurry, dark, many uncertain symbols);
    **Adjust edges** lets the user drag the four page corners on the original photo and read the page again.
    **Fix it** steps through the flagged bars (photo beside the reading, play the bar, Looks right / Edit / Rescan /

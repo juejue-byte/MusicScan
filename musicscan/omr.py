@@ -74,6 +74,64 @@ def token_conf(r: dict) -> float:
     return c
 
 
+_FIRST: dict = {}          # (detector, page hash) -> that detector's 2048 px pass, so the second reading reuses it
+SPACE_SURE = 0.12          # take the small detector's staff-space check only when it is this close to the ink's
+
+
+def page_inputs(png: Path, model):
+    """(dets, cands, feats) for a page, exactly as copisteria's pipeline.inputs reads them, but faster.
+
+    copisteria reads a page twice with the big detector: once at 2048 px only to measure the staff space from its
+    measure boxes (to confirm the staff-line finder's spacing), then again at the size that spacing asks for, throwing
+    the first pass away. That measuring pass is ~6 s of a ~13 s reading on a 4-core CPU. Here the small detector
+    (copista-2m, ~0.8 s) does the measuring when the staff lines were found and its boxes agree with them closely
+    (well inside copisteria's own 25% tolerance), so the big detector runs once at the size copisteria would have
+    chosen. Its 2048 pass is kept for the second reading, which runs the small detector anyway. When the check is not
+    clear-cut, or the page is read at 2048 px, it falls back to copisteria's own steps. MUSICSCAN_FAST_INPUTS=0 turns it
+    off."""
+    import hashlib
+    import json
+    from copisteria import pipeline
+    from copisteria.paths import DETECTORS
+    name = os.environ.get("COPISTERIA_DETECTOR", "28m")
+    if getattr(model, "feat_dim", 0) or os.environ.get("MUSICSCAN_FAST_INPUTS", "1") == "0" or name not in DETECTORS:
+        return pipeline.inputs(png, model)
+    from copisteria.detect import Detector, imgsz_for, measure_space, staff_space, SPACE_AGREE
+    from copisteria.vision.page.scan import from_png
+    from copisteria.vision.page.staves import find_staves
+    with Image.open(png) as im:
+        im = im.convert("L")
+    key = hashlib.md5(im.tobytes() + repr(im.size).encode()).hexdigest()
+    long_side = max(im.width, im.height)
+    ink = find_staves(from_png(png).image()).spacing
+
+    def first_pass(det_name):
+        k = (det_name, key)
+        if k not in _FIRST:
+            det = Detector(DETECTORS[det_name][0])
+            arr, s = det.prepare(im, 2048)
+            _FIRST[k] = json.dumps(det.run_array(arr, s))
+            while len(_FIRST) > 8:
+                _FIRST.pop(next(iter(_FIRST)))
+        return json.loads(_FIRST[k])        # a fresh copy each time, as copisteria's JSON cache gives
+
+    det = Detector(DETECTORS[name][0])
+    first = None
+    if name != "2m" and ink > 0:
+        boxes = measure_space(first_pass("2m"))
+        if boxes > 0 and abs(ink / boxes - 1) <= SPACE_SURE < SPACE_AGREE:
+            imgsz = imgsz_for(ink, long_side)        # staff_space(ink, boxes) == ink for any boxes this close
+            if imgsz != 2048:
+                arr, s = det.prepare(im, imgsz)
+                return det.run_array(arr, s), None, None
+    first = first_pass(name)
+    imgsz = imgsz_for(staff_space(ink, measure_space(first)), long_side)
+    if imgsz == 2048:
+        return first, None, None
+    arr, s = det.prepare(im, imgsz)
+    return det.run_array(arr, s), None, None
+
+
 def transcribe(im: Image.Image, detector: str = "28m") -> dict:
     t0 = time.time()
     with _LOCK:
@@ -87,14 +145,14 @@ def transcribe(im: Image.Image, detector: str = "28m") -> dict:
             g = im.convert("L")
             g.save(png)
             try:
-                dets, cands, feats = pipeline.inputs(png, model)
+                dets, cands, feats = page_inputs(png, model)
             except (RuntimeError, NotImplementedError):
                 if pick_device() == "cpu":
                     raise
                 # an op the GPU backend lacks: fall back to the CPU for the rest of this run
                 _DEV[:] = ["cpu"]
                 pipeline._DET[:] = []
-                dets, cands, feats = pipeline.inputs(png, model)
+                dets, cands, feats = page_inputs(png, model)
             rd = read_revised(dets, g.width, g.height, model, device="cpu", attention=False, image=g,
                               cands=cands, feats=feats)
             xml = write.write(rd, image=g)
