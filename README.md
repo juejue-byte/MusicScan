@@ -13,7 +13,7 @@ Web first, built so the same editor can ship inside an iOS app.
   Add-notes mode writes new notes where you click, with a ghost preview of the pitch. Undo everything.
 - **Rescan** a bad bar: re-read its row from the same photo another way, or from a close-up, compare old and new, keep
   the better one. Untouched bars keep their slurs, dynamics and beams.
-- **Play** with a moving cursor (sampled piano), **export** `.musicxml` and `.mid`.
+- **Play** with a moving cursor and the sounding notes lit up (sampled piano), **export** `.musicxml` and `.mid`.
 
 Scope of the MVP: printed music, piano or a single instrument, one or more staves, treble / bass / alto / tenor clefs.
 
@@ -37,6 +37,7 @@ an NVIDIA GPU is used automatically when present. Sample photos are on the start
 | Write notes | **Add notes** (N), pick a duration, click on the staff. Clicking a rest fills it; following rests make room |
 | Chords | In Add mode, Shift-click on an existing note |
 | Note ↔ rest, delete | R · Delete |
+| Wrong key or meter | **Key / time** (notes that followed the misread key are re-spelled) |
 | Select bars | Click a bar number (Shift-click for a range), or a bar on the photo |
 | Rescan | Select bars → **Rescan bars** → compare → keep or try another way |
 | Play / stop | Space (starts at the selected bar) |

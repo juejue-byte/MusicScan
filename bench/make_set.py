@@ -23,6 +23,8 @@ PIECES = [  # (id, corpus path, part index or None for full score, max measures)
     ("haydn_74_vn1", "haydn/opus74no1/movement1", 0, 40),
     ("beethoven_18_vc", "beethoven/opus18no1/movement1", 3, 40),
     ("weber_clarinet", "weber/concertino_clarinet", 0, 40),
+    ("beethoven_18_viola", "beethoven/opus18no1/movement1", 2, 40),   # alto clef
+    ("haydn_74_viola", "haydn/opus74no1/movement1", 2, 40),          # alto clef
     ("mozart_k458_quartet", "mozart/k458/movement1", None, 16),
     ("handel_lascia", "handel/rinaldo/Lascia_chio_pianga", None, 20),
 ]

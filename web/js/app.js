@@ -103,6 +103,16 @@ function setStep(s) {
 }
 
 function openResult(res) {
+  if (!res.stats?.measures) {
+    show('viewUpload');
+    const card = $('#modalCard');
+    $('#modal').classList.remove('hidden');
+    card.innerHTML = `<h2>No music found in this photo</h2>
+      <p class="muted">We couldn't find any staff lines. Make sure the page is printed sheet music, fills most of the frame, and is in focus, then try again.</p>
+      <div class="modal-actions"><button class="btn primary" data-m="close">Try another photo</button></div>`;
+    card.onclick = (ev) => { if (ev.target.closest('[data-m]')) closeModal(); };
+    return;
+  }
   S.result = res;
   openScore(res.xml, res.measures, res.quality, S.job);
 }
