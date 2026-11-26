@@ -182,6 +182,7 @@ function barReason(m) {
   const r = [];
   if (m.notes?.length) r.push(...m.notes);
   if (m.disagree) r.push('a second reading disagrees');
+  if (m.filled) r.push('notes filled in from a second reading');
   if (m.low_n) r.push(`${m.low_n} uncertain symbol${m.low_n === 1 ? '' : 's'}`);
   if (m.fixes?.length) r.push('timing was repaired');
   if (!r.length) r.push(m.n ? 'low confidence' : 'nothing was read here');

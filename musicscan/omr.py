@@ -361,6 +361,77 @@ def disagreement(xml: str, other: str) -> dict[int, str] | None:
     return out
 
 
+MUSIC = ("note", "backup", "forward")
+
+
+def adopt_bars(xml: str, other: str, bars: set[int]) -> tuple[str, set[int]]:
+    """Put the second reading's notes into the given bars (0-based measure indices), part by part. Used where the
+    second reading has notes the main one lacks and nothing else differs: on the benchmark the second reading was
+    right in 84% of those bars and the main one in 4%. Durations are rescaled when the two readings use different
+    divisions; a bar that can't be rescaled exactly is left alone. Returns the new XML and the bars changed."""
+    from fractions import Fraction
+    from lxml import etree
+    if not bars:
+        return xml, set()
+    try:
+        ra, rb = etree.fromstring(xml.encode()), etree.fromstring(other.encode())
+    except etree.XMLSyntaxError:
+        return xml, set()
+    pa, pb = ra.findall("part"), rb.findall("part")
+    if len(pa) != len(pb):
+        return xml, set()
+
+    def divs(part):
+        out, d = [], 1
+        for m in part.findall("measure"):
+            t = m.findtext("attributes/divisions")
+            if t:
+                d = int(float(t))
+            out.append(d)
+        return out
+
+    plan = {}                                              # (part, bar) -> new children
+    for k, (A, B) in enumerate(zip(pa, pb)):
+        ma, mb = A.findall("measure"), B.findall("measure")
+        if len(ma) != len(mb):
+            return xml, set()
+        da, db = divs(A), divs(B)
+        for i in bars:
+            if i >= len(ma):
+                continue
+            scale = Fraction(da[i], db[i])
+            new = []
+            for el in mb[i]:
+                if el.tag not in MUSIC:
+                    continue
+                el = etree.fromstring(etree.tostring(el))
+                for d in el.iter("duration"):
+                    v = Fraction(int(float(d.text or 0))) * scale
+                    if v.denominator != 1:
+                        new = None
+                        break
+                    d.text = str(int(v))
+                if new is None:
+                    break
+                new.append(el)
+            plan[(k, i)] = new
+    done = {i for i in bars if all(plan.get((k, i)) is not None for k in range(len(pa)))}
+    for k, A in enumerate(pa):
+        ma = A.findall("measure")
+        for i in done:
+            m = ma[i]
+            old = [el for el in m if el.tag in MUSIC]
+            at = list(m).index(old[0]) if old else len(m)
+            for el in old:
+                m.remove(el)
+            for j, el in enumerate(plan[(k, i)]):
+                m.insert(at + j, el)
+    if not done:
+        return xml, set()
+    head = xml[: xml.find("<score-partwise")] if "<score-partwise" in xml else ""
+    return head + etree.tostring(ra, encoding="unicode"), done
+
+
 def second_opinion(r: dict, im: Image.Image) -> dict:
     """Read the page again with the small detector and mark the bars where the two readings differ. Two different
     models rarely make the same mistake, so a disagreement points at a likely error, including notes the big model
@@ -373,9 +444,14 @@ def second_opinion(r: dict, im: Image.Image) -> dict:
     if dis is None:                      # the two readings found a different number of bars: can't line them up
         r["second_opinion"] = {"aligned": False}
         return r
+    # where the second reading only adds notes, it is nearly always right: take its notes. Such a bar is then wrong
+    # about as often (16%) as an unmarked bar read with middling confidence (15%), so it gets no mark of its own.
+    r["xml"], filled = adopt_bars(r["xml"], other["xml"], {i for i, t in dis.items() if t == "missed"})
     n = 0
     for i, m in enumerate(r["measures"]):
-        if i in dis:
+        if i in filled:
+            m["filled"] = True
+        elif i in dis:
             m["disagree"] = dis[i]
             n += dis[i] != "small_missed"
         m["level"] = level(m, second_reading=True)
@@ -389,7 +465,7 @@ def second_opinion(r: dict, im: Image.Image) -> dict:
             alt = cleaned
     except Exception:
         pass
-    r["second_opinion"] = {"aligned": True, "bars": n, "seconds": other["seconds"], "xml": alt}
+    r["second_opinion"] = {"aligned": True, "bars": n, "filled": sorted(filled), "seconds": other["seconds"], "xml": alt}
     r["seconds"] = round(r["seconds"] + other["seconds"], 1)
     return r
 

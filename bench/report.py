@@ -24,6 +24,27 @@ GROUP_OF = {p: g for g, ps in GROUPS.items() for p in ps}
 _DATA = Path("bench/data")
 
 
+def reading(d: Path, pid: str, cond: str, mode: str):
+    """A saved reading as the app has it now: pickup and bar rests fixed and, for MusicScan where the small model's
+    reading is saved (bench/results/pred2m), the notes it adds filled in. Returns (xml, disagreement, filled bars),
+    or None when the file is missing. Older result files predate these steps, so they are applied here."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from musicscan.omr import adopt_bars, disagreement, fix_pickup, restore_bar_rests
+    f = d / "pred" / f"{pid}__{cond}__{mode}.musicxml"
+    if not f.exists():
+        return None
+    prep = lambda x: restore_bar_rests(fix_pickup(x))  # noqa: E731
+    x, dis, filled = prep(f.read_text()), None, set()
+    f2 = d / "pred2m" / f"{pid}__{cond}.musicxml"
+    if mode == "musicscan" and f2.exists():
+        y = prep(f2.read_text())
+        dis = disagreement(x, y)
+        if dis:
+            x, filled = adopt_bars(x, y, {i for i, t in dis.items() if t == "missed"})
+            dis = {i: t for i, t in dis.items() if i not in filled}
+    return x, dis, filled
+
+
 def load(d: Path):
     """Rows of results.jsonl, the last one per (piece, condition, mode), with note F1 scored again from the saved
     MusicXML so a fix to the scorer applies to old runs too."""
@@ -36,10 +57,11 @@ def load(d: Path):
             if "error" not in r or r.get("error") is None:
                 rows[(r["id"], r["cond"], r["mode"])] = r
     for (pid, cond, mode), r in rows.items():
-        f, g = d / "pred" / f"{pid}__{cond}__{mode}.musicxml", _DATA / f"{pid}.musicxml"
-        if f.exists() and g.exists():
+        g = _DATA / f"{pid}.musicxml"
+        rd = reading(d, pid, cond, mode) if g.exists() else None
+        if rd:
             try:
-                c = compare(g.read_text(), f.read_text())
+                c = compare(g.read_text(), rd[0])
                 r.update({k: c[k] for k in ("note_f1", "pitch_f1", "ser")})
             except Exception:
                 pass
@@ -102,27 +124,22 @@ def flags(d: Path, data: Path):
     the sanitizer repaired, and, where bench/results/pred2m holds the small model's reading, disagreement."""
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from musicscan.compare import compare
-    from musicscan.omr import disagreement, fix_pickup, level, restore_bar_rests
+    from musicscan.omr import level
     from musicscan.sanitize import sanitize
-    prep = lambda x: restore_bar_rests(fix_pickup(x))  # noqa: E731
     tot = {"wrong": 0, "right": 0, "wrong_flag": 0, "right_flag": 0, "wrong_bad": 0, "right_bad": 0}
     per = defaultdict(lambda: {k: 0 for k in tot})
     pages = covered = n = 0
     for r in load(d):
         if r["mode"] != "musicscan" or r["cond"] == "lowq" or not r.get("bars"):
             continue
-        f = d / "pred" / f"{r['id']}__{r['cond']}__musicscan.musicxml"
-        if not f.exists():
+        rd = reading(d, r["id"], r["cond"], "musicscan")
+        if rd is None:
             continue
-        x = prep(f.read_text())
+        x, dis, filled = rd
         c = compare((data / f"{r['id']}.musicxml").read_text(), x)
         if c["bar_ok"] is None or len(c["bar_ok"]) != len(r["bars"]):
             continue
         n += 1
-        dis = None
-        f2 = d / "pred2m" / f"{r['id']}__{r['cond']}.musicxml"
-        if f2.exists():
-            dis = disagreement(x, prep(f2.read_text()))
         fixed = {int(k) for k in sanitize(x)[1].get("bars", {})}
         wrong = set()
         for i, (b, ok) in enumerate(zip(r["bars"], c["bar_ok"])):
@@ -164,17 +181,15 @@ def plays(d: Path, data: Path):
     plus the same key and time signature. Tempo is not compared: the ground-truth pages carry no tempo marking."""
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from musicscan.compare import plays_same
-    from musicscan.omr import fix_pickup, restore_bar_rests
     from musicscan.sanitize import sanitize
     per = defaultdict(list)
     for r in load(d):
-        f = d / "pred" / f"{r['id']}__{r['cond']}__{r['mode']}.musicxml"
-        if not f.exists() and r["cond"] == "clean":
-            f = d / "pred" / f"{r['id']}__clean__musicscan.musicxml"
-        if not f.exists():
+        rd = reading(d, r["id"], r["cond"], r["mode"])
+        if rd is None and r["cond"] == "clean":
+            rd = reading(d, r["id"], "clean", "musicscan")
+        if rd is None:
             continue
-        x = f.read_text()
-        x = sanitize(restore_bar_rests(fix_pickup(x)))[0]   # what the app does to every reading now; older result files predate it
+        x = sanitize(rd[0])[0]
         if r["cond"] == "clean":
             per[("clean", "raw")].append(plays_same((data / f"{r['id']}.musicxml").read_text(), x))
         per[(r["cond"], r["mode"])].append(plays_same((data / f"{r['id']}.musicxml").read_text(), x))

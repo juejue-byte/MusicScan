@@ -4,13 +4,17 @@
 
 | Question | Answer | How sure |
 | --- | --- | --- |
-| Notes right on a readable page (pitch and length) | **about 97–98%** over 28 pieces and 6 kinds of photo damage; piano 97%, single instrument 99% | measured |
+| Notes right on a readable page (pitch and length) | **about 97–98%** over 28 pieces and 6 kinds of photo damage; piano 97.6%, single instrument 99% | measured |
 | Sheetly's benchmark, with their scorer | **about 98% strict F1 on clean pages, over every page**, on 7 of their 31 pieces (pages we engraved from their ground truth). Sheetly publishes 97.4% on page one only, on their own images. Roughly level; their photo suite not run yet | partial estimate |
 | After fixing the bars MusicScan marks | **about 99%** on the same 7 pieces | partial estimate |
-| Whole page perfect with no edits | rare: 6 of 28 clean pages play identically. Median wrong bars per page: 1–2 for single instruments and choir, **3–4 of 14 for piano** | measured |
-| Are the wrong bars marked? | **65% of wrong bars are marked; 58% of marks are real errors; 8% of correct bars get a mark** (80% / 51% / 9% on the first 14 pieces) | measured |
+| Whole page perfect with no edits | 43 of 168 readable pages play identically (9 of 28 clean). Median wrong bars per page: 1–2 for single instruments and choir, **3–4 of 14 for piano** | measured |
+| Are the wrong bars marked? | **53% of the remaining wrong bars are marked; 47% of marks are real errors; 8% of correct bars get a mark**. (Before notes were filled in from the second reading: 65% / 58%, but on 100 more wrong bars.) | measured |
 | Is a bad photo caught? | **28 of 28** unusable photos rated "retake", **0 of 168** usable pages | measured, simulated damage |
 | Key and time signature | key right on every readable page; time right on 27 of 28 (cut time read as 4/4, which plays the same) | measured |
+
+**Filling in missed notes.** Each page is read twice. Where the second, smaller model sees notes the main reading
+lacks and nothing else differs, it was right 84% of the time and the main reading 4%, so MusicScan now takes those
+notes. That leaves 20% fewer wrong bars (489 → 389 of 3,416) and 43 instead of 25 pages that play identically.
 
 Weak spots, most important first for piano and single-instrument music:
 
@@ -70,33 +74,33 @@ modern engravings.
 
 | Condition | Pages | Pitch F1 raw → MusicScan | Note F1 (pitch+rhythm) raw → MusicScan | Error rate (SER) MusicScan | Bars right | Quality verdicts (good/check/retake) |
 | --- | --- | --- | --- | --- | --- | --- |
-| clean | 28 | 99.0% → **99.0%** | 97.8% → **97.8%** | 2.6% | 93% | 28/0/0 |
-| photo | 28 | 92.6% → **98.8%** | 89.5% → **97.5%** | 3.1% | 93% | 28/0/0 |
-| shadow | 28 | 79.3% → **98.9%** | 72.4% → **97.7%** | 2.8% | 89% | 28/0/0 |
-| pen | 28 | 98.9% → **98.9%** | 97.5% → **97.8%** | 2.7% | 93% | 28/0/0 |
-| pencil | 28 | 98.1% → **98.1%** | 96.8% → **96.8%** | 3.8% | 96% | 28/0/0 |
-| combo | 28 | 91.5% → **98.7%** | 88.0% → **97.5%** | 3.1% | 89% | 28/0/0 |
+| clean | 28 | 99.2% → **99.2%** | 98.0% → **98.0%** | 2.3% | 93% | 28/0/0 |
+| photo | 28 | 92.6% → **99.0%** | 89.5% → **97.7%** | 2.8% | 93% | 28/0/0 |
+| shadow | 28 | 79.3% → **99.1%** | 72.3% → **97.9%** | 2.3% | 89% | 28/0/0 |
+| pen | 28 | 98.9% → **99.1%** | 97.5% → **97.9%** | 2.4% | 93% | 28/0/0 |
+| pencil | 28 | 98.1% → **98.3%** | 96.9% → **97.0%** | 3.5% | 96% | 28/0/0 |
+| combo | 28 | 91.5% → **98.9%** | 88.0% → **97.7%** | 2.8% | 89% | 28/0/0 |
 | lowq | 28 | 1.4% → **39.8%** | 0.9% → **29.1%** | 86.7% | 4% | 0/0/28 |
 
 By kind of page (note F1, MusicScan):
 
 | Kind of page | Pieces | clean | photo | shadow | pen | pencil | combo |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| piano | 6 | 97.4% | 97.3% | 97.7% | 97.2% | 97.2% | 97.3% |
-| single instrument | 10 | 99.1% | 98.4% | 99.1% | 99.1% | 97.9% | 98.9% |
-| voice and piano | 3 | 96.8% | 96.4% | 96.0% | 96.8% | 95.8% | 94.7% |
-| choir and ensemble | 9 | 97.0% | 97.0% | 96.8% | 97.0% | 95.7% | 97.0% |
+| piano | 6 | 97.7% | 97.6% | 98.0% | 97.4% | 97.3% | 97.6% |
+| single instrument | 10 | 99.2% | 98.5% | 99.2% | 99.2% | 98.1% | 98.9% |
+| voice and piano | 3 | 97.2% | 96.7% | 96.4% | 97.2% | 96.1% | 95.3% |
+| choir and ensemble | 9 | 97.1% | 97.1% | 97.1% | 97.2% | 95.8% | 97.2% |
 
 ## Does it play the same?
 
 | Condition | Pages | Plays identically raw → MusicScan | Notes at the right beat, pitch and length raw → MusicScan | Key right | Time right |
 | --- | --- | --- | --- | --- | --- |
-| clean | 28 | 6/28 → **6/28** | 97.2% → **97.2%** | 28/28 | 27/28 |
-| photo | 28 | 2/28 → **3/28** | 76.4% → **95.6%** | 28/28 | 27/28 |
-| shadow | 28 | 1/28 → **3/28** | 46.8% → **93.5%** | 28/28 | 28/28 |
-| pen | 28 | 3/28 → **6/28** | 96.9% → **97.1%** | 28/28 | 27/28 |
-| pencil | 28 | 5/28 → **5/28** | 96.1% → **96.1%** | 28/28 | 27/28 |
-| combo | 28 | 0/28 → **2/28** | 76.9% → **95.2%** | 28/28 | 27/28 |
+| clean | 28 | 9/28 → **9/28** | 97.3% → **97.3%** | 28/28 | 27/28 |
+| photo | 28 | 2/28 → **6/28** | 76.4% → **95.7%** | 28/28 | 27/28 |
+| shadow | 28 | 1/28 → **7/28** | 46.8% → **93.7%** | 28/28 | 28/28 |
+| pen | 28 | 3/28 → **9/28** | 96.9% → **97.3%** | 28/28 | 27/28 |
+| pencil | 28 | 5/28 → **6/28** | 96.1% → **96.2%** | 28/28 | 27/28 |
+| combo | 28 | 0/28 → **6/28** | 76.9% → **95.4%** | 28/28 | 27/28 |
 | lowq | 28 | 0/28 → **0/28** | 0.2% → **6.9%** | 14/28 | 9/28 |
 
 About 96–99% of notes land in the right bar, on the right beat, with the right pitch and length, and the key is
@@ -117,17 +121,18 @@ damage) were rated good. On the bad photos MusicScan still reads 29% of notes (r
 
 | Condition | Bars compared | Bars with an error | Wrong bars marked | Marks that were wrong bars | Correct bars marked |
 | --- | --- | --- | --- | --- | --- |
-| clean | 576 | 75 | 64% (44% red) | 55% (red 66%) | 8% |
-| photo | 576 | 84 | 61% (44% red) | 57% (red 67%) | 8% |
-| shadow | 536 | 79 | 63% (48% red) | 60% (red 70%) | 7% |
-| pen | 576 | 76 | 67% (46% red) | 56% (red 62%) | 8% |
-| pencil | 616 | 93 | 74% (48% red) | 59% (red 62%) | 9% |
-| combo | 536 | 82 | 60% (45% red) | 60% (red 69%) | 7% |
-| all | 3416 | 489 | 65% (46% red) | 58% (red 66%) | 8% |
+| clean | 576 | 59 | 53% (24% red) | 45% (red 47%) | 7% |
+| photo | 576 | 66 | 45% (23% red) | 44% (red 47%) | 7% |
+| shadow | 536 | 56 | 43% (20% red) | 40% (red 41%) | 8% |
+| pen | 576 | 61 | 57% (28% red) | 47% (red 46%) | 8% |
+| pencil | 616 | 78 | 68% (36% red) | 52% (red 52%) | 9% |
+| combo | 536 | 69 | 49% (29% red) | 52% (red 56%) | 7% |
+| all | 3416 | 389 | 53% (27% red) | 47% (red 49%) | 8% |
 
-(155 pages where the bar count matched the ground truth. On 60 of the 131 pages with an error, every wrong bar was marked.)
+(155 pages where the bar count matched the ground truth. On 34 of the 109 pages with an error, every wrong bar was marked.)
 
-Each page is read twice, by copista-28m and by the small copista-2m (about 3 s more). How the two readings differ
+Each page is read twice, by copista-28m and by the small copista-2m (about 3 s more). Where the second reading only
+adds notes, they are filled in (see the scorecard) and the bar is not marked. Otherwise, how the two readings differ
 decides the mark, calibrated on the first 14 pieces. When the second reading has notes the main one lacks, the bar
 was wrong 91% of the time (red). When both have notes the other lacks, 43% (red). When only rests differ, 54%
 (amber). When only the small model missed notes, 9% (not marked). Bars the sanitizer had to repair, and bars below
@@ -140,31 +145,31 @@ rule (mark any disagreement) found 89% but marked 28% of all bars, mostly correc
 | Piece | clean | photo | shadow | pen | pencil | combo | lowq |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | bach_bwv10_7 | 100% | 100% | 100% | 100% | 100% | 100% | 19% |
-| bach_bwv1_6 | 100% | 99% | 99% | 100% | 100% | 100% | 32% |
+| bach_bwv1_6 | 100% | 100% | 100% | 100% | 100% | 100% | 32% |
 | bach_bwv269 | 100% | 100% | 100% | 100% | 100% | 100% | 22% |
-| bach_bwv66 | 100% | 99% | 99% | 100% | 100% | 100% | 89% |
-| bach_bwv7_7 | 100% | 100% | 99% | 100% | 100% | 99% | 17% |
-| beethoven_18_vc | 100% | 95% | 100% | 100% | 99% | 100% | 30% |
-| beethoven_18_viola | 100% | 99% | 100% | 100% | 100% | 99% | 58% |
+| bach_bwv66 | 100% | 99% | 99% | 100% | 100% | 100% | 88% |
+| bach_bwv7_7 | 100% | 100% | 100% | 100% | 100% | 100% | 17% |
+| beethoven_18_vc | 100% | 95% | 100% | 100% | 100% | 100% | 30% |
+| beethoven_18_viola | 100% | 99% | 100% | 100% | 100% | 99% | 59% |
 | beethoven_59_2_vc | 99% | 99% | 99% | 99% | 97% | 99% | 0% |
 | beethoven_59_vn1 | 100% | 98% | 100% | 100% | 99% | 99% | 57% |
-| chopin_mazurka | 97% | 97% | 98% | 97% | 97% | 98% | 16% |
-| clara_polonaise | 98% | 97% | 99% | 98% | 98% | 98% | 36% |
+| chopin_mazurka | 98% | 98% | 99% | 98% | 98% | 99% | 16% |
+| clara_polonaise | 99% | 97% | 99% | 98% | 98% | 98% | 36% |
 | corelli_trio | 100% | 100% | 100% | 100% | 88% | 100% | 24% |
-| cpebach_h186 | 93% | 94% | 94% | 92% | 93% | 92% | 3% |
-| handel_lascia | 100% | 99% | 99% | 100% | 99% | 99% | 10% |
+| cpebach_h186 | 93% | 94% | 93% | 92% | 93% | 92% | 3% |
+| handel_lascia | 100% | 100% | 100% | 100% | 100% | 100% | 10% |
 | haydn_1_viola | 99% | 99% | 100% | 99% | 99% | 99% | 74% |
-| haydn_74_viola | 100% | 100% | 100% | 100% | 98% | 100% | 12% |
+| haydn_74_viola | 100% | 100% | 100% | 100% | 99% | 100% | 12% |
 | haydn_74_vn1 | 98% | 98% | 98% | 98% | 98% | 98% | 23% |
 | johnson_lift | 99% | 99% | 99% | 99% | 99% | 100% | 23% |
 | joplin_rag | 100% | 99% | 99% | 100% | 99% | 99% | 10% |
-| mozart_k155_vn2 | 100% | 100% | 99% | 100% | 91% | 99% | 32% |
-| mozart_k458_quartet | 99% | 99% | 100% | 99% | 99% | 100% | 40% |
+| mozart_k155_vn2 | 100% | 100% | 100% | 100% | 91% | 99% | 32% |
+| mozart_k458_quartet | 100% | 100% | 100% | 100% | 100% | 100% | 40% |
 | mozart_k545 | 100% | 100% | 100% | 100% | 100% | 100% | 42% |
-| mozart_k80_vn1 | 98% | 99% | 98% | 98% | 99% | 98% | 50% |
-| schoenberg_op19 | 96% | 96% | 96% | 96% | 96% | 97% | 21% |
+| mozart_k80_vn1 | 98% | 100% | 99% | 98% | 99% | 98% | 50% |
+| schoenberg_op19 | 97% | 97% | 97% | 97% | 96% | 97% | 21% |
 | schubert_lindenbaum | 99% | 98% | 97% | 99% | 99% | 97% | 11% |
-| schumann_dichterliebe2 | 92% | 92% | 92% | 92% | 90% | 88% | 20% |
+| schumann_dichterliebe2 | 93% | 93% | 93% | 93% | 90% | 89% | 20% |
 | schumann_op41_quartet | 75% | 76% | 75% | 76% | 75% | 76% | 28% |
 | weber_clarinet | 99% | 98% | 98% | 99% | 98% | 98% | 15% |
 
