@@ -70,6 +70,7 @@ def main():
                     (out / "pred" / f"{pid}__{cond}__{mode}.musicxml").write_text(r["xml"])
                     row.update(compare(gt, r["xml"]))
                     row["omr"] = r["stats"]
+                    row["bars"] = [{"low_n": m["low_n"], "min": m["min"], "level": m["level"]} for m in r["measures"]]
                     row["seconds"] = r["seconds"]
                     row["steps"] = steps
                     q = assess(pre, r) if pre else assess(None, r, page=page)

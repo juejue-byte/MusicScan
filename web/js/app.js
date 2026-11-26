@@ -30,6 +30,8 @@ function show(view) {
   for (const v of ['viewUpload', 'viewProgress', 'viewEditor']) $('#' + v).classList.toggle('hidden', v !== view);
   const editing = view === 'viewEditor';
   for (const b of ['#btnPlay', '#btnExport']) $(b).disabled = !editing;
+  $('.top-actions').classList.toggle('hidden', !editing);
+  if (!editing) $('#docTitle').textContent = '';
   updateUndoButtons();
 }
 function download(name, data, type) {
@@ -386,7 +388,10 @@ function onPointerMove(e) {
     }
     return;
   }
-  if (S.mode === 'add') drawGhost(x, y);
+  if (S.mode === 'add') { drawGhost(x, y); return; }
+  // hover feedback in select mode
+  const h = hitTest(x, y);
+  $('#score').style.cursor = h?.type === 'note' ? (h.n.ev.rest ? 'pointer' : 'ns-resize') : h?.type === 'num' ? 'pointer' : h ? 'cell' : 'default';
 }
 
 function onPointerUp() {

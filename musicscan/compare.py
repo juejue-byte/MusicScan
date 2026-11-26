@@ -86,11 +86,15 @@ def parse(xml: str | bytes) -> dict:
                         cur += dur
                     mlen = max(mlen, cur)
             t0 += mlen
-    out = {}
+    out, bars = {}, {}
     for k, evs in streams.items():
         evs.sort(key=lambda e: (e[0], 0 if e[2][0] == "r" else 1, e[2][0] if e[2][0] != "r" else 0))
         out[k] = [e[2] for e in evs]
-    return {"streams": out, "measures": nmeas, "key": key, "time": time}
+        b = {}
+        for e in evs:
+            b.setdefault(e[1], []).append(e[2])
+        bars[k] = {mi: sorted(v, key=str) for mi, v in b.items()}
+    return {"streams": out, "bars": bars, "measures": nmeas, "key": key, "time": time}
 
 
 def _lcs(a: list, b: list) -> int:
@@ -153,7 +157,20 @@ def compare(gt_xml: str, pred_xml: str) -> dict:
             tot_pr += len(pr["streams"][b])
             edits += len(pr["streams"][b])
     f1 = lambda m, a, b: 2 * m / max(a + b, 1)          # noqa: E731
+    bar_ok = None
+    if gt["measures"] == pr["measures"]:
+        bar_ok = []
+        for mi in range(gt["measures"]):
+            ok = True
+            for a in gk:
+                g = gt["bars"][a].get(mi, [])
+                p = pr["bars"][pairs[a]].get(mi, []) if a in pairs else []
+                if g != p:
+                    ok = False
+                    break
+            bar_ok.append(ok)
     return {
+        "bar_ok": bar_ok,
         "note_f1": round(f1(m_full, tot_gt, tot_pr), 4),
         "pitch_f1": round(f1(m_pitch, n_gt_notes, n_pr_notes), 4),
         "ser": round(edits / max(tot_gt, 1), 4),
