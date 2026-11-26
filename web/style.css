@@ -409,3 +409,6 @@ i.mf { font-family: 'Times New Roman', Times, serif; font-weight: 700; font-size
 .page-reading { position: fixed; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 55; background: #0f172a; color: #fff; padding: 10px 14px; border-radius: 12px; font-size: 14px; box-shadow: var(--shadow); display: flex; align-items: center; max-width: calc(100vw - 32px); }
 .page-reading .spinner { width: 16px; height: 16px; border-width: 2px; }
 @media (max-width: 600px) { .page-row { flex-wrap: wrap; } .page-btns { width: 100%; } }
+
+.kt-clef-how { border: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; flex-basis: 100%; }
+.kt-clef-how label { font-size: 13px; }

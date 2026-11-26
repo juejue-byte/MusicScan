@@ -12,6 +12,7 @@ import * as review from './review.js';
 import { createNoteInput } from './input.js';
 import { createPad } from './pad.js';
 import { ARTICS } from './notations.js';
+import { CLEFS, clefId } from './clefs.js';
 import { pageRanges } from './pages.js';
 
 const $ = (s) => document.querySelector(s);
@@ -1327,27 +1328,41 @@ async function rescan(attempt = 0, file = null) {
 }
 const KEY_NAMES = { '-7': 'C♭ major / A♭ minor', '-6': 'G♭ major / E♭ minor', '-5': 'D♭ major / B♭ minor', '-4': 'A♭ major / F minor', '-3': 'E♭ major / C minor', '-2': 'B♭ major / G minor', '-1': 'F major / D minor', 0: 'C major / A minor', 1: 'G major / E minor', 2: 'D major / B minor', 3: 'A major / F♯ minor', 4: 'E major / C♯ minor', 5: 'B major / G♯ minor', 6: 'F♯ major / D♯ minor', 7: 'C♯ major / A♯ minor' };
 function keyTimeDialog() {
-  const from = S.measures.size ? Math.min(...S.measures) : 0;
+  const from = selected() ? selected().ev.mi : S.measures.size ? Math.min(...S.measures) : 0;
   const a = S.score.attrs(0, from);
   const card = $('#modalCard');
   $('#modal').classList.remove('hidden');
   let opts = '';
   for (let f = -7; f <= 7; f++) opts += `<option value="${f}" ${f === a.fifths ? 'selected' : ''}>${f > 0 ? f + '♯' : f < 0 ? -f + '♭' : 'no ♯/♭'} · ${KEY_NAMES[f]}</option>`;
-  card.innerHTML = `<h2>Key and time signature</h2>
+  // the clef of the selected note's staff (or the caret's, else the top staff)
+  const sn = selected();
+  const cpi = sn ? sn.ev.pi : S.caret?.pi ?? 0, cst = sn ? sn.ev.staff : S.caret?.staff ?? '1';
+  const staffList = [];
+  S.score.parts.forEach((p, pi) => { const n = S.score.attrs(pi, from).staves || 1; for (let st = 1; st <= n; st++) staffList.push({ pi, st: String(st), label: [S.score.parts.length > 1 ? `part ${pi + 1}` : '', n > 1 ? (st === 1 ? 'upper staff' : st === 2 && n === 2 ? 'lower staff' : `staff ${st}`) : ''].filter(Boolean).join(', ') || 'the staff' }); });
+  const curClef = clefId(S.score.attrs(cpi, from).clefs[cst]);
+  card.innerHTML = `<h2>Key, time and clef</h2>
     <p class="muted">Applies from bar ${barNumber(from)} to the next change. Notes that followed the old key move to the new key, so a misread key is fixed in one step.</p>
     <div class="form">
       <label>Key <select id="ktKey">${opts}</select></label>
       <label>Time <input id="ktBeats" type="number" min="1" max="32" value="${a.beats}"> / <select id="ktType">${[1, 2, 4, 8, 16, 32].map((v) => `<option ${v === a.beatType ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+      <label>Clef of ${staffList.length > 1 ? `<select id="ktStaff">${staffList.map((x) => `<option value="${x.pi}/${x.st}" ${x.pi === cpi && x.st === cst ? 'selected' : ''}>${x.label}</option>`).join('')}</select>` : 'the staff'} <select id="ktClef">${Object.entries(CLEFS).map(([id, c]) => `<option value="${id}" ${id === curClef ? 'selected' : ''}>${c.name}</option>`).join('')}</select></label>
+      <fieldset class="kt-clef-how"><label><input type="radio" name="ktHow" value="place" checked> The clef was misread: keep the notes where they are printed</label>
+      <label><input type="radio" name="ktHow" value="pitch"> A new clef: keep the notes' pitch</label></fieldset>
     </div>
     <div class="modal-actions"><button class="btn ghost" data-m="close">Cancel</button><button class="btn primary" data-m="apply">Apply</button></div>`;
+  const stSel = $('#ktStaff');
+  if (stSel) stSel.onchange = () => { const [pi, st] = stSel.value.split('/'); $('#ktClef').value = clefId(S.score.attrs(+pi, from).clefs[st]); };
   card.onclick = (ev) => {
     const m = ev.target.closest('[data-m]')?.dataset.m;
     if (m === 'close') closeModal();
     if (m === 'apply') {
       const f = +$('#ktKey').value, bt = +$('#ktBeats').value, ty = +$('#ktType').value;
+      const [spi, sst] = ($('#ktStaff')?.value || `${cpi}/${cst}`).split('/');
+      const clef = $('#ktClef').value, keepPlace = card.querySelector('[name="ktHow"]:checked')?.value !== 'pitch';
       edit(() => {
         if (f !== a.fifths) S.score.setKey(f, from);
         if (bt !== a.beats || ty !== a.beatType) S.score.setTime(bt, ty, from);
+        if (clef !== clefId(S.score.attrs(+spi, from).clefs[sst])) S.score.setClef(+spi, sst, from, clef, keepPlace);
       });
       closeModal();
       toast('Updated. Undo with Ctrl+Z.');

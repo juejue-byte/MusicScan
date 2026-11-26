@@ -138,6 +138,16 @@ function serve() {
   await key('s', 'Shift+S');
   const nt2 = await p.evaluate(() => { const S = window.__ms.S; const el = S.sel; return { slurs: S.score.slurs(0).filter((x) => x.start === el).length, arts: [...el.querySelectorAll('notations > articulations > *')].map((x) => x.localName) }; });
   ok(nt2.slurs === 0 && nt2.arts.join() === 'accent', 'pressing them again removes them');
+  // 12. a misread clef: staff 2 of bar 1 becomes bass, the notes keep their place on the staff (move down a 13th)
+  const lowBefore = await p.evaluate(() => window.__ms.S.score.voiceEvents(0, 0, '2', null).filter((e) => !e.rest).map((e) => e.chord[0].pitch.step + e.chord[0].pitch.octave));
+  await p.evaluate(() => { const S = window.__ms.S; S.measures = new Set([0]); S.sel = S.score.voiceEvents(0, 0, '2', null)[0].el; window.__ms.redraw(); });
+  await p.click('#btnKeyTime');
+  await p.selectOption('#ktClef', 'bass');
+  await p.click('[data-m="apply"]');
+  const lowAfter = await p.evaluate(() => window.__ms.S.score.voiceEvents(0, 0, '2', null).filter((e) => !e.rest).map((e) => e.chord[0].pitch.step + e.chord[0].pitch.octave));
+  const clef = await p.evaluate(() => window.__ms.S.score.attrs(0, 0).clefs['2'].sign);
+  console.log('clef fix:', lowBefore.slice(0, 4).join(' '), '->', lowAfter.slice(0, 4).join(' '));
+  ok(clef === 'F' && lowBefore[0] === 'C4' && lowAfter[0] === 'E2', 'misread clef fixed: C4 in treble is E2 in bass');
   // the XML still parses
   const xml = await p.evaluate(() => window.__ms.S.score.toXML());
   fs.writeFileSync(OUT + '/out.musicxml', xml);
