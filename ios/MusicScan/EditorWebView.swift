@@ -42,7 +42,8 @@ struct EditorWebView: UIViewRepresentable {
         webView.underPageBackgroundColor = webView.backgroundColor
         if #available(iOS 16.4, *) { webView.isInspectable = true }  // Safari > Develop > [device] > MusicScan
 
-        // Apple Pencil (2nd gen / Pro) double-tap or squeeze switches between Select and Add notes.
+        // Apple Pencil (2nd gen / Pro) double-tap or squeeze switches between Select and Add notes,
+        // and in Ink mode between pen and eraser (the web side decides; it knows the mode).
         let pencil = UIPencilInteraction()
         pencil.delegate = context.coordinator
         webView.addInteraction(pencil)
@@ -286,6 +287,7 @@ final class EditorWKWebView: WKWebView {
         ("Play / Stop", "\r", .command, "play"),
         ("Select", "1", .command, "mode-select"),
         ("Add Notes", "2", .command, "mode-add"),
+        ("Ink", "3", .command, "mode-ink"),
         ("Show Photo", "p", [.command, .shift], "photo"),
         ("Fix It: Check Flagged Bars", "f", [.command, .shift], "review"),
         ("Next Flagged Bar", "]", .command, "review-next"),

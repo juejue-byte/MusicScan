@@ -1,6 +1,7 @@
 // Draws a Score with VexFlow and returns a layout map used for hit-testing and overlays.
 import { Score, STEPS, keyAlter, clefKey, clefTop, midiOf } from './score.js';
 import './edits.js';
+import { drawMarks } from './markup.js';
 
 const VF = window.Vex.Flow;
 const VF_CLEF = { G2: 'treble', F4: 'bass', C3: 'alto', C4: 'tenor', C1: 'soprano', F3: 'baritone-f', C2: 'mezzo-soprano', G1: 'french' };
@@ -288,6 +289,7 @@ export function render(score, el, opts = {}) {
     layout.rows.push(rowInfo);
   });
   drawTies(score, layout, ctx);
+  try { layout.marks = drawMarks(score, layout, { selected: opts.selectedMark }); } catch (err) { console.warn('marks', err); layout.marks = []; }
   return layout;
 }
 

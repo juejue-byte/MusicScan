@@ -1,6 +1,8 @@
 // MusicScan web app: upload -> transcribe -> edit on the staff -> play -> export.
 import { Score, pitchName, midiOf, clefTop, toMidi } from './score.js';
 import './edits.js';
+import { DYNAMICS, WORDS } from './markup.js';
+import * as ink from './ink.js';
 import { render, pitchAtY, noteYs } from './render.js';
 import * as audio from './audio.js';
 import * as practice from './practice.js';
@@ -12,6 +14,8 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 const SVGNS = 'http://www.w3.org/2000/svg';
 const LS_KEY = 'musicscan:last';
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* blocked */ } };
 
 const S = {
   score: null, meta: [], job: null, result: null, name: '',
@@ -21,6 +25,11 @@ const S = {
   focus: -1,                 // bar shown in the photo inspector
   undo: [], redo: [], layout: null, drag: null, photo: 'page',
   zoom: window.innerWidth < 600 ? 0.72 : 1,
+  selMark: null,             // selected typed marking (its <direction> or <fingering> element)
+  inkPen: 'red', eraser: false, // Ink mode tool
+  inkHidden: lsGet('musicscan:inkHidden') === '1',
+  penSeen: lsGet('musicscan:penSeen') === '1', // once an Apple Pencil has drawn, fingers scroll in Ink mode
+  stroke: null, inkPlaced: [],
 };
 
 // ---------------------------------------------------------------- helpers
@@ -185,13 +194,16 @@ function redraw() {
   if (!S.score) return;
   const el = $('#score');
   const keep = $('#scoreScroll').scrollTop;
-  S.layout = render(S.score, el, { width: scoreWidth(), zoom: S.zoom, selected: S.measures, selectedNote: S.sel, meta: S.meta });
+  if (S.selMark && !S.selMark.isConnected) S.selMark = null;
+  S.layout = render(S.score, el, { width: scoreWidth(), zoom: S.zoom, selected: S.measures, selectedNote: S.sel, selectedMark: S.selMark, meta: S.meta });
   const ov = $('#overlay');
   ov.setAttribute('width', S.layout.pxWidth);
   ov.setAttribute('height', S.layout.height * S.zoom);
   ov.setAttribute('viewBox', `0 0 ${S.layout.width} ${S.layout.height}`);
   $('#zoomVal').textContent = Math.round(S.zoom * 100) + '%';
   ov.style.top = el.offsetTop + 'px';
+  $('#ink').style.top = el.offsetTop + 'px';
+  drawInk();
   $('#scoreScroll').scrollTop = keep;
   el.classList.toggle('mode-add', S.mode === 'add');
   drawPhotoOverlay();
@@ -233,7 +245,13 @@ function updateStatus() {
   const over = [];
   for (let mi = 0; mi < S.score.nMeasures; mi++) if (S.score.parts.some((p, pi) => S.score.measureProblems(pi, mi).over)) over.push(mi);
   let txt = '';
-  if (n) {
+  const mk = selMarkInfo();
+  if (S.mode === 'ink') {
+    const nInk = ink.strokes(S.score).length;
+    txt = `Ink · ${nInk} stroke${nInk === 1 ? '' : 's'}. Ink is saved with the score and kept in the MusicXML export; other apps ignore it.`;
+  } else if (mk) {
+    txt = `${describeMark(mk)} · bar ${barNumber(mk.mi)}. Delete removes it; Marks ▾ (M) changes it.`;
+  } else if (n) {
     const num = barNumber(n.ev.mi);
     const what = n.ev.rest ? `${n.ev.type || ''} rest` : n.ev.chord.map((c) => pitchName(c.pitch)).join(' + ') + ` · ${n.ev.type || ''}${n.ev.dots ? ' dotted' : ''}`;
     const keys = S.touch ? 'Drag up/down for pitch, sideways to swap. Tap a length to change it' : '↑↓ pitch · Shift+↑↓ octave · 1–6 length · R rest · T tie · Alt+3 triplet · | split bar here · Del delete';
@@ -253,6 +271,7 @@ function restore(s) {
   S.score = new Score(s.xml);
   S.meta = JSON.parse(s.meta);
   S.sel = elFromPath(pathOfSel);
+  S.selMark = null;
   redraw();
   saveLocal();
 }
@@ -383,8 +402,15 @@ function onPointerDown(e) {
   S.touch = e.pointerType === 'touch';
   S.pen = e.pointerType === 'pen';
   audio.audioCtx();
+  if (S.mode === 'ink') { inkDown(e); return; }
   const { x, y } = localPoint(e);
   const h = hitTest(x, y);
+  // a typed marking (dynamic, hairpin, fingering, text) under the pointer in Select mode: select it
+  if (S.mode === 'select' && h?.type !== 'note') {
+    const mk = markAt(x, y);
+    if (mk) { S.selMark = mk.el; S.sel = null; S.measures = new Set([mk.mi]); redraw(); e.preventDefault(); return; }
+  }
+  if (S.selMark) S.selMark = null;
   // touch or Pencil in Add mode: the ghost note follows the tip and the note is written when it lifts
   if ((S.touch || S.pen) && S.mode === 'add' && h && (h.type === 'staff' || (h.type === 'note' && h.n.ev.rest))) {
     S.drag = { addTouch: true, x, y, startX: e.clientX, startY: e.clientY, pointer: e.pointerId };
@@ -457,6 +483,7 @@ function addAt(h, x, y, shift) {
 
 function onPointerMove(e) {
   if (!S.layout) return;
+  if (S.mode === 'ink') { inkMove(e); return; }
   const { x, y } = localPoint(e);
   if (S.drag?.addTouch) {
     S.drag.x = x; S.drag.y = y;
@@ -517,6 +544,7 @@ function dragSideways(x) {
 }
 
 function onPointerUp(e) {
+  if (S.mode === 'ink' || S.stroke) { inkUp(e); return; }
   if (S.drag?.addTouch) {
     const { x, y } = S.drag;
     S.drag = null;
@@ -707,7 +735,7 @@ function splitBar() {
   if (!sp) { toast(selected() ? 'This note already starts the bar. Select the note that should start the new bar.' : 'Select the note that should start the new bar'); return; }
   const content = Math.max(barQl(sp.mi), ...S.score.parts.map((p, pi) => (S.score.measureProblems(pi, sp.mi).ends ? Math.max(0, ...Object.values(S.score.measureProblems(pi, sp.mi).ends)) / S.score.attrs(pi, sp.mi).divisions : 0)));
   const keep = S.sel;
-  if (act(() => { S.score.splitBar(sp.mi, sp.q); metaSplit(sp.mi, Math.min(1, sp.q / content)); })) {
+  if (act(() => { S.score.splitBar(sp.mi, sp.q); metaSplit(sp.mi, Math.min(1, sp.q / content)); ink.onSplit(S.score, sp.mi, Math.min(1, sp.q / content)); })) {
     S.sel = keep && keep.isConnected ? keep : null;
     S.measures = new Set([sp.mi + 1]);
     redraw();
@@ -719,20 +747,20 @@ function joinBars() {
   if (!r) { toast('Select a bar (or a note in it) to join it with the next bar'); return; }
   const mi = r[0];
   if (mi + 1 >= S.score.nMeasures) { toast('This is the last bar'); return; }
-  if (act(() => { S.score.mergeBars(mi); metaJoin(mi); })) { S.sel = null; S.measures = new Set([mi]); redraw(); toast(`Joined bars ${barNumber(mi)} and ${+barNumber(mi) + 1 || 'next'}. Undo with Ctrl+Z.`); }
+  if (act(() => { const wa = S.layout.measures[mi], wb = S.layout.measures[mi + 1]; S.score.mergeBars(mi); metaJoin(mi); ink.onJoin(S.score, mi, wa && wb ? (wa.x1 - wa.x0) / (wa.x1 - wa.x0 + wb.x1 - wb.x0) : 0.5); })) { S.sel = null; S.measures = new Set([mi]); redraw(); toast(`Joined bars ${barNumber(mi)} and ${+barNumber(mi) + 1 || 'next'}. Undo with Ctrl+Z.`); }
 }
 function insertBar(where) {
   const r = barRange();
   const mi = r ? (where === 'before' ? r[0] : r[1]) : S.score.nMeasures - 1;
   let idx = -1;
-  if (act(() => { idx = S.score.insertBar(mi, where); metaInsert(idx); })) { S.sel = null; S.measures = new Set([idx]); redraw(); scrollToBar(idx); }
+  if (act(() => { idx = S.score.insertBar(mi, where); metaInsert(idx); ink.onInsert(S.score, idx); })) { S.sel = null; S.measures = new Set([idx]); redraw(); scrollToBar(idx); }
 }
 function deleteBars() {
   const r = barRange();
   if (!r) { toast('Select the bars to delete'); return; }
   const [lo, hi] = r;
   const label = lo === hi ? `bar ${barNumber(lo)}` : `bars ${barNumber(lo)}–${barNumber(hi)}`;
-  if (act(() => { S.score.deleteBars(lo, hi); metaDelete(lo, hi); })) { S.sel = null; S.measures = new Set(); hideInspector(); redraw(); toast(`Deleted ${label}. Undo with Ctrl+Z.`); }
+  if (act(() => { S.score.deleteBars(lo, hi); metaDelete(lo, hi); ink.onDelete(S.score, lo, hi); })) { S.sel = null; S.measures = new Set(); hideInspector(); redraw(); toast(`Deleted ${label}. Undo with Ctrl+Z.`); }
 }
 function openBarMenu(btn) {
   const menu = $('#barMenu');
@@ -756,6 +784,7 @@ function barAction(a) {
   ({ split: splitBar, join: joinBars, before: () => insertBar('before'), after: () => insertBar('after'), delete: deleteBars })[a]?.();
 }
 function del() {
+  if (S.selMark) { removeSelMark(); return; }
   const s = selected();
   if (!s) return;
   if (s.ev.rest) { edit(() => S.score.deleteRest(s.ev)); S.sel = null; redraw(); toast('Rest removed'); return; }
@@ -785,8 +814,12 @@ function setMode(m) {
   updateToolbar();
   for (const b of $$('[data-mode]')) b.classList.toggle('on', b.dataset.mode === m);
   $('#score').classList.toggle('mode-add', m === 'add');
+  document.body.classList.toggle('ink-mode', m === 'ink');
+  document.body.classList.toggle('eraser', m === 'ink' && S.eraser);
+  if (m === 'ink') { S.sel = null; S.selMark = null; if (S.inkHidden) setInkHidden(false); if (S.layout) redraw(); }
+  clearOverlay('inkcursor');
   const tap = matchMedia('(pointer: coarse)').matches;
-  $('#hint').innerHTML = m === 'add'
+  $('#hint').innerHTML = m === 'ink' ? inkHint() : m === 'add'
     ? (tap
       ? 'Touch the staff and slide to the pitch you want; the <b>' + S.dur + (S.dot ? ' (dotted)' : '') + (S.restMode ? ' rest' : ' note') + '</b> is written when you lift. Tapping a rest fills it. Tap <b>Select</b> to stop.'
       : 'Click on the staff to write a <b>' + S.dur + (S.dot ? ' (dotted)' : '') + (S.restMode ? ' rest' : ' note') + '</b> there. Clicking a rest fills it. <b>Shift-click</b> a note to build a chord. Press <b>V</b> or Esc to stop.')
@@ -823,8 +856,11 @@ function onKey(e) {
     case 'I': insertBar('before'); break;
     case 'Delete': case 'Backspace': e.preventDefault(); if (e.shiftKey || (!selected() && S.measures.size)) deleteBars(); else del(); break;
     case 'n': case 'N': setMode(S.mode === 'add' ? 'select' : 'add'); break;
+    case 'p': case 'P': setMode(S.mode === 'ink' ? 'select' : 'ink'); break;
+    case 'e': case 'E': if (S.mode === 'ink') setPen(S.eraser ? S.inkPen : 'eraser'); break;
+    case 'm': case 'M': if (S.mode !== 'ink') openMarksMenu($('#btnMarks')); break;
     case 'v': case 'V': setMode('select'); break;
-    case 'Escape': if (S.mode === 'add') setMode('select'); else { S.sel = null; S.measures.clear(); hideInspector(); redraw(); } break;
+    case 'Escape': if ($('#marksMenu').classList.contains('open')) closeMenus(); else if (S.mode !== 'select') setMode('select'); else { S.sel = null; S.measures.clear(); hideInspector(); redraw(); } break;
     case ' ': e.preventDefault(); togglePlay(); break;
     case 'l': case 'L': toggleLoop(); break;
     default: practice.key(e); break;
@@ -1062,6 +1098,237 @@ function keyTimeDialog() {
 }
 function closeModal() { $('#modal').classList.add('hidden'); $('#modalCard').innerHTML = ''; }
 
+// ---------------------------------------------------------------- markup: freehand ink (its own layer)
+function closeMenus() { for (const m of ['#exportMenu', '#barMenu', '#marksMenu']) $(m).classList.remove('open'); }
+function inkHint() {
+  const who = S.penSeen ? '<b>Apple Pencil</b> draws, fingers scroll' : 'Draw with <b>Apple Pencil</b>, a mouse or a finger';
+  return `<b>Ink</b>: ${who}. Ink sits on its own layer and never changes the notes. <b>Eraser</b> (E${native.isNative ? ' or double-tap the Pencil' : ''}) rubs strokes out. Press <b>Done</b> or Esc to edit notes again.`;
+}
+function setPen(id) {
+  if (id === 'eraser') S.eraser = true;
+  else { S.eraser = false; S.inkPen = id; }
+  for (const b of $$('[data-pen]')) b.classList.toggle('on', S.eraser ? b.dataset.pen === 'eraser' : b.dataset.pen === S.inkPen);
+  document.body.classList.toggle('eraser', S.mode === 'ink' && S.eraser);
+  if (S.mode !== 'ink') setMode('ink');
+}
+function setInkHidden(h) {
+  S.inkHidden = h;
+  lsSet('musicscan:inkHidden', h ? '1' : '0');
+  if (h && S.mode === 'ink') setMode('select');
+  drawInk();
+  if (h) toast('Ink hidden. It is still saved with the score.', 1800);
+}
+function drawInk() {
+  if (!S.layout || !S.score) return;
+  S.inkPlaced = ink.draw(S.score, S.layout, $('#ink'), S.inkHidden);
+  const any = ink.hasInk(S.score);
+  const b = $('#btnInkVis');
+  b.classList.toggle('hidden', !any);
+  b.classList.toggle('off', S.inkHidden);
+  b.textContent = S.inkHidden ? 'Ink: hidden' : 'Ink: shown';
+  b.setAttribute('aria-pressed', String(!S.inkHidden));
+}
+const penOf = () => ink.PENS.find((p) => p.id === S.inkPen) || ink.PENS[0];
+const penWidth = (pen) => (pen.tool === 'hl' ? 14 : pen.id === 'graphite' ? 1.9 : 2.6);
+// a mouse reports 0.5 while pressed and a finger 0 or 1 depending on the browser: only a Pencil's pressure is real
+const pressureOf = (e) => (e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : 0.5);
+function inkCommit(change) {
+  S.undo.push(snapshot());
+  if (S.undo.length > 200) S.undo.shift();
+  S.redo = [];
+  change();
+  drawInk();
+  saveLocal();
+  updateUndoButtons();
+  updateStatus();
+}
+function inkDown(e) {
+  if (e.pointerType === 'pen' && !S.penSeen) {
+    S.penSeen = true;
+    lsSet('musicscan:penSeen', '1');
+    $('#hint').innerHTML = inkHint();
+    toast('Apple Pencil found: the Pencil draws and fingers scroll.', 3000);
+  }
+  if (e.pointerType === 'touch' && S.penSeen) return; // a finger scrolls once a Pencil is in use
+  e.preventDefault();
+  audio.audioCtx();
+  const { x, y } = localPoint(e);
+  $('#score').setPointerCapture(e.pointerId);
+  clearOverlay('inkcursor');
+  if (S.eraser) { S.stroke = { erase: true, pointer: e.pointerId, pushed: false }; eraseAt(x, y); return; }
+  const pen = penOf();
+  S.stroke = { pointer: e.pointerId, pen, w: penWidth(pen), pts: [[x, y, pressureOf(e)]], el: null };
+  liveStroke();
+}
+function inkMove(e) {
+  const { x, y } = localPoint(e);
+  if (!S.stroke) {
+    // a hovering Pencil (or a mouse) shows where the tip will draw
+    if (e.pointerType !== 'touch' && !S.inkHidden) inkCursor(x, y);
+    return;
+  }
+  if (e.pointerId !== S.stroke.pointer) return;
+  const evs = e.getCoalescedEvents?.() || [];
+  const list = evs.length ? evs : [e];
+  for (const c of list) {
+    const q = localPoint(c);
+    if (S.stroke.erase) eraseAt(q.x, q.y);
+    else S.stroke.pts.push([q.x, q.y, pressureOf(c)]);
+  }
+  if (!S.stroke.erase) liveStroke();
+  e.preventDefault();
+}
+function inkUp(e) {
+  const st = S.stroke;
+  S.stroke = null;
+  if (!st) return;
+  if (st.erase) { if (st.pushed) saveLocal(); return; }
+  st.el?.remove();
+  if (e?.type === 'pointercancel' && st.pts.length < 3) return;
+  const s = ink.makeStroke(S.layout, st.pts, st.pen, st.w);
+  inkCommit(() => ink.setStrokes(S.score, [...ink.strokes(S.score), s]));
+}
+function liveStroke() {
+  const st = S.stroke;
+  const el = ink.strokeEl({ tool: st.pen.tool, c: st.pen.color, w: st.w }, st.pts);
+  if (st.el) st.el.replaceWith(el); else $('#ink').appendChild(el);
+  st.el = el;
+}
+function eraseAt(x, y) {
+  const near = ink.strokesNear(S.inkPlaced, x, y, S.touch ? 14 : 9);
+  inkCursor(x, y, true);
+  if (!near.length) return;
+  const gone = new Set(near);
+  const apply = () => ink.setStrokes(S.score, ink.strokes(S.score).filter((_, i) => !gone.has(i)));
+  // one undo step for a whole rub of the eraser
+  if (!S.stroke.pushed) { S.stroke.pushed = true; inkCommit(apply); } else { apply(); drawInk(); }
+  native.haptic('light');
+}
+function inkCursor(x, y, eraser = S.eraser) {
+  clearOverlay('inkcursor');
+  const c = document.createElementNS(SVGNS, 'circle');
+  const pen = penOf();
+  const r = eraser ? 9 : Math.max(2, penWidth(pen) / 2);
+  Object.entries({ cx: x, cy: y, r, fill: eraser ? 'none' : pen.color, 'fill-opacity': eraser ? 0 : 0.5, stroke: eraser ? '#64748b' : 'none', 'stroke-width': 1.2, class: 'inkcursor' }).forEach(([k, v]) => c.setAttribute(k, v));
+  $('#overlay').appendChild(c);
+}
+function clearInk() {
+  if (!ink.hasInk(S.score)) { toast('There is no ink to clear'); return; }
+  inkCommit(() => ink.setStrokes(S.score, []));
+  toast('Ink cleared. Undo brings it back.');
+}
+
+// ---------------------------------------------------------------- markup: typed markings (real MusicXML)
+function markAt(x, y) {
+  const hit = (S.layout.marks || []).find((h) => x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1);
+  return hit ? hit.mark : null;
+}
+function selMarkInfo() {
+  if (!S.selMark) return null;
+  return S.score.allMarks().find((m) => m.el === S.selMark) || null;
+}
+const MARK_NAMES = { dynamics: 'Dynamic', wedge: 'Hairpin', words: 'Text', rehearsal: 'Rehearsal mark', fingering: 'Fingering' };
+function describeMark(m) {
+  if (m.kind === 'wedge') return m.value === 'diminuendo' ? 'Diminuendo hairpin' : m.value === 'stop' ? 'Hairpin end' : 'Crescendo hairpin';
+  return `${MARK_NAMES[m.kind]} ${m.value}`;
+}
+function removeSelMark() {
+  const m = selMarkInfo();
+  if (!m) { S.selMark = null; return; }
+  if (act(() => S.score.removeMark(m))) { S.selMark = null; redraw(); toast(`${describeMark(m)} removed`, 1600); }
+}
+// the note a marking goes on: the selected note, else the first note of the first selected bar
+function markTarget() {
+  const s = selected();
+  if (s) return { ev: s.ev, member: s.member };
+  const m = selMarkInfo();
+  const bars = [...S.measures].sort((a, b) => a - b);
+  const mi = m ? m.mi : bars[0];
+  if (mi === undefined) return null;
+  const evs = S.score.events(m ? m.pi : 0, mi).filter((e) => !e.grace && !e.hidden && (m ? e.staff === m.staff : e.staff === '1')).sort((a, b) => a.onset - b.onset);
+  if (m) { const at = evs.find((e) => e.onset >= m.onset); if (at) return { ev: at, member: at.chord[0] }; }
+  return evs[0] ? { ev: evs[0], member: evs[0].chord[0] } : null;
+}
+function openMarksMenu(btn) {
+  if (!S.score) return;
+  closeMenus();
+  const menu = $('#marksMenu');
+  const t = markTarget();
+  const m = selMarkInfo();
+  const note = t && !t.ev.rest;
+  const bars = [...S.measures].sort((a, b) => a - b);
+  const where = m ? `${describeMark(m)} in bar ${barNumber(m.mi)}` : t ? (selected() ? `On the selected ${t.ev.rest ? 'rest' : 'note'}, bar ${barNumber(t.ev.mi)}` : `At the start of bar ${barNumber(t.ev.mi)}`) : 'Select a note or a bar first, then pick a marking.';
+  const curFinger = t?.member?.el?.querySelector(':scope > notations > technical > fingering')?.textContent.trim();
+  const curDyn = m?.kind === 'dynamics' ? m.value : t ? S.score._markAt(t.ev, 'dynamics')?.value : null;
+  const dis = (on) => (on ? '' : ' disabled');
+  const span = bars.length > 1 ? `bars ${barNumber(bars[0])}–${barNumber(bars[bars.length - 1])}` : 'to the end of the bar';
+  menu.innerHTML = `<div class="mk-head"></div>
+    <div class="mk-row"><span class="mk-label">Dynamics</span>${DYNAMICS.map((d) => `<button data-mk="dyn" data-v="${d}" class="dyn${curDyn === d ? ' on' : ''}"${dis(t)}>${d}</button>`).join('')}</div>
+    <div class="mk-row"><span class="mk-label">Hairpin · ${span}</span><button data-mk="wedge" data-v="crescendo"${dis(t)} title="Crescendo">&lt;&nbsp; cresc.</button><button data-mk="wedge" data-v="diminuendo"${dis(t)} title="Diminuendo">&gt;&nbsp; dim.</button></div>
+    <div class="mk-row"><span class="mk-label">Fingering</span>${[1, 2, 3, 4, 5].map((f) => `<button data-mk="finger" data-v="${f}" class="${curFinger === String(f) ? 'on' : ''}"${dis(note)}>${f}</button>`).join('')}<button data-mk="finger" data-v=""${dis(note && curFinger)} title="Remove the fingering">✕</button></div>
+    <div class="mk-row"><span class="mk-label">Text</span>${WORDS.map((w) => `<button data-mk="words" data-v="${w}" class="words"${dis(t)}>${w}</button>`).join('')}<button data-mk="words-custom"${dis(t)}>${m?.kind === 'words' ? 'Edit text…' : 'Your own…'}</button></div>
+    <div class="mk-row"><span class="mk-label">Bar</span><button data-mk="rehearsal"${dis(t || bars.length)}><span class="reh">${S.score.nextRehearsal()}</span> Rehearsal mark</button>${m ? `<button data-mk="remove" class="danger">Remove ${MARK_NAMES[m.kind].toLowerCase()}</button>` : ''}</div>`;
+  menu.querySelector('.mk-head').textContent = where;
+  menu.classList.add('open');
+  const b = btn.getBoundingClientRect();
+  const w = menu.offsetWidth;
+  menu.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, b.left)) + 'px';
+  menu.style.top = Math.min(b.bottom + 4, Math.max(8, window.innerHeight - menu.offsetHeight - 8)) + 'px';
+}
+function markAction(kind, v) {
+  const t = markTarget();
+  const m = selMarkInfo();
+  const keepNote = S.sel;
+  let made = null;
+  const done = (msg) => { closeMenus(); S.sel = keepNote && keepNote.isConnected ? keepNote : null; if (made && !S.sel) S.selMark = made; redraw(); if (msg) toast(msg, 2200); };
+  if (kind === 'remove') { closeMenus(); removeSelMark(); return; }
+  if (kind === 'words-custom') { closeMenus(); textDialog(m?.kind === 'words' ? m : null, t); return; }
+  if (!t && kind !== 'rehearsal') { toast('Select a note or a bar first'); return; }
+  if (kind === 'dyn') {
+    const ok = m?.kind === 'dynamics' ? act(() => S.score.changeDynamic(m.el, v)) : act(() => { made = S.score.setDynamic(t.ev, v); });
+    if (ok) done(); return;
+  }
+  if (kind === 'wedge') {
+    const bars = [...S.measures].sort((a, b) => a - b);
+    const end = bars.length ? Math.max(t.ev.mi, bars[bars.length - 1]) : t.ev.mi;
+    if (act(() => { made = S.score.addHairpin(t.ev, v, end); })) done(`${v === 'crescendo' ? 'Crescendo' : 'Diminuendo'} to the end of bar ${barNumber(end)}. Select bars first to make it longer.`);
+    return;
+  }
+  if (kind === 'finger') {
+    if (act(() => S.score.setFingering(t.member.el, v || null))) done();
+    return;
+  }
+  if (kind === 'words') {
+    const ok = m?.kind === 'words' ? act(() => S.score.changeWords(m.el, v)) : act(() => { made = S.score.addWords(t.ev, v); });
+    if (ok) done(); return;
+  }
+  if (kind === 'rehearsal') {
+    const mi = t ? t.ev.mi : Math.min(...S.measures);
+    if (act(() => { made = S.score.setRehearsal(mi); })) done();
+  }
+}
+function textDialog(mark, t) {
+  const card = $('#modalCard');
+  $('#modal').classList.remove('hidden');
+  card.innerHTML = `<h2>${mark ? 'Edit text' : 'Add text'}</h2>
+    <p class="muted">Shown above the staff and saved as MusicXML words, for example <i>rit.</i>, <i>con moto</i> or a breath reminder.</p>
+    <input class="text" id="markText" maxlength="80" autocomplete="off" placeholder="Type here">
+    <div class="modal-actions"><button class="btn ghost" data-m="cancel">Cancel</button><button class="btn primary" data-m="ok">${mark ? 'Save' : 'Add'}</button></div>`;
+  const input = card.querySelector('#markText');
+  input.value = mark ? mark.value : '';
+  setTimeout(() => input.focus(), 30);
+  const ok = () => {
+    const text = input.value.trim();
+    closeModal();
+    if (!text) return;
+    let made = null;
+    const r = mark ? act(() => S.score.changeWords(mark.el, text)) : act(() => { made = S.score.addWords(t.ev, text); });
+    if (r) { if (made) S.selMark = made; redraw(); }
+  };
+  input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); ok(); } if (e.key === 'Escape') closeModal(); };
+  card.onclick = (ev) => { const a = ev.target.closest('[data-m]')?.dataset.m; if (a === 'ok') ok(); if (a === 'cancel') closeModal(); };
+}
+
 // ---------------------------------------------------------------- playback + export
 function togglePlay() {
   if (!S.score) return;
@@ -1178,16 +1445,18 @@ function wire() {
     if (!S.layout || e.touches.length !== 1) return;
     const t = e.touches[0];
     const { x, y } = localPoint(t);
+    // Ink mode: the Pencil draws and never scrolls; a finger draws too until a Pencil has been used, then it scrolls
+    if (S.mode === 'ink') { if (t.touchType === 'stylus' || !S.penSeen) e.preventDefault(); return; }
     const h = hitTest(x, y, true);
     if (h && (h.type === 'note' || S.mode === 'add')) e.preventDefault();
   }, { passive: false });
   // and once a note drag is under way the page must not start scrolling under the finger
-  sc.addEventListener('touchmove', (e) => { if (S.drag) e.preventDefault(); }, { passive: false });
+  sc.addEventListener('touchmove', (e) => { if (S.drag || S.stroke) e.preventDefault(); }, { passive: false });
   sc.addEventListener('pointerdown', onPointerDown);
   sc.addEventListener('pointermove', onPointerMove);
   sc.addEventListener('pointerup', onPointerUp);
   sc.addEventListener('pointercancel', onPointerUp);
-  sc.addEventListener('pointerleave', () => clearOverlay('ghost'));
+  sc.addEventListener('pointerleave', () => { clearOverlay('ghost'); clearOverlay('inkcursor'); });
   document.addEventListener('keydown', onKey);
 
   for (const b of $$('[data-mode]')) b.onclick = () => setMode(b.dataset.mode);
@@ -1200,6 +1469,12 @@ function wire() {
   $('#btnBar').onclick = (e) => { e.stopPropagation(); openBarMenu(e.currentTarget); };
   for (const b of $$('#barMenu button')) b.onclick = (e) => { e.stopPropagation(); barAction(b.dataset.bar); };
   $('[data-act="delete"]').onclick = del;
+  for (const b of $$('[data-pen]')) b.onclick = () => setPen(b.dataset.pen);
+  $('[data-act="ink-clear"]').onclick = clearInk;
+  $('[data-act="ink-done"]').onclick = () => setMode('select');
+  $('#btnInkVis').onclick = () => setInkHidden(!S.inkHidden);
+  $('#btnMarks').onclick = (e) => { e.stopPropagation(); openMarksMenu(e.currentTarget); };
+  $('#marksMenu').onclick = (e) => { e.stopPropagation(); const b = e.target.closest('button[data-mk]'); if (b && !b.disabled) markAction(b.dataset.mk, b.dataset.v); };
   $('#btnRescan').onclick = () => rescan(0);
   $('#btnKeyTime').onclick = keyTimeDialog;
   $('#inspRescan').onclick = () => { if (S.focus >= 0 && !S.measures.has(S.focus)) S.measures = new Set([S.focus]); rescan(0); };
@@ -1232,6 +1507,9 @@ function wire() {
     else if (cmd === 'export-mid') exportAs('mid');
     else if (cmd === 'mode-select') setMode('select');
     else if (cmd === 'mode-add') setMode('add');
+    else if (cmd === 'mode-ink') setMode(S.mode === 'ink' ? 'select' : 'ink');
+    // Pencil double-tap: in Ink mode it swaps pen and eraser (as in Notes); otherwise Select <-> Add notes
+    else if (cmd === 'toggle-mode' && S.mode === 'ink') { setPen(S.eraser ? S.inkPen : 'eraser'); toast(S.eraser ? 'Eraser' : 'Pen', 900); }
     else if (cmd === 'toggle-mode') { setMode(S.mode === 'add' ? 'select' : 'add'); toast(S.mode === 'add' ? 'Add notes' : 'Select', 900); }
     else if (cmd === 'zoom-in') $('#zoomIn').click();
     else if (cmd === 'zoom-out') $('#zoomOut').click();
@@ -1239,7 +1517,7 @@ function wire() {
   });
   $('#btnExport').onclick = (e) => { e.stopPropagation(); $('#exportMenu').classList.toggle('open'); };
   for (const b of $$('#exportMenu button')) b.onclick = () => exportAs(b.dataset.x);
-  document.addEventListener('click', () => { $('#exportMenu').classList.remove('open'); $('#barMenu').classList.remove('open'); });
+  document.addEventListener('click', closeMenus);
   $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
   let rt;
   window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (S.score && !$('#viewEditor').classList.contains('hidden')) redraw(); }, 150); });

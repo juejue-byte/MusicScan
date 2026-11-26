@@ -55,9 +55,19 @@ the server. Force it with `?demo`.
 | Check the flagged bars | **Fix it** (F): Enter looks right · `]` `[` next / previous flag · P play the bar · E edit it · Esc close. iPad keyboard: ⌘] ⌘[ ⌘⇧↵ ⌘⇧F |
 | Play / stop | Space (starts at the selected bar) |
 | Loop | L or ⟲: the selected bars repeat (nothing selected: the whole piece) |
+| Dynamics, hairpins, fingering, text, rehearsal marks | Select a note (or bars), then **Marks ▾** (M). Tap a marking to select it; Delete removes it |
+| Draw on the score | **Ink** (P): Apple Pencil, mouse or finger. Pens, highlighter, eraser (E, or Pencil double-tap). Ink never changes the notes |
+| Show / hide ink | **Ink: shown / hidden** in the status bar |
 | Undo / redo | Ctrl/Cmd+Z · Ctrl/Cmd+Shift+Z |
 
 Bars that no longer add up are outlined in red dashes and listed in the status bar.
+
+**Markings are real MusicXML.** Dynamics, hairpins (`<wedge>`), fingerings, text (`<words>`) and rehearsal marks are
+written as standard elements, so Finale, Sibelius, Dorico and MuseScore read them, and markings already in a file or
+read from the photo are drawn too. **Ink** is a separate layer: it is saved inside the MusicXML as JSON in
+`<identification><miscellaneous><miscellaneous-field name="musicscan-ink">`, so it is undone, exported and reopened
+with the score while other apps simply ignore it. Each stroke is pinned to its bar and follows it when the score
+reflows, or when bars are split, joined, inserted or deleted. Tests: `node tests/markup.js [outDir]`.
 
 ## How it works
 

@@ -101,6 +101,15 @@ The web side of the bridge is [`web/js/native.js`](../web/js/native.js); in a no
 web app is unchanged. `tests/ipad.js` checks iPad layouts, Apple Pencil and the ⌘ commands; `tests/touch.js` runs the editor on an emulated iPhone with a fake bridge (drag, swap, add,
 export via the share sheet).
 
+## Apple Pencil markup: what to check on a real iPad
+
+Ink mode (✏ Ink, ⌘3) draws with the Pencil through WebKit pointer events (`pointerType: "pen"`, pressure, coalesced
+points); fingers keep scrolling once a Pencil has drawn. Pencil double-tap in Ink mode swaps pen and eraser. Only the
+⌘3 key command changed on the Swift side. Worth checking by hand, since the cloud tests emulate the Pencil:
+- strokes follow the tip without lag on a ProMotion iPad, and a quick flick does not scroll the page;
+- Scribble (iPadOS handwriting) does not grab the Pencil over the score (Settings > Apple Pencil > Scribble);
+- a finger scrolls in Ink mode after the Pencil has drawn, and a palm on the screen does not leave marks.
+
 ## Handing off to another agent
 
 [AGENT_PROMPT.md](AGENT_PROMPT.md) is a ready-to-paste prompt for Claude Code on your Mac to continue in Xcode.

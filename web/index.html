@@ -84,6 +84,18 @@
           <div class="seg" role="group" aria-label="Mode">
             <button data-mode="select" class="on" title="Select and drag notes (V)">↖ Select</button>
             <button data-mode="add" title="Click on the staff to add notes (N)">✎ Add notes</button>
+            <button data-mode="ink" title="Draw on the score with Apple Pencil, a mouse or a finger (P). Ink never changes the notes."><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Ink</button>
+          </div>
+          <div class="seg ink-tools" role="group" aria-label="Ink">
+            <button data-pen="red" class="on" title="Red pen"><span class="swatch" style="--c:#dc2626"></span><span class="wide-only">Red</span></button>
+            <button data-pen="blue" title="Blue pen"><span class="swatch" style="--c:#2563eb"></span><span class="wide-only">Blue</span></button>
+            <button data-pen="graphite" title="Pencil"><span class="swatch" style="--c:#374151"></span><span class="wide-only">Pencil</span></button>
+            <button data-pen="hl" title="Highlighter"><span class="swatch hl" style="--c:#facc15"></span><span class="wide-only">Highlight</span></button>
+            <button data-pen="eraser" title="Eraser: rub over a stroke to remove it (E, or double-tap the Pencil)"><svg width="18" height="16" viewBox="0 0 24 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M7 18 2.5 13.5a1.6 1.6 0 0 1 0-2.3L11 2.7a1.6 1.6 0 0 1 2.3 0l6 6a1.6 1.6 0 0 1 0 2.3L12 18Z"/><path d="M7 18h14"/><path d="m6.5 7.5 8 8"/></svg><span class="wide-only">Eraser</span></button>
+          </div>
+          <div class="seg ink-tools" role="group" aria-label="Ink actions">
+            <button data-act="ink-clear" title="Remove all ink (undo brings it back)">Clear ink</button>
+            <button data-act="ink-done" class="done" title="Back to editing notes (Esc)">Done</button>
           </div>
           <div class="seg durs" role="group" aria-label="Duration">
             <button data-dur="whole" title="Whole (1)"><span class="g">𝅝</span><kbd>1</kbd></button>
@@ -106,6 +118,9 @@
           <div class="seg" role="group" aria-label="Rhythm">
             <button data-act="tie" title="Tie to the next note of the same pitch (T)"><svg width="20" height="12" viewBox="0 0 20 12" aria-hidden="true"><path d="M2 3 Q10 12 18 3" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>Tie</button>
             <button data-act="tuplet" title="Triplet: three notes in the time of this one (Alt+3). Again removes it.">³ Triplet</button>
+          </div>
+          <div class="seg" role="group" aria-label="Markings">
+            <button data-act="marks" id="btnMarks" title="Marks: dynamics, hairpins, fingering, text and rehearsal marks for the selected note (M)" aria-label="Marks"><i class="mf">mf</i><span class="wide-only">&nbsp;Marks</span>&nbsp;▾</button>
           </div>
           <div class="seg" role="group" aria-label="Bars">
             <button data-act="bar" id="btnBar" title="Split, join, add or delete bars">𝄀 Bar ▾</button>
@@ -150,9 +165,10 @@
         </div>
         <div class="score-scroll" id="scoreScroll">
           <div id="score" class="score"></div>
+          <svg id="ink" class="ink" aria-hidden="true"></svg>
           <svg id="overlay" class="overlay"></svg>
         </div>
-        <div class="statusbar"><div class="status" id="status"></div><div class="zoom"><button class="btn icon small" id="zoomOut" title="Smaller">−</button><span id="zoomVal">100%</span><button class="btn icon small" id="zoomIn" title="Larger">+</button></div></div>
+        <div class="statusbar"><div class="status" id="status"></div><div class="zoom"><button class="btn small ghost ink-vis hidden" id="btnInkVis" title="Show or hide your ink" aria-pressed="true">Ink: shown</button><button class="btn icon small" id="zoomOut" title="Smaller">−</button><span id="zoomVal">100%</span><button class="btn icon small" id="zoomIn" title="Larger">+</button></div></div>
       </div>
       <aside class="photo-col" id="photoCol">
         <div class="photo-head"><span>Photo</span>
@@ -172,6 +188,7 @@
   <button data-bar="after">Insert an empty bar after <kbd>I</kbd></button>
   <button data-bar="delete">Delete the bar <kbd>⇧Del</kbd></button>
 </div>
+<div class="menu-pop marks-pop" id="marksMenu" role="menu"></div>
 <div class="modal hidden" id="modal"><div class="modal-card" id="modalCard"></div></div>
 <div class="toast hidden" id="toast"></div>
 <div class="practice-pop" id="practicePanel" role="dialog" aria-label="Practice"></div>
