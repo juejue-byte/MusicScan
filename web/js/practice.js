@@ -154,7 +154,17 @@ function render() {
   syncTempo();
   wirePanel(box);
 }
+// listeners outside the panel (the practice bar, web/js/practicebar.js) hear about every change
+const listeners = [];
+export const onChange = (fn) => listeners.push(fn);
+const notify = () => { for (const fn of listeners) fn(P); };
+// the same switches the panel has, for other controls
+export function setOption(k, v) {
+  if (k === 'metronome') { P.metronome = !!v; audio.setMetronome(P.metronome); } else if (k === 'countIn') P.countIn = +v || 0;
+  save(); pushMix(); render();
+}
 function syncTempo() {
+  notify();
   const r = $('#pTempo');
   if (!r) return;
   r.value = P.bpm;

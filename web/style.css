@@ -566,3 +566,33 @@ body.capturing { overflow: hidden; }
 body.has-library .hero h1 { font-size: clamp(24px, 3.4vw, 32px); }
 body.has-library .drop { padding: 28px 20px; }
 @media (max-width: 600px) { .lib-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .lib-thumb { height: 96px; } .lib-head h2 { font-size: 26px; } }
+
+/* ---------------------------------------------------------------- practice bar while playing (web/js/practicebar.js)
+   The one dark surface in the app, so it reads as "now playing". */
+.pbar { position: fixed; z-index: 44; left: 50%; transform: translateX(-50%); bottom: max(44px, calc(env(safe-area-inset-bottom) + 36px));
+  width: min(900px, calc(100vw - 24px)); display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 22px;
+  background: var(--ink); color: #fff; box-shadow: 0 12px 40px rgba(14,34,56,.35); }
+.pb-stop { flex: none; width: 52px; height: 52px; border-radius: 50%; border: 0; background: #fff; color: var(--ink); display: grid; place-items: center; cursor: pointer; }
+.pb-where { flex: none; display: flex; flex-direction: column; min-width: 64px; font-size: 13px; color: #BFD7EE; line-height: 1.25; }
+.pb-where b { color: #fff; font-size: 16px; font-variant-numeric: tabular-nums; }
+.pb-tempo { flex: 1 1 220px; min-width: 150px; display: flex; flex-direction: column; gap: 4px; }
+.pb-tline { display: flex; justify-content: space-between; font-size: 13px; color: #BFD7EE; }
+.pb-tline b { color: #fff; font-size: 15px; font-variant-numeric: tabular-nums; }
+.pb-trow { display: flex; align-items: center; gap: 6px; }
+.pb-range { flex: 1; min-width: 0; accent-color: var(--sky-400); height: 28px; }
+.pb-step { flex: none; width: 34px; height: 34px; border-radius: 10px; border: 0; background: #1D3554; color: #E3F0FC; font-size: 18px; cursor: pointer; }
+.pb-toggles { flex: none; display: flex; gap: 6px; }
+.pb-t { display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 12px; border-radius: 12px; border: 0; background: #1D3554; color: #E3F0FC; font: 600 14px system-ui, sans-serif; cursor: pointer; white-space: nowrap; }
+.pb-t.on { background: var(--sky-100); color: var(--accent-ink); }
+.pb-n { display: inline-grid; place-items: center; min-width: 20px; height: 20px; border-radius: 6px; background: rgba(255,255,255,.14); font-size: 12px; }
+.pb-t.on .pb-n { background: rgba(23,105,194,.15); }
+body.playing .practice-pop { z-index: 46; }
+@media (max-width: 900px) { .pb-t span:not(.pb-n) { display: none; } .pb-t { padding: 0 11px; } }
+@media (max-width: 600px) {
+  .pbar { flex-wrap: wrap; gap: 8px 10px; bottom: max(36px, calc(env(safe-area-inset-bottom) + 28px)); padding: 10px; }
+  .pb-tempo { order: 3; flex-basis: 100%; }
+  .pb-toggles { margin-left: auto; }
+  .pb-stop { width: 46px; height: 46px; }
+  .pb-t { height: 40px; padding: 0 10px; }
+}
+@media (max-height: 500px) { .pbar { bottom: max(8px, env(safe-area-inset-bottom)); padding: 6px 10px; } .pb-stop { width: 42px; height: 42px; } .pb-t { height: 38px; } }

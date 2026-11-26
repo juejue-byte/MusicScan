@@ -1,6 +1,7 @@
 // MusicScan web app: upload -> transcribe -> edit on the staff -> play -> export.
 import * as capture from './capture.js';
 import * as library from './library.js';
+import * as pbar from './practicebar.js';
 import { Score, pitchName, midiOf, clefTop, toMidi } from './score.js';
 import './edits.js';
 import { DYNAMICS, WORDS } from './markup.js';
@@ -1679,6 +1680,7 @@ function togglePlay() {
     },
     onEnd: () => stopPlay(),
   });
+  pbar.show(from);
 }
 function toggleLoop() {
   S.loop = !S.loop;
@@ -1694,6 +1696,7 @@ function stopPlay() {
   clearOverlay('sounding');
   $('#btnPlay').querySelector('.pi').textContent = '▶';
   $('#btnPlay').querySelector('.pl').textContent = 'Play';
+  pbar.hide();
 }
 function drawCursor(mi) {
   clearOverlay('cursor');
@@ -1703,6 +1706,7 @@ function drawCursor(mi) {
   Object.entries({ x: m.x0 + 1, y: m.y0, width: m.x1 - m.x0 - 2, height: m.y1 - m.y0, fill: '#5FAEEB', 'fill-opacity': 0.16, stroke: '#5FAEEB', 'stroke-width': 2, rx: 4, class: 'cursor' }).forEach(([k, v]) => r.setAttribute(k, v));
   $('#overlay').appendChild(r);
   scrollToBar(mi);
+  pbar.setBar(mi);
 }
 function exportAs(kind) {
   $('#exportMenu').classList.remove('open');
@@ -2242,6 +2246,7 @@ installZoom({
 });
 
 wire();
+pbar.init({ stop: () => stopPlay(), toggleLoop, isLoop: () => !!S.loop, bars: () => S.score?.nMeasures || 0, label: (mi) => barNumber(mi) });
 addEventListener('pagehide', () => library.flush());
 review.initReview({
   S, redraw, edit, toast, setMode, scrollToBar, scrollPhotoTo, rescan, pageOf: (mi) => pageInfo(pageIdOf(mi)), stopPlay, drawCursor, clearOverlay, barNumber, barReason, subScoreXML,
