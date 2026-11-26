@@ -7,6 +7,7 @@ struct ServerSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft = ""
     @State private var status: String?
+    @State private var reachable = false
     @State private var checking = false
 
     var body: some View {
@@ -27,7 +28,9 @@ struct ServerSettingsView: View {
                     Button(checking ? "Checking…" : "Test connection") { Task { await test() } }
                         .disabled(checking || ServerConfig.normalize(draft) == nil)
                     if let status {
-                        Text(status).font(.footnote).foregroundStyle(.secondary)
+                        Label(status, systemImage: reachable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(reachable ? .green : .orange)
                     }
                 }
             }
@@ -40,7 +43,9 @@ struct ServerSettingsView: View {
                 }
             }
             .onAppear { draft = serverURL }
+            .onChange(of: draft) { _ in status = nil }
         }
+        .presentationDetents([.medium, .large])
     }
 
     private func save() {
@@ -59,8 +64,10 @@ struct ServerSettingsView: View {
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            reachable = code == 200
             status = code == 200 ? "Connected to MusicScan." : "Something answered, but not MusicScan (HTTP \(code))."
         } catch {
+            reachable = false
             status = "Could not reach it: \(error.localizedDescription)"
         }
     }

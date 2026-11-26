@@ -163,9 +163,18 @@ struct EditorWebView: UIViewRepresentable {
 
         // MARK: capture
 
+        /// Recent simulators report the document camera as supported, but there is no camera to use there.
+        private var documentCameraAvailable: Bool {
+            #if targetEnvironment(simulator)
+            return false
+            #else
+            return VNDocumentCameraViewController.isSupported
+            #endif
+        }
+
         private func scan(_ id: Int) {
             scanRequest = id
-            if VNDocumentCameraViewController.isSupported {
+            if documentCameraAvailable {
                 let camera = VNDocumentCameraViewController()
                 camera.delegate = self
                 presenter()?.present(camera, animated: true)

@@ -1153,7 +1153,7 @@ function wire() {
     });
     const srv = document.createElement('button');
     srv.className = 'btn ghost server-link';
-    srv.textContent = 'Server: ' + location.host;
+    srv.textContent = `Server: ${location.host} · Change`;
     srv.onclick = () => native.openSettings();
     $('.upload-row').appendChild(srv);
   }
