@@ -380,7 +380,7 @@ export class Score {
     if (!m) return false;
     for (const c of m.children) {
       if (c.localName === 'note') return false;
-      if (c.localName === 'print' && c.getAttribute('new-system') === 'yes') return true;
+      if (c.localName === 'print' && (c.getAttribute('new-system') === 'yes' || c.getAttribute('new-page') === 'yes')) return true;
     }
     return false;
   }

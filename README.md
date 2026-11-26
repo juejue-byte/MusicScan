@@ -16,6 +16,9 @@ Web first, built so the same editor can ship inside an iOS app.
   one-tap Looks right, Edit, Rescan or Second reading, with "3 of 7 checked" progress.
 - **Rescan** a bad bar: re-read its row from the same photo another way, or from a close-up, compare old and new, keep
   the better one. Untouched bars keep their slurs, dynamics and beams.
+- **Multi-page scores.** Add pages one photo at a time, or open a whole PDF (or a multi-page scan in the iOS app):
+  every page lands in one score with straight-through bar numbers, and the time signature, key, clefs and part
+  layout carry across page turns. Reorder, retake or remove pages; the photo panel, flags and rescans work per page.
 - **Play** with a moving cursor and the sounding notes lit up (sampled piano), **export** `.musicxml` and `.mid`.
 
 Scope of the MVP: printed music, piano or a single instrument, one or more staves, treble / bass / alto / tenor clefs.
@@ -53,6 +56,7 @@ the server. Force it with `?demo`.
 | Select bars | Click a bar number (Shift-click for a range), or a bar on the photo |
 | Rescan | Select bars → **Rescan bars** → compare → keep or try another way |
 | Check the flagged bars | **Fix it** (F): Enter looks right · `]` `[` next / previous flag · P play the bar · E edit it · Esc close. iPad keyboard: ⌘] ⌘[ ⌘⇧↵ ⌘⇧F |
+| More pages | **Pages** (or **+ Page** over the photo): add a photo or PDF, reorder, retake, remove. Tabs 1 2 3 switch the photo |
 | Play / stop | Space (starts at the selected bar) |
 | Loop | L or ⟲: the selected bars repeat (nothing selected: the whole piece) |
 | Dynamics, hairpins, fingering, text, rehearsal marks | Select a note (or bars), then **Marks ▾** (K). Tap a marking to select it; Delete removes it |
@@ -100,6 +104,8 @@ python bench/report.py bench/results         # tables + quality-flag check
 python -m pytest tests -q            # Python: scoring, cleanup, OMR smoke test
 node tests/e2e.js http://localhost:8000/ /tmp/e2e   # browser: upload → edit → rescan → play → export
 node tests/review.js /tmp/review        # browser (demo data, no server): the Fix it flow on iPad and iPhone
+node tests/pages.js                               # multi-page: join, reorder, remove pages (no server)
+node tests/multipage_e2e.js two-pages.pdf page.png  # multi-page end to end against the server
 ```
 
 ## iOS

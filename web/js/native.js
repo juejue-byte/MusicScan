@@ -53,6 +53,9 @@ export async function scanDocument() {
   if (!r || !r.b64) return null;
   const f = new File([b64ToBytes(r.b64)], r.name || 'scan.jpg', { type: 'image/jpeg' });
   f.pages = r.pages || 1;
+  // further pages of a multi-page document scan, in order (read into the same score)
+  const base = (r.name || 'scan.jpg').replace(/\.jpg$/i, '');
+  f.more = (r.more || []).map((b, i) => new File([b64ToBytes(b)], `${base} p${i + 2}.jpg`, { type: 'image/jpeg' }));
   return f;
 }
 

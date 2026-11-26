@@ -165,7 +165,7 @@ button, .btn { touch-action: manipulation; }
   .btn .pl { display: none; }
   /* while editing, the wordmark gives way to "New scan" (the only way back to the start screen) */
   body.editing .brand > span:last-child { display: none; }
-  #btnNew { padding: 0 8px; }
+  #btnNew, #btnPages { padding: 0 8px; }
   .wide-only, .top .sep { display: none; }
   .btn.play { min-width: 40px; }
   .tempo { display: none; }
@@ -183,7 +183,7 @@ button, .btn { touch-action: manipulation; }
   .top { flex-wrap: nowrap; }
   .doc-title { order: 0; flex: 1 1 auto; flex-basis: auto; }
 }
-#btnNew { gap: 0; }
+#btnNew, #btnPages { gap: 0; }
 
 /* landscape phones: keep content clear of the notch and the rounded corners */
 #viewUpload { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
@@ -391,3 +391,21 @@ i.mf { font-family: 'Times New Roman', Times, serif; font-weight: 700; font-size
   .pad-actions { display: flex; flex: 1; justify-content: space-between; gap: 4px; }
   .pad-btn { min-width: 0; min-height: 38px; padding: 2px 6px; font-size: 12px; flex: 0 1 auto; white-space: nowrap; }
 }
+
+/* multi-page scores */
+.page-tabs { display: flex; gap: 4px; margin-right: auto; flex-wrap: wrap; }
+.page-tabs button { min-width: 30px; height: 30px; padding: 0 8px; border: 1px solid var(--line); background: var(--panel, #fff); border-radius: 8px; font: inherit; font-size: 13px; cursor: pointer; color: inherit; }
+.page-tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.page-tabs button.flag:not(.on) { border-color: #dc2626; }
+.page-tabs button.add { color: var(--accent); font-weight: 600; }
+.page-tabs button:disabled { opacity: .45; cursor: default; }
+.page-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; max-height: 55vh; overflow: auto; }
+.page-row { display: flex; align-items: center; gap: 12px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; }
+.page-thumb { width: 64px; height: 84px; flex: none; border-radius: 6px; overflow: hidden; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 26px; color: #94a3b8; }
+.page-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.page-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; font-size: 14px; }
+.page-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.page-btns .btn { min-height: 44px; min-width: 44px; }
+.page-reading { position: fixed; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 55; background: #0f172a; color: #fff; padding: 10px 14px; border-radius: 12px; font-size: 14px; box-shadow: var(--shadow); display: flex; align-items: center; max-width: calc(100vw - 32px); }
+.page-reading .spinner { width: 16px; height: 16px; border-width: 2px; }
+@media (max-width: 600px) { .page-row { flex-wrap: wrap; } .page-btns { width: 100%; } }

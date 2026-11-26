@@ -28,7 +28,11 @@ the staff or rescan them, plays them back and exports MusicXML / MIDI.
    undo/redo, bar-length check.
 5. **Rescan**: selected bars → rows re-read from the cleaned page (second model, enlarged, high-contrast; or a close-up
    photo) → side-by-side comparison → splice (key/time/clef inherited; bar-count changes allowed with a warning).
-6. **Play / export**: cursor follows the bar; starts at the selected bar; `.musicxml`, `.mid`.
+6. **Pages**: a score is a list of pages, each its own reading (job). A new page is read with the context in force at
+   the score's end (part layout and clefs always; time unless the page prints one; key unless none was read; a
+   differing key is kept and flagged) and appended (`web/js/pages.js`); PDFs read page by page in the background.
+   Reorder / remove / retake restate key, time and clefs where bars move. Rescans and the photo panel use the bar's page.
+7. **Play / export**: cursor follows the bar; starts at the selected bar; `.musicxml`, `.mid`.
 
 ## iOS plan
 Server inference for v1; VisionKit document camera for capture; the same editor in a WKWebView inside a native
@@ -36,5 +40,5 @@ SwiftUI shell (`ios/`, chosen over Capacitor: four native features, no Node/Coco
 the app (LGPL static-linking question avoided).
 
 ## Deferred
-Manual 4-corner adjustment UI, multi-page PDF, accounts and cloud storage, tie / tuplet / articulation editing,
+Manual 4-corner adjustment UI, accounts and cloud storage, tie / tuplet / articulation editing,
 handwritten music.

@@ -123,8 +123,10 @@ function rescanBar() {
 }
 
 // ---------------------------------------------------------------- the second reading (small model)
-function altScore() {
-  const so = A.S.result?.second_opinion;
+// the reading a bar came from: its page's (multi-page scores), else the score's own
+const pageOf = (mi) => (A.pageOf && A.pageOf(mi)) || A.S.result || null;
+function altScore(mi) {
+  const so = pageOf(mi)?.second_opinion;
   if (!so?.xml) return null;
   if (R.altFor !== so.xml) { R.altFor = so.xml; try { R.alt = new Score(so.xml); } catch (e) { R.alt = null; } }
   return R.alt;
@@ -135,7 +137,7 @@ function altBar(mi) {
   const m = S.meta[mi];
   if (!m?.disagree || m.index == null) return null;
   if (S.meta.filter((x) => x?.index === m.index && x?.disagree).length !== 1) return null; // split or duplicated since
-  const alt = altScore();
+  const alt = altScore(mi);
   if (!alt || m.index >= alt.nMeasures || alt.parts.length !== S.score.parts.length) return null;
   try { return new Score(A.subScoreXML(alt, [m.index])); } catch (e) { return null; }
 }
@@ -171,14 +173,14 @@ function playBar() {
 }
 
 // ---------------------------------------------------------------- drawing the panel
-function pageImage() {
-  const S = A.S;
-  if (!S.job) return null;
-  if (R.imgJob !== S.job) {
-    R.imgJob = S.job;
+function pageImage(mi) {
+  const job = pageOf(mi)?.job || A.S.job;
+  if (!job) return null;
+  if (R.imgJob !== job) {
+    R.imgJob = job;
     R.img = new Image();
     R.img.onload = () => { R.drawn = ''; refresh(); };
-    R.img.src = jobFile(S.job, 'page.png');
+    R.img.src = jobFile(job, 'page.png');
   }
   return R.img.complete && R.img.naturalWidth ? R.img : null;
 }
@@ -186,11 +188,12 @@ function pageImage() {
 function drawCrop(canvas, mi, maxW, maxH) {
   const S = A.S;
   const m = S.meta[mi];
-  const img = pageImage();
-  if (!img || !m?.bbox || m.bbox[2] <= m.bbox[0] || !S.result?.page_size) return false;
+  const img = pageImage(mi);
+  const pg = pageOf(mi);
+  if (!img || !m?.bbox || m.bbox[2] <= m.bbox[0] || !pg?.page_size) return false;
   // page.png may be stored smaller than page_size (the demo keeps a jpg): scale boxes to the image
-  const k = img.naturalWidth / S.result.page_size[0];
-  const sys = (S.result.systems || []).find((s) => s.measures?.includes(m.index ?? mi)) || { bbox: m.bbox };
+  const k = img.naturalWidth / pg.page_size[0];
+  const sys = (pg.systems || []).find((s) => s.measures?.includes(m.index ?? mi)) || { bbox: m.bbox };
   const padX = 60, padY = 26;
   const x0 = Math.max(0, (m.bbox[0] - padX) * k), x1 = Math.min(img.naturalWidth, (m.bbox[2] + padX) * k);
   const y0 = Math.max(0, (Math.min(sys.bbox[1], m.bbox[1]) - padY) * k), y1 = Math.min(img.naturalHeight, (Math.max(sys.bbox[3], m.bbox[3]) + padY) * k);
@@ -272,7 +275,7 @@ function refresh(done = false) {
   $('#rvUseAlt').classList.toggle('hidden', !sub2 || !!m.reviewed);
   document.querySelector('#review').classList.toggle('editing', R.editing);
   // pictures: only when the bar or its reading changed (refresh runs on every redraw)
-  const key = [mi, S.score.parts.map((p) => p.measures[mi]?.outerHTML || '').join('|'), !!pageImage(), !!sub2, R.editing, innerWidth].join('#');
+  const key = [mi, S.score.parts.map((p) => p.measures[mi]?.outerHTML || '').join('|'), !!pageImage(mi), !!sub2, R.editing, innerWidth].join('#');
   if (key === R.drawn) return;
   R.drawn = key;
   const box = $('#rvPics');

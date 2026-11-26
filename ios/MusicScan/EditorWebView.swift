@@ -191,10 +191,10 @@ struct EditorWebView: UIViewRepresentable {
         }
 
         func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFinishWith scan: VNDocumentCameraScan) {
-            let pages = scan.pageCount
-            let image = pages > 0 ? scan.imageOfPage(at: 0) : nil
+            // every scanned page goes to the editor; it reads them one after another into one score
+            let images = (0..<scan.pageCount).map { scan.imageOfPage(at: $0) }
             controller.dismiss(animated: true)
-            deliver(image, pages: pages)
+            deliver(images)
         }
 
         func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
@@ -214,20 +214,24 @@ struct EditorWebView: UIViewRepresentable {
                 return
             }
             provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
-                DispatchQueue.main.async { self?.deliver(object as? UIImage, pages: 1) }
+                DispatchQueue.main.async { self?.deliver([object as? UIImage].compactMap { $0 }) }
             }
         }
 
-        private func deliver(_ image: UIImage?, pages: Int) {
+        /// Replies with the first page as `b64` and any further pages as `more` (base64 JPEGs, in order).
+        private func deliver(_ images: [UIImage]) {
             let id = scanRequest
-            guard let image else { reply(id, [:]); return }
+            guard !images.isEmpty else { reply(id, [:]); return }
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                guard let jpeg = image.limited(toLongSide: 4000).jpegData(compressionQuality: 0.9) else {
+                let jpegs = images.compactMap { $0.limited(toLongSide: 4000).jpegData(compressionQuality: 0.9) }
+                guard let first = jpegs.first else {
                     DispatchQueue.main.async { self?.reply(id, ["error": "Could not read the scanned image."]) }
                     return
                 }
                 let stamp = ISO8601DateFormatter().string(from: Date()).prefix(19).replacingOccurrences(of: ":", with: "-")
-                let result: [String: Any] = ["b64": jpeg.base64EncodedString(), "name": "Scan \(stamp).jpg", "pages": pages]
+                let result: [String: Any] = ["b64": first.base64EncodedString(), "name": "Scan \(stamp).jpg",
+                                             "pages": jpegs.count,
+                                             "more": jpegs.dropFirst().map { $0.base64EncodedString() }]
                 DispatchQueue.main.async { self?.reply(id, result) }
             }
         }

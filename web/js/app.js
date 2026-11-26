@@ -11,6 +11,7 @@ import { api, jobFile, isDemo } from './demo.js';
 import * as review from './review.js';
 import { createNoteInput } from './input.js';
 import { createPad } from './pad.js';
+import { pageRanges } from './pages.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -21,6 +22,7 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* blo
 
 const S = {
   score: null, meta: [], job: null, result: null, name: '',
+  pages: {}, photoPage: null, // multi-page: job id -> { job, name, page_size, systems, quality }; page in the photo panel
   mode: 'select', dur: 'quarter', dot: false, restMode: false,
   sel: null,                 // selected note/rest element (a <note>)
   measures: new Set(),       // selected bars (for rescan / playback start)
@@ -63,7 +65,7 @@ function download(name, data, type) {
 }
 const baseName = () => (S.name || 'score').replace(/\.[^.]+$/, '').replace(/[^\w\- ]+/g, '').trim() || 'score';
 function saveLocal() {
-  try { localStorage.setItem(LS_KEY, JSON.stringify({ job: S.job, xml: S.score.toXML(), meta: S.meta, name: S.name, result: S.result ? { quality: S.result.quality, page_size: S.result.page_size, systems: S.result.systems, second_opinion: S.result.second_opinion } : null, t: Date.now() })); } catch (e) { /* storage full or blocked */ }
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ job: S.job, xml: S.score.toXML(), meta: S.meta, pages: S.pages, name: S.name, result: S.result ? { quality: S.result.quality, page_size: S.result.page_size, systems: S.result.systems, second_opinion: S.result.second_opinion } : null, t: Date.now() })); } catch (e) { /* storage full or blocked */ }
 }
 
 // ---------------------------------------------------------------- upload flow
@@ -92,22 +94,32 @@ async function startUpload(file) {
     $('#progressBar').style.width = p + '%';
   }, 300);
   try {
-    const r = await api('api/jobs', { method: 'POST', body: fd });
-    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Upload failed');
-    const { id } = await r.json();
+    const { id, result, pages } = await readPage(fd, (status) => {
+      setStep(/Clean/.test(status) ? 'clean' : /Read|Double/.test(status) ? 'read' : 'upload');
+      $('#progressText').textContent = `${status}… ${Math.round((Date.now() - t0) / 1000)} s`;
+    });
     S.job = id;
-    for (;;) {
-      await new Promise((res) => setTimeout(res, 700));
-      const j = await (await api('api/jobs/' + id)).json();
-      if (j.status === 'done') { setStep('done'); clearInterval(tick); $('#progressBar').style.width = '100%'; openResult(j.result); return; }
-      if (j.status === 'error') throw new Error(j.error || 'Transcription failed');
-      setStep(/Clean/.test(j.status) ? 'clean' : /Read|Double/.test(j.status) ? 'read' : 'upload');
-      $('#progressText').textContent = `${j.status}… ${Math.round((Date.now() - t0) / 1000)} s`;
-    }
+    setStep('done'); clearInterval(tick); $('#progressBar').style.width = '100%';
+    openResult(result);
+    // a PDF with more pages: the rest are read one after another and added to the end as they finish
+    if (pages > 1 && result.stats?.measures) addPages(file, { from: 1, total: pages });
   } catch (e) {
     clearInterval(tick);
     show('viewUpload');
     toast('Sorry, that did not work: ' + e.message, 5000);
+  }
+}
+// upload one page (fd: the job form) and wait for its reading; onStatus gets the server's progress text
+async function readPage(fd, onStatus) {
+  const r = await api('api/jobs', { method: 'POST', body: fd });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Upload failed');
+  const { id, pages } = await r.json();
+  for (;;) {
+    await new Promise((res) => setTimeout(res, 700));
+    const j = await (await api('api/jobs/' + id)).json();
+    if (j.status === 'done') return { id, result: j.result, pages: pages || j.pages || 1 };
+    if (j.status === 'error') throw new Error(j.error || 'Transcription failed');
+    onStatus?.(j.status);
   }
 }
 function setStep(s) {
@@ -132,14 +144,19 @@ function openResult(res) {
     return;
   }
   S.result = res;
-  openScore(res.xml, res.measures, res.quality, S.job);
+  openScore(res.xml, res.measures, res.quality, S.job, { [S.job]: pageRec(S.job, res, S.name) });
 }
 
-function openScore(xml, meta, quality, job) {
+function openScore(xml, meta, quality, job, pages = null) {
   review.stop();
   S.score = new Score(xml);
   S.meta = (meta || []).map((m) => ({ ...m }));
   S.job = job;
+  S.pages = pages || (job && S.result ? { [job]: pageRec(job, S.result, S.name) } : {});
+  if (job) for (const m of S.meta) m.page ??= job;
+  S.photoPage = job;
+  scoreSession++;
+  setReading(null);
   S.sel = null; S.measures = new Set(); S.focus = -1; S.undo = []; S.redo = []; S.caret = null;
   $('#docTitle').textContent = S.name;
   show('viewEditor');
@@ -157,6 +174,7 @@ function openScore(xml, meta, quality, job) {
 function barReason(m) {
   if (m.level === 'ok') return 'read with confidence';
   const r = [];
+  if (m.notes?.length) r.push(...m.notes);
   if (m.disagree) r.push('a second reading disagrees');
   if (m.low_n) r.push(`${m.low_n} uncertain symbol${m.low_n === 1 ? '' : 's'}`);
   if (m.fixes?.length) r.push('timing was repaired');
@@ -164,11 +182,12 @@ function barReason(m) {
   return r.join(' · ');
 }
 
-function renderBanner(q) {
+function renderBanner(q, pid = null) {
   const b = $('#qualityBanner');
   if (!q) { b.classList.add('hidden'); return; }
-  const flagged = S.meta.filter((m) => m.level !== 'ok').length;
-  const red = S.meta.filter((m) => m.level === 'bad').length;
+  const ms = pid ? S.meta.filter((m) => m.page === pid) : S.meta;
+  const flagged = ms.filter((m) => m.level !== 'ok').length;
+  const red = ms.filter((m) => m.level === 'bad').length;
   const icon = { good: '✓', check: '!', retake: '⚠' }[q.level];
   const title = {
     good: flagged ? `Photo looks good. ${red ? `${red} bar${red > 1 ? 's' : ''} likely wrong (red)` : 'No bars likely wrong'}, ${flagged - red} to glance at (amber).` : 'Photo looks good. Every bar was read with confidence.',
@@ -178,13 +197,15 @@ function renderBanner(q) {
   b.className = 'banner ' + q.level;
   b.innerHTML = `<div class="b-icon">${icon}</div><div class="b-body"><div class="b-title"></div>${q.reasons.length ? '<ul></ul>' : ''}</div>
     <div class="b-actions">${flagged ? `<button class="btn small primary" data-b="fix">✓ Fix it: check ${flagged} bar${flagged > 1 ? 's' : ''}</button>` : ''}${q.level !== 'good' ? '<button class="btn small" data-b="retake">Retake photo</button>' : ''}<button class="btn small ghost" data-b="close">✕</button></div>`;
-  b.querySelector('.b-title').textContent = `${title} (quality ${q.score}/100)`;
+  const pno = pid ? pageNumber(pid) : 0;
+  b.querySelector('.b-title').textContent = `${pno ? `Page ${pno}: ` : ''}${title} (quality ${q.score}/100)`;
   const ul = b.querySelector('ul');
   if (ul) for (const r of q.reasons) { const li = document.createElement('li'); li.textContent = r; ul.appendChild(li); }
   b.onclick = (e) => {
     const a = e.target.closest('[data-b]')?.dataset.b;
     if (a === 'close') b.classList.add('hidden');
     if (a === 'fix') { b.classList.add('hidden'); review.start(); }
+    if (a === 'retake' && pid && pageList().length > 1) { retakePage(pid); return; }
     if (a === 'retake') { audio.stop(); show('viewUpload'); }
   };
 }
@@ -214,8 +235,10 @@ function redraw() {
   updateToolbar();
   updateStatus();
   updateUndoButtons();
-  $('#btnRescan').disabled = !S.job || targetBars().length === 0;
+  $('#btnRescan').disabled = !pageInfo(pageIdOf(targetBars()[0])) || targetBars().length === 0;
   review.afterRedraw();
+  drawPageMarks();
+  drawPageTabs();
 }
 
 function updateUndoButtons() {
@@ -282,6 +305,7 @@ function restore(s) {
   S.meta = JSON.parse(s.meta);
   S.sel = elFromPath(pathOfSel);
   S.selMark = null;
+  syncPages();
   redraw();
   saveLocal();
 }
@@ -1041,36 +1065,51 @@ function stepBar(dir) {
 }
 
 // ---------------------------------------------------------------- photo panel + inspector
-let pageImg = null;
+const pageImgs = {};          // job id -> loaded Image of its cleaned page (for the inspector)
+function pageImgOf(id) {
+  if (!id) return null;
+  if (!pageImgs[id]) { const im = new Image(); im.src = jobFile(id, 'page.png'); im.onload = () => { if (S.focus >= 0 && pageIdOf(S.focus) === id) drawInspector(S.focus); }; pageImgs[id] = im; }
+  return pageImgs[id];
+}
 function setupPhoto() {
   const has = !!S.job;
   $('#btnPhoto').disabled = !has;
-  $('#photoCol').classList.toggle('closed', !has || window.innerWidth < 860 || window.innerHeight < 500);
+  $('#photoCol').classList.toggle('closed', !has || window.innerWidth < 860);
   if (window.innerWidth < 600 && S.zoom === 1) S.zoom = 0.72;
   if (!has) return;
-  pageImg = new Image();
-  pageImg.src = jobFile(S.job, 'page.png');
-  pageImg.onload = () => { if (S.focus >= 0) drawInspector(S.focus); };
+  pageImgOf(S.photoPage || S.job);
   setPhotoKind('page');
 }
 function setPhotoKind(kind) {
   S.photo = kind;
   for (const b of $$('[data-ph]')) b.classList.toggle('on', b.dataset.ph === kind);
-  $('#photoImg').src = jobFile(S.job, kind === 'page' ? 'page.png' : 'original.jpg');
+  const id = S.photoPage || S.job;
+  if (!id) return;
+  $('#photoImg').src = jobFile(id, kind === 'page' ? 'page.png' : 'original.jpg');
   $('#photoSvg').style.display = kind === 'page' ? '' : 'none';
   $('#photoImg').onload = drawPhotoOverlay;
+}
+// show page `id` in the photo panel
+function showPhotoPage(id) {
+  if (!id || !pageInfo(id) || id === S.photoPage) return;
+  S.photoPage = id;
+  pageImgOf(id);
+  $('#photoSvg').innerHTML = '';
+  setPhotoKind(S.photo);
+  drawPageTabs();
 }
 function drawPhotoOverlay() {
   const svg = $('#photoSvg');
   const img = $('#photoImg');
-  if (!S.job || !S.result || !img.naturalWidth) { svg.innerHTML = ''; return; }
-  const [W, H] = S.result.page_size;
+  const pg = pageInfo(S.photoPage);
+  if (!pg?.page_size || !img.naturalWidth) { svg.innerHTML = ''; return; }
+  const [W, H] = pg.page_size;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.setAttribute('width', img.clientWidth);
   svg.setAttribute('height', img.clientHeight);
   svg.innerHTML = '';
   S.meta.forEach((m, mi) => {
-    if (!m.bbox || m.bbox[2] <= m.bbox[0]) return;
+    if (m.page !== S.photoPage || !m.bbox || m.bbox[2] <= m.bbox[0]) return;
     const [x0, y0, x1, y1] = m.bbox;
     const r = document.createElementNS(SVGNS, 'rect');
     const sel = S.measures.has(mi);
@@ -1095,8 +1134,10 @@ function focusBar(mi, scroll) {
 function scrollPhotoTo(mi) {
   const m = S.meta[mi];
   const img = $('#photoImg');
-  if (!m?.bbox || !S.result || !img.clientWidth) return;
-  const k = img.clientWidth / S.result.page_size[0];
+  if (m?.page && m.page !== S.photoPage && pageInfo(m.page)) { showPhotoPage(m.page); img.addEventListener('load', () => scrollPhotoTo(mi), { once: true }); return; }
+  const pg = pageInfo(S.photoPage);
+  if (!m?.bbox || !pg?.page_size || !img.clientWidth) return;
+  const k = img.clientWidth / pg.page_size[0];
   const wrap = $('#photoWrap');
   const y = m.bbox[1] * k - 60;
   if (y < wrap.scrollTop || m.bbox[3] * k > wrap.scrollTop + wrap.clientHeight) wrap.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
@@ -1111,9 +1152,11 @@ function scrollToBar(mi) {
 function hideInspector() { S.focus = -1; $('#inspector').classList.add('hidden'); }
 function drawInspector(mi) {
   const m = S.meta[mi];
-  if (!S.job || !m || !m.bbox || m.bbox[2] <= m.bbox[0] || !pageImg?.complete || !pageImg.naturalWidth) { $('#inspector').classList.add('hidden'); return; }
+  const pid = pageIdOf(mi);
+  const pageImg = pageImgOf(pageInfo(pid) ? pid : null);
+  if (!pageImg || !m || !m.bbox || m.bbox[2] <= m.bbox[0] || !pageImg.complete || !pageImg.naturalWidth) { $('#inspector').classList.add('hidden'); return; }
   $('#inspector').classList.remove('hidden');
-  const sys = (S.result.systems || []).find((s) => s.measures.includes(mi)) || { bbox: m.bbox };
+  const sys = (pageInfo(pid).systems || []).find((s) => s.index === m.system) || { bbox: m.bbox };
   const pad = 40;
   const sx = 0, sw = pageImg.naturalWidth;
   const sy = Math.max(0, Math.min(sys.bbox[1], m.bbox[1]) - pad), sh = Math.min(pageImg.naturalHeight - sy, Math.max(sys.bbox[3], m.bbox[3]) - sy + pad);
@@ -1131,7 +1174,7 @@ function drawInspector(mi) {
   g.fillStyle = col; g.globalAlpha = 0.6;
   for (const b of m.low || []) g.fillRect(b[0], b[3] - sy + 2, Math.max(4, b[2] - b[0]), 3 / scale);
   g.globalAlpha = 1;
-  $('#inspTitle').textContent = `Bar ${barNumber(mi)} in your photo`;
+  $('#inspTitle').textContent = `Bar ${barNumber(mi)} in your photo${pageList().length > 1 ? ` (page ${pageNumber(pid)})` : ''}`;
   const why = barReason(m);
   $('#inspConf').textContent = why[0].toUpperCase() + why.slice(1) + (m.low_n ? ' (underlined)' : '');
 }
@@ -1176,23 +1219,29 @@ function subScoreXML(score, idxs) {
 }
 
 async function rescan(attempt = 0, file = null) {
-  const bars = targetBars();
+  let bars = targetBars();
   if (!bars.length) { toast('Select a bar first'); return; }
-  if (!S.job) { toast('Rescan needs a photo; this score was opened from a file'); return; }
+  // a rescan re-reads rows of one photo: the page of the first selected bar
+  const pid = pageIdOf(bars[0]);
+  if (!pageInfo(pid)) { toast('Rescan needs a photo; this score was opened from a file'); return; }
+  const onPage = bars.filter((mi) => pageIdOf(mi) === pid);
+  if (onPage.length < bars.length) toast(`Rescanning the bars on page ${pageNumber(pid)} only`);
+  bars = onPage;
+  const base = pageStart(pid);
   const card = $('#modalCard');
   $('#modal').classList.remove('hidden');
   card.innerHTML = `<h2>Rescanning</h2><p><span class="spinner"></span>Re-reading the row${bars.length > 1 ? 's' : ''} holding bar ${barNumber(bars[0])}${bars.length > 1 ? '–' + barNumber(bars[bars.length - 1]) : ''}${file ? ' from your close-up' : ''}…</p>`;
   const fd = new FormData();
-  fd.append('measures', bars.join(','));
+  fd.append('measures', bars.map((mi) => mi - base).join(','));
   fd.append('attempt', String(attempt));
   // the layout, key, time and clefs in force where the re-read rows start, as edited so far
   const sys = S.meta[bars[0]]?.system;
-  const rowStart = sys === undefined ? bars[0] : Math.max(0, S.meta.findIndex((m) => m.system === sys));
+  const rowStart = sys === undefined ? bars[0] : Math.max(0, S.meta.findIndex((m) => m.page === pid && m.system === sys));
   fd.append('context', JSON.stringify(rescanContext(S.score, rowStart)));
   if (file) fd.append('file', file, file.name);
   let res;
   try {
-    const r = await api(`api/jobs/${S.job}/rescan`, { method: 'POST', body: fd });
+    const r = await api(`api/jobs/${pid}/rescan`, { method: 'POST', body: fd });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
     res = await r.json();
   } catch (e) {
@@ -1201,7 +1250,7 @@ async function rescan(attempt = 0, file = null) {
     card.onclick = (ev) => { if (ev.target.dataset.m === 'close') closeModal(); };
     return;
   }
-  const target = res.target;
+  const target = res.target.map((t) => t + base).filter((t) => t < S.score.nMeasures);
   let fresh;
   try { fresh = new Score(res.xml); } catch (e) { fresh = null; }
   const oldN = target.length, newN = fresh ? fresh.nMeasures : 0;
@@ -1229,7 +1278,7 @@ async function rescan(attempt = 0, file = null) {
       edit(() => {
         S.score.spliceMeasures(target, fresh);
         const box = (i) => S.meta[target[Math.min(i, target.length - 1)]]?.bbox;
-        const newMeta = res.measures.map((m, i) => ({ ...m, system: S.meta[target[0]]?.system ?? m.system, bbox: box(i), boxes: [], low: [] }));
+        const newMeta = res.measures.map((m, i) => ({ ...m, page: pid, system: S.meta[target[0]]?.system ?? m.system, bbox: box(i), boxes: [], low: [] }));
         S.meta.splice(target[0], target.length, ...newMeta);
       });
       S.sel = null;
@@ -1578,6 +1627,280 @@ function noteIcon(type) {
   return `<svg width="20" height="22" viewBox="0 0 20 22" aria-hidden="true"><ellipse cx="7.4" cy="17.4" rx="4.4" ry="3.1" transform="rotate(-20 7.4 17.4)" fill="${filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5"/>${stem}${f}</svg>`;
 }
 
+// ---------------------------------------------------------------- multi-page scores
+// Each page is its own reading (job); its bars are appended to the one score, so editing, playback and export cover
+// the whole piece. meta[mi].page says which page (job) bar mi came from; the bar order gives the page order.
+function pageRec(job, res, name) {
+  return { job, name: name || '', page_size: res.page_size, systems: res.systems, quality: res.quality, pdf_page: res.pdf_page ?? null, second_opinion: res.second_opinion };
+}
+const pageInfo = (id) => (id && S.pages[id]) || null;
+const pageIdOf = (mi) => (mi == null ? null : S.meta[mi]?.page ?? S.job);
+const pageList = () => (S.score ? pageRanges(S.meta, S.score.nMeasures, S.job) : []);
+const pageNumber = (id) => pageList().findIndex((r) => r.id === id) + 1;
+const pageStart = (id) => Math.max(0, pageList().find((r) => r.id === id)?.lo ?? 0);
+const blankMeta = (page = null) => ({ level: 'ok', low_n: 0, low: [], boxes: [], bbox: null, page });
+let pageQueue = Promise.resolve();
+let scoreSession = 0;            // bumps when another score is opened: pages still being read are then dropped
+
+// after page edits: the first page with a photo is the score's "own" job, and the photo panel shows a real page
+function syncPages() {
+  const list = pageList();
+  const firstPhoto = list.find((r) => pageInfo(r.id));
+  if (firstPhoto) S.job = firstPhoto.id;
+  if (!list.some((r) => r.id === S.photoPage) && firstPhoto) { S.photoPage = null; showPhotoPage(firstPhoto.id); }
+}
+function markPages() { S.score.markPages(pageList().map((r) => r.lo)); }
+
+function setReading(text) {
+  let el = $('#pageReading');
+  if (!text) { el?.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'pageReading';
+    el.className = 'page-reading';
+    el.innerHTML = '<span class="spinner"></span><span class="t"></span>';
+    document.body.appendChild(el);
+  }
+  el.querySelector('.t').textContent = text;
+}
+
+/** Read `file` and add it to the end of the score: a photo is one page, a PDF adds its pages from `from` on. */
+function addPages(file, opts = {}) {
+  const session = scoreSession;
+  pageQueue = pageQueue.then(() => readMorePages(file, opts, session)).catch((e) => { setReading(null); toast('Could not add the page: ' + e.message, 5000); });
+  return pageQueue;
+}
+async function readMorePages(file, { from = 0, total = null }, session) {
+  if (session !== scoreSession || !S.score) return;
+  const isPdf = /\.pdf$/i.test(file.name || '') || file.type === 'application/pdf';
+  let n = total ?? 1;
+  for (let k = from; k < n; k++) {
+    const label = isPdf && total ? `page ${k + 1} of ${n}` : `page ${pageList().length + 1}`;
+    setReading(`Reading ${label}…`);
+    const fd = new FormData();
+    fd.append('file', file, file.name || 'page.jpg');
+    fd.append('detector', $('#optFast').checked ? '2m' : '28m');
+    if (isPdf) fd.append('page', String(k));
+    // key, time, clefs and the part layout in force at the end of the score so far carry onto the new page
+    fd.append('context', JSON.stringify(S.score.endContext()));
+    const t0 = Date.now();
+    const { id, result, pages } = await readPage(fd, (st) => setReading(`Reading ${label}: ${st.toLowerCase()}… ${Math.round((Date.now() - t0) / 1000)} s`));
+    if (session !== scoreSession) { setReading(null); return; }
+    if (isPdf && total == null) n = pages;
+    appendPage(id, result, isPdf ? `${file.name} p${k + 1}` : file.name);
+  }
+  setReading(null);
+}
+function appendPage(id, res, name) {
+  if (!res.stats?.measures) { toast(`No music was found on ${name || 'that page'}, so it was not added.`, 4000); return; }
+  let fresh;
+  try { fresh = new Score(res.xml); } catch (e) { toast('Could not read that page: ' + e.message); return; }
+  S.pages[id] = pageRec(id, res, name);
+  const lo = S.score.nMeasures;
+  let dropped = 0;
+  edit(() => {
+    if (S.meta.length < lo) S.meta.push(...Array.from({ length: lo - S.meta.length }, () => blankMeta()));
+    S.meta.length = lo;
+    ({ dropped } = S.score.appendScore(fresh));
+    const add = S.score.nMeasures - lo;
+    const ms = res.measures.slice(0, add).map((m) => ({ ...m, page: id }));
+    while (ms.length < add) ms.push(blankMeta(id));
+    S.meta.push(...ms);
+    markPages();
+  });
+  const hadPhoto = !!S.job && !!pageInfo(S.job);
+  syncPages();
+  if (!hadPhoto) setupPhoto();
+  const no = pageNumber(id);
+  const hi = S.score.nMeasures - 1;
+  if (res.quality && res.quality.level !== 'good') renderBanner(res.quality, id);
+  toast(`Added page ${no}: bars ${barNumber(lo)}–${barNumber(hi)}${dropped ? `. That page had ${dropped} more part${dropped > 1 ? 's' : ''} than the score; ${dropped > 1 ? 'they were' : 'it was'} left out` : ''}.`, 3600);
+  if (photoOpen()) showPhotoPage(id);
+}
+
+function movePage(id, dir) {
+  const list = pageList();
+  const i = list.findIndex((r) => r.id === id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= list.length) return;
+  const r = list[i];
+  const dest = dir < 0 ? list[j].lo : list[j].hi + 1;
+  edit(() => {
+    S.score.moveBars(r.lo, r.hi, dest);
+    const block = S.meta.splice(r.lo, r.hi - r.lo + 1);
+    const at = dir < 0 ? dest : dest - block.length;
+    S.meta.splice(at, 0, ...block);
+    markPages();
+  });
+  S.measures = new Set(); S.sel = null;
+  syncPages();
+  redraw();
+}
+function removePage(id) {
+  const list = pageList();
+  const r = list.find((x) => x.id === id);
+  if (!r) return;
+  if (list.length < 2) { toast('A score needs at least one page'); return; }
+  edit(() => {
+    S.score.deleteBars(r.lo, r.hi);
+    S.meta.splice(r.lo, r.hi - r.lo + 1);
+    markPages();
+  });
+  S.measures = new Set(); S.sel = null;
+  syncPages();
+  redraw();
+  toast(`Removed page ${list.indexOf(r) + 1}. Undo brings it back.`);
+}
+// read a new photo of page `id` and put it in that page's place
+function retakePage(id, file = null) {
+  if (!file) { pickFile((f) => retakePage(id, f), 'image/*,.heic,.heif'); return; }
+  const session = scoreSession;
+  pageQueue = pageQueue.then(async () => {
+    const r0 = pageList().find((x) => x.id === id);
+    if (!r0) return;
+    const no = pageNumber(id);
+    setReading(`Reading the new photo of page ${no}…`);
+    const fd = new FormData();
+    fd.append('file', file, file.name || 'page.jpg');
+    fd.append('detector', $('#optFast').checked ? '2m' : '28m');
+    fd.append('context', JSON.stringify(rescanContext(S.score, r0.lo)));
+    const { id: nid, result } = await readPage(fd, (st) => setReading(`Page ${no}: ${st.toLowerCase()}…`));
+    setReading(null);
+    if (session !== scoreSession) return;
+    const r = pageList().find((x) => x.id === id);
+    if (!r || !result.stats?.measures) { toast('No music was found in that photo; the page was kept.'); return; }
+    const fresh = new Score(result.xml);
+    S.pages[nid] = pageRec(nid, result, file.name);
+    edit(() => {
+      const targets = Array.from({ length: r.hi - r.lo + 1 }, (_, i) => r.lo + i);
+      S.score.spliceMeasures(targets, fresh);
+      const ms = result.measures.slice(0, fresh.nMeasures).map((m) => ({ ...m, page: nid }));
+      while (ms.length < fresh.nMeasures) ms.push(blankMeta(nid));
+      S.meta.splice(r.lo, targets.length, ...ms);
+      markPages();
+    });
+    syncPages();
+    if (S.photoPage === id) { S.photoPage = null; showPhotoPage(nid); }
+    renderBanner(result.quality, nid);
+    toast(`Page ${no} was read again from the new photo. Undo puts the old reading back.`, 3600);
+  }).catch((e) => { setReading(null); toast('Could not read the new photo: ' + e.message, 5000); });
+}
+function pickFile(onFile, accept = 'image/*,.heic,.heif,.pdf', capture = false) {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = accept;
+  if (capture) inp.setAttribute('capture', 'environment');
+  inp.onchange = () => { const f = inp.files[0]; if (f) onFile(f); };
+  inp.click();
+}
+// "add a page" from the camera: the iOS document camera (any number of pages) or the browser's camera
+async function addFromCamera() {
+  if (native.isNative) {
+    try {
+      const f = await native.scanDocument();
+      if (!f) return;
+      addPages(f);
+      for (const m of f.more || []) addPages(m);
+    } catch (e) { toast(e.message); }
+    return;
+  }
+  pickFile((f) => addPages(f), 'image/*', true);
+}
+
+// the page tabs over the photo: 1 2 3 … and + to add one
+function drawPageTabs() {
+  const box = $('#pageTabs');
+  if (!box) return;
+  const list = pageList();
+  box.innerHTML = '';
+  if (!S.score) return;
+  if (list.length > 1) list.forEach((r, i) => {
+    const b = document.createElement('button');
+    b.textContent = String(i + 1);
+    b.title = `Page ${i + 1}: bars ${barNumber(r.lo)}–${barNumber(r.hi)}`;
+    b.disabled = !pageInfo(r.id);
+    const bad = S.meta.slice(r.lo, r.hi + 1).some((m) => m.level === 'bad');
+    b.className = (r.id === S.photoPage ? 'on ' : '') + (bad ? 'flag' : '');
+    b.onclick = () => { showPhotoPage(r.id); scrollToBar(r.lo); };
+    box.appendChild(b);
+  });
+  const add = document.createElement('button');
+  add.className = 'add';
+  add.textContent = '+ Page';
+  add.title = 'Add the next page (a photo or a PDF)';
+  add.onclick = () => pagesDialog();
+  box.appendChild(add);
+}
+// "Page 2" over the first bar of every page after the first
+function drawPageMarks() {
+  clearOverlay('pagemark');
+  const list = pageList();
+  if (list.length < 2 || !S.layout) return;
+  list.forEach((r, i) => {
+    if (i === 0) return;
+    const m = S.layout.measures[r.lo];
+    if (!m) return;
+    // a small tag at the right end of the line the page starts on (bar numbers sit at the left of each bar)
+    const g = document.createElementNS(SVGNS, 'g');
+    g.setAttribute('class', 'pagemark');
+    const x1 = S.layout.width - 6, w = 52;
+    const bg = document.createElementNS(SVGNS, 'rect');
+    Object.entries({ x: x1 - w, y: m.y0 - 2, width: w, height: 18, rx: 9, fill: '#e2e8f0' }).forEach(([k, v]) => bg.setAttribute(k, v));
+    const t = document.createElementNS(SVGNS, 'text');
+    Object.entries({ x: x1 - w / 2, y: m.y0 + 11, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 600, fill: '#475569' }).forEach(([k, v]) => t.setAttribute(k, v));
+    t.textContent = `Page ${i + 1}`;
+    g.append(bg, t);
+    $('#overlay').appendChild(g);
+  });
+}
+
+// the page manager: thumbnails in order, move up/down, retake, remove, add photos or a PDF
+function pagesDialog() {
+  const card = $('#modalCard');
+  $('#modal').classList.remove('hidden');
+  const draw = () => {
+    const list = pageList();
+    const rows = list.map((r, i) => {
+      const pg = pageInfo(r.id);
+      const ms = S.meta.slice(r.lo, r.hi + 1);
+      const red = ms.filter((m) => m.level === 'bad').length, amber = ms.filter((m) => m.level === 'check').length;
+      const flags = red || amber ? ` · ${red ? `${red} likely wrong` : ''}${red && amber ? ', ' : ''}${amber ? `${amber} to check` : ''}` : '';
+      return `<div class="page-row" data-id="${r.id ?? ''}">
+        <div class="page-thumb">${pg ? `<img alt="" src="${jobFile(r.id, 'page.png')}">` : '<span>♪</span>'}</div>
+        <div class="page-info"><b>Page ${i + 1}</b><span class="muted">Bars ${barNumber(r.lo)}–${barNumber(r.hi)}${flags}${pg?.quality ? ` · photo ${pg.quality.score}/100` : ''}</span></div>
+        <div class="page-btns">
+          <button class="btn icon" data-pg="up" title="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button class="btn icon" data-pg="down" title="Move down" ${i === list.length - 1 ? 'disabled' : ''}>↓</button>
+          ${pg ? '<button class="btn" data-pg="retake" title="Read this page again from a new photo">Retake</button>' : ''}
+          <button class="btn icon" data-pg="remove" title="Remove this page" ${list.length < 2 ? 'disabled' : ''}>✕</button>
+        </div></div>`;
+    }).join('');
+    card.innerHTML = `<h2>Pages</h2>
+      <p class="muted">Add the pages one at a time, in order, or a whole PDF. Bars are numbered straight through, and the key, time signature and clefs carry over from one page to the next. Playback and export cover every page.</p>
+      <div class="page-list">${rows}</div>
+      <div class="modal-actions">
+        <button class="btn" data-pg="file">＋ Add a photo or PDF</button>
+        <button class="btn" data-pg="camera">📷 ${native.isNative ? 'Scan pages' : 'Take a photo'}</button>
+        <button class="btn primary" data-pg="close">Done</button>
+      </div>`;
+  };
+  draw();
+  card.onclick = (ev) => {
+    const b = ev.target.closest('[data-pg]');
+    if (!b || b.disabled) return;
+    const a = b.dataset.pg;
+    const row = b.closest('.page-row');
+    const id = row ? (row.dataset.id || null) : null;
+    if (a === 'close') { closeModal(); return; }
+    if (a === 'file') { closeModal(); pickFile((f) => addPages(f)); return; }
+    if (a === 'camera') { closeModal(); addFromCamera(); return; }
+    if (a === 'retake') { closeModal(); retakePage(id); return; }
+    if (a === 'up' || a === 'down') movePage(id, a === 'up' ? -1 : 1);
+    if (a === 'remove') removePage(id);
+    draw();
+  };
+}
+
 // ---------------------------------------------------------------- wiring
 function wire() {
   const drop = $('#drop');
@@ -1597,8 +1920,9 @@ function wire() {
       try {
         const f = await native.scanDocument();
         if (!f) return;
-        startUpload(f);
-        if (f.pages > 1) toast(`Reading the first of ${f.pages} pages. Multi-page scores are coming later.`, 4000);
+        await startUpload(f);
+        // the other pages of a multi-page scan are read after the first and added in order
+        if (S.score && f.more?.length) for (const m of f.more) addPages(m);
       } catch (err) { toast(err.message); }
     });
     const srv = document.createElement('button');
@@ -1650,6 +1974,7 @@ function wire() {
   $('#marksMenu').onclick = (e) => { e.stopPropagation(); const b = e.target.closest('button[data-mk]'); if (b && !b.disabled) markAction(b.dataset.mk, b.dataset.v); };
   $('#btnRescan').onclick = () => rescan(0);
   $('#btnKeyTime').onclick = keyTimeDialog;
+  $('#btnPages').onclick = pagesDialog;
   $('#inspRescan').onclick = () => { if (S.focus >= 0 && !S.measures.has(S.focus)) S.measures = new Set([S.focus]); rescan(0); };
   $('#inspClose').onclick = hideInspector;
   $('#btnPhoto').onclick = () => { $('#photoCol').classList.toggle('closed'); setTimeout(() => { redraw(); if (S.focus >= 0) focusBar(S.focus, false); }, 0); };
@@ -1728,7 +2053,7 @@ function loadResume() {
   b.onclick = () => {
     S.name = last.name || 'score';
     S.result = last.result ? { ...last.result, xml: last.xml } : null;
-    try { openScore(last.xml, last.meta, last.result?.quality, last.job); } catch (e) { toast(e.message); }
+    try { openScore(last.xml, last.meta, last.result?.quality, last.job, last.pages); } catch (e) { toast(e.message); }
   };
   $('.upload-row').appendChild(b);
 }
@@ -1741,7 +2066,7 @@ var PAD = createPad(NI, { S, setDur });
 
 wire();
 review.initReview({
-  S, redraw, edit, toast, setMode, scrollToBar, scrollPhotoTo, rescan, stopPlay, drawCursor, clearOverlay, barNumber, barReason, subScoreXML,
+  S, redraw, edit, toast, setMode, scrollToBar, scrollPhotoTo, rescan, pageOf: (mi) => pageInfo(pageIdOf(mi)), stopPlay, drawCursor, clearOverlay, barNumber, barReason, subScoreXML,
   haptic: native.haptic,
   // one bar at a time: the practice tempo, instruments and mutes, but no count-in, click or speed-up
   playEvents: () => { const pe = S.score.playEvents(); for (const e of pe.events) e.track = practice.trackOf(e); return pe; },
