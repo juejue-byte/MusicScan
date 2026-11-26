@@ -596,3 +596,13 @@ body.playing .practice-pop { z-index: 46; }
   .pb-t { height: 40px; padding: 0 10px; }
 }
 @media (max-height: 500px) { .pbar { bottom: max(8px, env(safe-area-inset-bottom)); padding: 6px 10px; } .pb-stop { width: 42px; height: 42px; } .pb-t { height: 38px; } }
+
+/* header on phones: Export becomes an icon and the buttons pack tighter, so the page never gets wider than the screen */
+#btnExport .xi { display: none; }
+@media (max-width: 600px) {
+  #btnExport { width: 40px; padding: 0; justify-content: center; }
+  #btnExport .xi { display: block; }
+  #btnExport .xl { display: none; }
+  .top-actions { gap: 4px; }
+  .top .btn.icon, .top .btn.play { width: 40px; min-width: 40px; }
+}

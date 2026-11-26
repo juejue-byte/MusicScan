@@ -26,7 +26,7 @@
     <button class="btn icon practice" id="btnPractice" title="Practice: tempo, count-in, click, parts" aria-label="Practice settings" aria-expanded="false" disabled><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button>
     <label class="tempo" title="Tempo (beats per minute)"><span>♩=</span><input id="tempo" type="number" min="30" max="240" value="90"></label>
     <div class="menu">
-      <button class="btn" id="btnExport" disabled>Export ▾</button>
+      <button class="btn" id="btnExport" aria-label="Export" disabled><svg class="xi" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 14v6h14v-6"/></svg><span class="xl">Export ▾</span></button>
       <div class="menu-pop" id="exportMenu">
         <button data-x="xml">MusicXML (.musicxml)</button>
         <button data-x="mid">MIDI (.mid)</button>
