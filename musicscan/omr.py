@@ -318,7 +318,7 @@ def add_bar_signs(xml: str, signs: list) -> str:
 # 15% of the time), so it only marks bars when there is no usable second reading.
 # Result: 80% of wrong bars marked, half of the marks are real errors, 16% of all bars marked (was 28%).
 CHECK_BELOW, BAD_BELOW = 0.85, 0.5
-RED_DISAGREE = {"missed", "differs"}
+RED_DISAGREE = {"missed", "differs", "main_short"}
 AMBER_DISAGREE = {"rests"}
 
 
@@ -358,6 +358,37 @@ def disagreement(xml: str, other: str) -> dict[int, str] | None:
         only_b = sum(1 for e in (B - A).elements() if e[0] != "r")
         out[mi] = ("rests" if only_a == only_b == 0 else "missed" if only_a == 0 else
                    "small_missed" if only_b == 0 else "differs")
+    return out
+
+
+def bars_add_up(xml: str) -> list[bool] | None:
+    """For each bar: does every voice run without a gap or overlap from the downbeat to the end of the bar, as the
+    time signature says? A reading whose bar doesn't add up has lost or misread a note or rest there."""
+    from lxml import etree
+    from .sanitize import _strip_ns, read_part
+    try:
+        root = _strip_ns(etree.fromstring(xml.encode()))
+    except etree.XMLSyntaxError:
+        return None
+    out = None
+    for part in root.findall("part"):
+        bars, _ = read_part(part)
+        ok = []
+        for b in bars:
+            good = True
+            voices = {}
+            for ev in b.events:
+                voices.setdefault((ev.staff, ev.voice), []).append(ev)
+            for evs in voices.values():
+                t = 0
+                for ev in sorted(evs, key=lambda e: e.onset):
+                    if ev.onset != t:
+                        good = False
+                    t = ev.end
+                if t != b.length:
+                    good = False
+            ok.append(good)
+        out = ok if out is None else [x and y for x, y in zip(out, ok)]
     return out
 
 
@@ -432,28 +463,58 @@ def adopt_bars(xml: str, other: str, bars: set[int]) -> tuple[str, set[int]]:
     return head + etree.tostring(ra, encoding="unicode"), done
 
 
+def reconcile(xml: str, other: str):
+    """Line the two readings up bar by bar and settle what can be settled. Returns (xml, {bar: kind}, bars taken
+    from the second reading), or None when the two have a different number of bars. Calibrated on the benchmark
+    (28 pieces x 6 photo conditions, which reading matched the original):
+      second has notes the main lacks, nothing else differs      second right 84%, main 4%  -> take the second's
+      only rests differ, the main's bar doesn't add up, the second's does   second 21 of 22  -> take the second's
+      notes differ (or rests), the main's bar adds up and the second's doesn't   main right 92%  -> not marked
+      the small model lacks notes but the main's bar doesn't add up   main wrong 81%  -> red ("main_short")"""
+    dis = disagreement(xml, other)
+    if dis is None:
+        return None
+    xml, filled = adopt_bars(xml, other, {i for i, t in dis.items() if t == "missed"})
+    fm, fs = bars_add_up(xml), bars_add_up(other)
+    if fm is None or fs is None or len(fm) != len(fs):
+        return xml, {i: t for i, t in dis.items() if i not in filled}, filled
+    take = {i for i, t in dis.items() if t == "rests" and i not in filled and i < len(fm) and not fm[i] and fs[i]}
+    xml, more = adopt_bars(xml, other, take)
+    filled |= more
+    out = {}
+    for i, t in dis.items():
+        if i in filled or i >= len(fm):
+            continue
+        if t in ("differs", "rests") and fm[i] and not fs[i]:
+            t = "second_short"
+        elif t == "small_missed" and not fm[i]:
+            t = "main_short"
+        out[i] = t
+    return xml, out, filled
+
+
 def second_opinion(r: dict, im: Image.Image) -> dict:
     """Read the page again with the small detector and mark the bars where the two readings differ. Two different
     models rarely make the same mistake, so a disagreement points at a likely error, including notes the big model
     missed with full confidence. Adds a few seconds per page."""
     try:
         other = transcribe(im, detector="2m" if r.get("detector") != "2m" else "28m")
-        dis = disagreement(r["xml"], other["xml"])
+        rc = reconcile(r["xml"], other["xml"])
     except Exception:
         return r
-    if dis is None:                      # the two readings found a different number of bars: can't line them up
+    if rc is None:                       # the two readings found a different number of bars: can't line them up
         r["second_opinion"] = {"aligned": False}
         return r
-    # where the second reading only adds notes, it is nearly always right: take its notes. Such a bar is then wrong
-    # about as often (16%) as an unmarked bar read with middling confidence (15%), so it gets no mark of its own.
-    r["xml"], filled = adopt_bars(r["xml"], other["xml"], {i for i, t in dis.items() if t == "missed"})
+    # bars taken from the second reading are then wrong about as often (16%) as an unmarked bar read with middling
+    # confidence (15%), so they get no mark of their own
+    r["xml"], dis, filled = rc
     n = 0
     for i, m in enumerate(r["measures"]):
         if i in filled:
             m["filled"] = True
         elif i in dis:
             m["disagree"] = dis[i]
-            n += dis[i] != "small_missed"
+            n += level({"n": 0, "min": 1, "disagree": dis[i]}, True) == "bad"
         m["level"] = level(m, second_reading=True)
     # keep the second reading so the editor can offer it bar by bar ("Use second reading" in Fix it); bar k of it
     # lines up with measure index k of this reading (before any sanitizer split)

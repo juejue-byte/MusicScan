@@ -29,7 +29,7 @@ def reading(d: Path, pid: str, cond: str, mode: str):
     reading is saved (bench/results/pred2m), the notes it adds filled in. Returns (xml, disagreement, filled bars),
     or None when the file is missing. Older result files predate these steps, so they are applied here."""
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from musicscan.omr import adopt_bars, disagreement, fix_pickup, restore_bar_rests
+    from musicscan.omr import fix_pickup, reconcile, restore_bar_rests
     f = d / "pred" / f"{pid}__{cond}__{mode}.musicxml"
     if not f.exists():
         return None
@@ -37,11 +37,9 @@ def reading(d: Path, pid: str, cond: str, mode: str):
     x, dis, filled = prep(f.read_text()), None, set()
     f2 = d / "pred2m" / f"{pid}__{cond}.musicxml"
     if mode == "musicscan" and f2.exists():
-        y = prep(f2.read_text())
-        dis = disagreement(x, y)
-        if dis:
-            x, filled = adopt_bars(x, y, {i for i, t in dis.items() if t == "missed"})
-            dis = {i: t for i, t in dis.items() if i not in filled}
+        rc = reconcile(x, prep(f2.read_text()))
+        if rc:
+            x, dis, filled = rc
     return x, dis, filled
 
 
