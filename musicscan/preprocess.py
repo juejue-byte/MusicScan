@@ -57,13 +57,27 @@ def warp_page(rgb: np.ndarray, quad: np.ndarray) -> np.ndarray:
 
 
 def pen_mask(rgb: np.ndarray) -> np.ndarray:
-    """Pixels of colored ink (red/blue/green pen, highlighter): saturated well above the paper and not dark."""
-    hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
-    s, v = hsv[..., 1].astype(np.int16), hsv[..., 2].astype(np.int16)
-    sel = s[v >= np.percentile(v, 50)]
-    bg_s = int(np.median(sel)) if sel.size else 0
-    m = (s > max(70, bg_s + 45)) & (v > 60)
-    m = cv2.dilate(m.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+    """Pixels of colored ink (red/blue/green pen, highlighter).
+
+    Works in Lab color: printed ink is black, so every ink pixel - including the soft edges of thin barlines and
+    stems - is a mix of black and paper, and its color (a*, b*) lies on the line from neutral to the paper's own
+    tint. On cream or yellowed paper those edges look "saturated" in HSV, which used to erase barlines. Pen and
+    highlighter sit off that line (a different hue) or far beyond it (much stronger than the paper's tint)."""
+    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
+    L, ab = lab[..., 0] * (100 / 255), lab[..., 1:] - 128
+    bright = L >= np.percentile(L, 60)
+    paper = np.median(ab[bright], axis=0) if bright.any() else np.zeros(2, np.float32)
+    n = float(np.hypot(*paper))
+    if n > 1:
+        u = paper / n
+        along = ab @ u                                   # how much of the paper's tint
+        perp = np.abs(ab @ np.array([-u[1], u[0]], np.float32))
+    else:
+        along = np.zeros(L.shape, np.float32)
+        perp = np.hypot(ab[..., 0], ab[..., 1])
+    m = ((perp > 9) | (along > n + 30)) & (L > 6)
+    m = cv2.morphologyEx(m.astype(np.uint8), cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))   # lone noisy pixels
+    m = cv2.dilate(m, np.ones((3, 3), np.uint8)) > 0
     return m
 
 
