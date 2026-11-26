@@ -10,3 +10,4 @@ bench/results/pred/
 node_modules/
 .DS_Store
 .venv.old.*/
+bench/sheetly_out/
