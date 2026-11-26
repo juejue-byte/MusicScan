@@ -1285,6 +1285,9 @@ wire();
 review.initReview({
   S, redraw, edit, toast, setMode, scrollToBar, scrollPhotoTo, rescan, stopPlay, drawCursor, clearOverlay, barNumber, barReason, subScoreXML,
   haptic: native.haptic,
+  // one bar at a time: the practice tempo, instruments and mutes, but no count-in, click or speed-up
+  playEvents: () => { const pe = S.score.playEvents(); for (const e of pe.events) e.track = practice.trackOf(e); return pe; },
+  playOptions: () => ({ ...practice.playOptions(false), countIn: 0, metronome: false, speedUp: null, onCount: () => {} }),
   showPhoto: (mi) => { if (!S.job) return; $('#photoCol').classList.remove('closed'); setTimeout(() => { redraw(); scrollPhotoTo(mi); }, 0); },
 });
 loadSamples();

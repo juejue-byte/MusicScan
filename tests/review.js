@@ -69,6 +69,23 @@ function serve() {
   s = await st();
   ok(s.cur === first, 'prev did not come back');
 
+  // 2b. Play bar plays only this bar, with no count-in or click even when practice turns them on
+  const play = await p.evaluate(async () => {
+    const ms = window.__ms;
+    if (ms.practice?.state) { ms.practice.state.countIn = 1; ms.practice.state.metronome = true; }
+    ms.audio.debug.log = [];
+    document.querySelector('#rvPlay').click();
+    await new Promise((r) => setTimeout(r, 2500));
+    const log = ms.audio.debug.log || [];
+    const pe = ms.S.score.playEvents();
+    const mi = window.__msReview.state.cur;
+    const want = pe.events.filter((e) => e.measure === mi).length;
+    return { notes: log.filter((x) => x.midi).length, clicks: log.filter((x) => x.click && x.on).length, want };
+  });
+  ok(play.notes > 0 && play.notes <= play.want, `Play bar scheduled ${play.notes} notes (bar has ${play.want})`);
+  ok(play.clicks === 0, `Play bar should not count in or click (${play.clicks})`);
+  await p.evaluate(() => { const ms = window.__ms; if (ms.practice?.state) { ms.practice.state.countIn = 0; ms.practice.state.metronome = false; } ms.audio.stop(); });
+
   // 3. accept with a tap: marked checked, moves to the next open flag, undoable
   await tap('#rvAccept');
   s = await st();

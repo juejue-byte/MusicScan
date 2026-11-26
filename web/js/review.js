@@ -161,10 +161,10 @@ function playBar() {
   if (!S.score || mi < 0) return;
   A.stopPlay();
   const bpm = Math.max(30, Math.min(240, +$('#tempo').value || 90));
-  const btn = $('#rvPlay');
-  btn?.classList.add('on');
-  audio.play(S.score.playEvents(), {
-    bpm, fromMeasure: mi, toMeasure: mi,
+  $('#rvPlay')?.classList.add('on');
+  const pe = A.playEvents ? A.playEvents() : S.score.playEvents();
+  audio.play(pe, {
+    bpm, ...(A.playOptions ? A.playOptions() : {}), fromMeasure: mi, toMeasure: mi, loop: false,
     onMeasure: (m) => A.drawCursor(m),
     onEnd: () => { A.clearOverlay('cursor'); $('#rvPlay')?.classList.remove('on'); },
   }).catch(() => {});
@@ -331,7 +331,7 @@ function onKey(e) {
 
 /**
  * hooks: { S, redraw, edit, toast, setMode, scrollToBar, scrollPhotoTo, rescan, stopPlay, drawCursor, clearOverlay,
- *          barNumber, barReason, subScoreXML, haptic }
+ *          barNumber, barReason, subScoreXML, haptic, showPhoto, playEvents?, playOptions? }
  */
 export function initReview(hooks) {
   A = hooks;
