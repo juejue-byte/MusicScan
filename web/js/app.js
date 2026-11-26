@@ -1,4 +1,5 @@
 // MusicScan web app: upload -> transcribe -> edit on the staff -> play -> export.
+import * as capture from './capture.js';
 import { Score, pitchName, midiOf, clefTop, toMidi } from './score.js';
 import './edits.js';
 import { DYNAMICS, WORDS } from './markup.js';
@@ -2003,6 +2004,14 @@ function wire() {
   const drop = $('#drop');
   $('#fileInput').onchange = (e) => startUpload(e.target.files[0]);
   $('#cameraInput').onchange = (e) => startUpload(e.target.files[0]);
+  // live photo check (web/js/capture.js) where the browser can show the camera; the iOS app keeps Apple's scanner
+  if (!native.isNative && capture.available()) {
+    $('#cameraInput').closest('label').addEventListener('click', (e) => {
+      if (e.target.id === 'cameraInput') return; // the system-camera fallback clicks the input itself
+      e.preventDefault();
+      capture.open({ shot: (file) => startUpload(file), fallback: () => $('#cameraInput').click() });
+    });
+  }
   // phones and tablets can't drop files: say what a tap does instead
   if (matchMedia('(pointer: coarse)').matches) {
     $('.drop-main').textContent = 'Choose a photo or PDF';
