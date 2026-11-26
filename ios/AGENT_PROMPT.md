@@ -6,7 +6,9 @@ Paste everything below the line into Claude Code, started on your Mac in the rep
 
 You are continuing development of **MusicScan**, an app that turns photos of printed sheet music into an editable,
 playable score (MusicXML / MIDI). Repo: https://github.com/juejue-byte/MusicScan (you are in its root folder on my
-Mac). The web MVP works; your job is the iOS app in `ios/`, which has been written but **never compiled**. The person
+Mac). The web MVP works; your job is the iOS app in `ios/`, which has been written but **never compiled**.
+**The app is iPad-first** (scores need the wider screen): landscape, portrait and Split View on iPad are the main
+targets, with Apple Pencil and hardware keyboard support; iPhone is secondary but must keep working. The person
 you work for is Allen; he wants a polished MVP, with upload, edit, play and preview that feel nice, and note dragging
 that feels intuitive on a phone.
 
@@ -16,7 +18,9 @@ that feels intuitive on a phone.
 3. `ios/MusicScan/*.swift`: the app (~440 lines). `EditorWebView.swift` holds the WKWebView and the JS bridge.
 4. `web/js/native.js`: the web side of the bridge. Messages: `scan`, `share`, `haptic`, `settings`;
    web -> native via `window.webkit.messageHandlers.musicscan.postMessage({id, cmd, ...})`,
-   native -> web via `window.__msNativeReply(id, result)`.
+   native -> web via `window.__msNativeReply(id, result)`, and app commands (⌘ shortcuts, Pencil double-tap) via
+   `window.__msCommand(name)` (handled in `app.js`, search `native.onCommand`). The ⌘ shortcuts are the
+   `EditorWKWebView.shortcuts` table in `EditorWebView.swift`.
 5. `web/js/app.js` (editor UI, pointer/touch handling, upload flow), `score.js` (MusicXML DOM model; edits patch
    `<note>` elements in place), `render.js` (VexFlow layout + hit-test map), `audio.js` (playback).
 6. `server/app.py`: FastAPI backend. Endpoints: `POST /api/jobs` (multipart `file`, `detector` 28m|2m) -> `{id}`;
@@ -38,7 +42,8 @@ that feels intuitive on a phone.
 scripts/setup.sh                 # Python 3.12+ venv, copisteria (pinned) + weights (~140 MB); needs Homebrew python@3.12 or uv
 HOST=0.0.0.0 scripts/run.sh      # server on port 8000, reachable from the phone on the same Wi-Fi
 open ios/MusicScan.xcodeproj     # or build from the command line:
-xcodebuild -project ios/MusicScan.xcodeproj -scheme MusicScan -destination 'platform=iOS Simulator,name=iPhone 15' build
+xcodebuild -project ios/MusicScan.xcodeproj -scheme MusicScan -destination 'platform=iOS Simulator,name=iPad Pro 11-inch (M4)' build
+xcrun simctl list devices available | grep -i ipad   # if that simulator name doesn't exist, pick one from here
 ```
 If `xcodebuild` says the scheme is missing, open the project in Xcode once (it creates the scheme) or use
 `-target MusicScan -sdk iphonesimulator`. Signing for a device: target > Signing & Capabilities > Team (Allen's
@@ -46,6 +51,7 @@ Apple ID); change the bundle id `com.example.musicscan` if it is taken. Ask Alle
 
 Web checks (Node 18+ and Playwright: `npm i -D playwright` in a scratch folder if missing):
 ```bash
+node tests/ipad.js  http://localhost:8000/ bench/data/bach_bwv66.musicxml /tmp/ipad    # iPad layouts, Pencil, ⌘ commands
 node tests/touch.js http://localhost:8000/ bench/data/bach_bwv66.musicxml /tmp/touch   # emulated iPhone + fake bridge
 node tests/e2e.js http://localhost:8000/ /tmp/e2e                                      # full web flow
 python -m pytest tests -q
@@ -55,12 +61,16 @@ python -m pytest tests -q
 1. **Make it compile and run** in the simulator with zero warnings you introduced. The Swift was written without a
    compiler; expect small fixes (concurrency annotations on WebKit/VisionKit delegate methods, `callAsyncJavaScript`
    signature, etc.). Fix, don't redesign.
-2. **Verify each flow on the simulator, then on Allen's iPhone if he connects it**: Scan a page (photo picker on the
-   simulator, document camera on device) -> progress -> editor; drag a note up/down and sideways; Add notes by
-   touch; Play (also with the silent switch on); Export MusicXML and MIDI via the share sheet; "Can't reach the
-   server" screen and the Server settings sheet; rotation; iPad layout.
-3. **Polish what feels off on a real phone**: tap target sizes in the toolbar, safe areas, keyboard, the progress
-   screen, haptics strength, scroll vs. drag conflicts on the score. Make web changes in `web/` so the browser
+2. **Verify each flow on an iPad simulator first, then iPhone, then on Allen's iPad if he connects it**: Scan a page
+   (photo picker on the simulator, document camera on device) -> progress -> editor; drag a note up/down and
+   sideways with a finger; Add notes by touch; Play (also with the silent switch on); Export MusicXML and MIDI via
+   the share sheet (popover anchored near Export on iPad); "Can't reach the server" screen and the Server settings
+   sheet. iPad specifics: landscape and portrait, rotation mid-edit, Split View at 1/2 and 1/3 and Slide Over, Stage
+   Manager window resizing, hardware keyboard (hold ⌘ for the shortcut overlay; ⌘Z must reach the editor, not the
+   system undo), trackpad pointer, Apple Pencil precision, hover preview and double-tap (needs a real device).
+3. **Polish what feels off on a real iPad**: use of the wide screen (photo beside the score in landscape, how many bars
+   per system), tap target sizes, safe areas, the progress screen, haptics (iPads have none, which is fine),
+   scroll vs. drag conflicts on the score, Pencil feel. Make web changes in `web/` so the browser
    benefits too, and rerun `tests/touch.js`.
 4. Then, if time allows: multi-page scans (today only page 1 of a document-camera scan is read), bundling `web/`
    into the app for faster start (serve it via a `WKURLSchemeHandler` and point only `api/` at the server), and an

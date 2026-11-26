@@ -10,6 +10,7 @@ import WebKit
 ///   share     export through the share sheet (Files, AirDrop, Mail, ...)
 ///   haptic    taps while dragging notes
 ///   settings  the server address sheet
+/// and, the other way, iPad hardware-keyboard ⌘ shortcuts and Apple Pencil double-tap (`window.__msCommand`).
 struct EditorWebView: UIViewRepresentable {
     let url: URL
     let reloadToken: Int
@@ -30,7 +31,7 @@ struct EditorWebView: UIViewRepresentable {
             source: "window.MUSICSCAN_APP = { platform: 'ios', version: '\(version)' };",
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
 
-        let webView = WKWebView(frame: .zero, configuration: config)
+        let webView = EditorWKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = false
@@ -40,6 +41,11 @@ struct EditorWebView: UIViewRepresentable {
         webView.backgroundColor = UIColor(red: 0.965, green: 0.969, blue: 0.976, alpha: 1)  // --bg in style.css
         webView.underPageBackgroundColor = webView.backgroundColor
         if #available(iOS 16.4, *) { webView.isInspectable = true }  // Safari > Develop > [device] > MusicScan
+
+        // Apple Pencil (2nd gen / Pro) double-tap or squeeze switches between Select and Add notes.
+        let pencil = UIPencilInteraction()
+        pencil.delegate = context.coordinator
+        webView.addInteraction(pencil)
 
         context.coordinator.webView = webView
         context.coordinator.load(url, token: reloadToken)
@@ -54,7 +60,7 @@ struct EditorWebView: UIViewRepresentable {
     // MARK: - Coordinator
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler,
-        VNDocumentCameraViewControllerDelegate, PHPickerViewControllerDelegate {
+        VNDocumentCameraViewControllerDelegate, PHPickerViewControllerDelegate, UIPencilInteractionDelegate {
         var parent: EditorWebView
         weak var webView: WKWebView?
         private var loadedURL: URL?
@@ -73,7 +79,17 @@ struct EditorWebView: UIViewRepresentable {
 
         // MARK: navigation
 
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { parent.onLoaded() }
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            parent.onLoaded()
+            webView.becomeFirstResponder()  // so a hardware keyboard's arrows, 1-6, R, Delete reach the editor
+        }
+
+        // MARK: Apple Pencil
+
+        func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
+            guard UIPencilInteraction.preferredTapAction != .ignore else { return }
+            (webView as? EditorWKWebView)?.send("toggle-mode")
+        }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             if (error as NSError).code == NSURLErrorCancelled { return }  // superseded by a newer load
@@ -249,5 +265,44 @@ private extension UIImage {
         let format = UIGraphicsImageRendererFormat.default()
         format.scale = 1
         return UIGraphicsImageRenderer(size: target, format: format).image { _ in draw(in: CGRect(origin: .zero, size: target)) }
+    }
+}
+
+/// The editor's web view, with the ⌘ shortcuts an iPad shows when you hold ⌘ on a hardware keyboard.
+/// Plain keys (arrows, 1-6, R, Delete, Space, N) go straight to the page's own keydown handler.
+final class EditorWKWebView: WKWebView {
+    private static let shortcuts: [(String, String, UIKeyModifierFlags, String)] = [
+        ("Undo", "z", .command, "undo"),
+        ("Redo", "z", [.command, .shift], "redo"),
+        ("Play / Stop", "\r", .command, "play"),
+        ("Select", "1", .command, "mode-select"),
+        ("Add Notes", "2", .command, "mode-add"),
+        ("Show Photo", "p", [.command, .shift], "photo"),
+        ("Zoom In", "=", .command, "zoom-in"),
+        ("Zoom Out", "-", .command, "zoom-out"),
+        ("Export MusicXML", "s", .command, "export-xml"),
+        ("Export MIDI", "s", [.command, .shift], "export-mid"),
+        ("Scan a Page", "o", .command, "scan"),
+        ("New Scan", "n", .command, "new"),
+    ]
+
+    override var keyCommands: [UIKeyCommand]? {
+        let own = Self.shortcuts.map { item -> UIKeyCommand in
+            let (title, key, flags, cmd) = item
+            let c = UIKeyCommand(title: title, action: #selector(runShortcut(_:)), input: key, modifierFlags: flags,
+                                 propertyList: cmd)
+            c.wantsPriorityOverSystemBehavior = true  // ⌘Z would otherwise go to the text-editing undo manager
+            return c
+        }
+        return own + (super.keyCommands ?? [])
+    }
+
+    @objc private func runShortcut(_ sender: UIKeyCommand) {
+        if let cmd = sender.propertyList as? String { send(cmd) }
+    }
+
+    func send(_ cmd: String) {
+        callAsyncJavaScript("window.__msCommand && window.__msCommand(cmd)", arguments: ["cmd": cmd],
+                           in: nil, in: .page) { _ in }
     }
 }

@@ -345,12 +345,14 @@ function staffPitch(st, y, x) {
 // ---------------------------------------------------------------- pointer interaction
 function onPointerDown(e) {
   if (!S.layout || e.button > 0) return;
-  S.touch = e.pointerType === 'touch' || e.pointerType === 'pen';
+  // finger: wide hit area, label above the finger. Apple Pencil: precise like a mouse (and it can hover).
+  S.touch = e.pointerType === 'touch';
+  S.pen = e.pointerType === 'pen';
   audio.audioCtx();
   const { x, y } = localPoint(e);
   const h = hitTest(x, y);
-  // touch in Add mode: the ghost note follows the finger and the note is written when the finger lifts
-  if (S.touch && S.mode === 'add' && h && (h.type === 'staff' || (h.type === 'note' && h.n.ev.rest))) {
+  // touch or Pencil in Add mode: the ghost note follows the tip and the note is written when it lifts
+  if ((S.touch || S.pen) && S.mode === 'add' && h && (h.type === 'staff' || (h.type === 'note' && h.n.ev.rest))) {
     S.drag = { addTouch: true, x, y, startX: e.clientX, startY: e.clientY, pointer: e.pointerId };
     $('#score').setPointerCapture(e.pointerId);
     drawGhost(x, y);
@@ -423,7 +425,7 @@ function onPointerMove(e) {
   if (S.drag?.addTouch) {
     S.drag.x = x; S.drag.y = y;
     const before = $('#overlay .ghost text')?.textContent;
-    drawGhost(x, y, true);
+    drawGhost(x, y, S.touch);
     if ($('#overlay .ghost text')?.textContent !== before) native.haptic('selection');
     return;
   }
@@ -454,7 +456,7 @@ function onPointerMove(e) {
     }
     return;
   }
-  if (e.pointerType === 'mouse') S.touch = false;
+  if (e.pointerType !== 'touch') S.touch = false;  // mouse or a hovering Apple Pencil
   if (S.mode === 'add') { drawGhost(x, y); return; }
   // hover feedback in select mode
   const h = hitTest(x, y);
@@ -1027,6 +1029,24 @@ function wire() {
   $('#btnRedo').onclick = redo;
   $('#btnPlay').onclick = togglePlay;
   $('#btnNew').onclick = () => { stopPlay(); show('viewUpload'); loadResume(); };
+  // iPad app: ⌘ shortcuts from a hardware keyboard (listed when you hold ⌘) and Apple Pencil double-tap
+  native.onCommand((cmd) => {
+    const editing = !$('#viewEditor').classList.contains('hidden');
+    if (cmd === 'new') return $('#btnNew').click();
+    if (cmd === 'scan') return $('#cameraInput').closest('label').click();
+    if (!editing) return;
+    if (cmd === 'undo') undo();
+    else if (cmd === 'redo') redo();
+    else if (cmd === 'play') togglePlay();
+    else if (cmd === 'export-xml') exportAs('xml');
+    else if (cmd === 'export-mid') exportAs('mid');
+    else if (cmd === 'mode-select') setMode('select');
+    else if (cmd === 'mode-add') setMode('add');
+    else if (cmd === 'toggle-mode') { setMode(S.mode === 'add' ? 'select' : 'add'); toast(S.mode === 'add' ? 'Add notes' : 'Select', 900); }
+    else if (cmd === 'zoom-in') $('#zoomIn').click();
+    else if (cmd === 'zoom-out') $('#zoomOut').click();
+    else if (cmd === 'photo') $('#btnPhoto').click();
+  });
   $('#btnExport').onclick = (e) => { e.stopPropagation(); $('#exportMenu').classList.toggle('open'); };
   for (const b of $$('#exportMenu button')) b.onclick = () => exportAs(b.dataset.x);
   document.addEventListener('click', () => $('#exportMenu').classList.remove('open'));

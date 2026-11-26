@@ -224,3 +224,12 @@ button, .btn { touch-action: manipulation; }
 body.demo .demo-note { display: block; }
 body.demo #optFast { display: none; }
 body.demo label.check:has(#optFast) { display: none; }
+
+/* iPad portrait and wide Split View (700-860 px): room for the full toolbar and header, so wrap instead of scrolling */
+@media (min-width: 700px) and (max-width: 860px) {
+  .toolbar { flex-wrap: wrap; overflow-x: visible; }
+  .btn .pl { display: inline; }
+  .tempo { display: inline-flex; }
+  body.editing .brand > span:last-child { display: inline; }
+  .wide-only { display: inline; }
+}

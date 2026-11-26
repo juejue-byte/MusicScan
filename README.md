@@ -88,7 +88,8 @@ node tests/e2e.js http://localhost:8000/ /tmp/e2e   # browser: upload → edit �
 
 ## iOS
 
-A prototype app is in [`ios/`](ios/README.md): a small SwiftUI shell that scans pages with Apple's document camera,
+A prototype app, iPad first (iPhone too), is in [`ios/`](ios/README.md): a small SwiftUI shell that scans pages with
+Apple's document camera, supports Apple Pencil and ⌘ keyboard shortcuts,
 runs the same editor in a WKWebView (finger dragging with haptic ticks, Add-notes under your finger), plays through
 the silent switch and exports through the share sheet. Reading still happens on the MusicScan server. Build steps:
 [ios/README.md](ios/README.md); start the server with `HOST=0.0.0.0 scripts/run.sh` so the phone can reach it.

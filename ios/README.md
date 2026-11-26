@@ -1,4 +1,7 @@
-# MusicScan for iOS (prototype)
+# MusicScan for iPad and iPhone (prototype)
+
+**iPad first.** Scores need width, so the iPad (landscape, portrait, Split View) is the main target; iPhone works
+too. One universal app, iOS/iPadOS 16+.
 
 A small native shell around the MusicScan web editor. Reading the music stays on the MusicScan server (your Mac for
 now), exactly as in the [spec](../SPEC.md); the app adds what a phone does better than a browser tab:
@@ -9,6 +12,9 @@ now), exactly as in the [spec](../SPEC.md); the app adds what a phone does bette
 | **Edit** | The same editor as the web app, in a `WKWebView`. Drag notes with a finger (with a tick of haptic feedback per step), Add-notes mode shows the note under your finger and writes it when you lift. |
 | **Play** | Sampled piano through Web Audio; plays with the ring/silent switch on. |
 | **Export** | MusicXML / MIDI open the share sheet: Save to Files, AirDrop, Mail, another app. |
+| **Apple Pencil** | Precise: it grabs exactly the note under the tip (fingers get a wider hit area). Hovering (M2 iPad Pro and newer) previews the note in Add mode; the note is written when the tip lifts. Double-tap (or squeeze) switches Select / Add notes. |
+| **Keyboard** | With a hardware keyboard, hold ⌘ to see the shortcuts: ⌘Z / ⇧⌘Z undo/redo, ⌘↩ play/stop, ⌘1 Select, ⌘2 Add notes, ⇧⌘P photo, ⌘= / ⌘- zoom, ⌘S / ⇧⌘S export MusicXML / MIDI, ⌘O scan, ⌘N new scan. Plain keys work as on the web: ↑↓ pitch, 1–6 duration, `.` dot, R rest, Delete, Space play. |
+| **Layout** | Landscape shows the photo beside the score; portrait and wide Split View keep the full toolbar; narrow Split View and Slide Over use the phone layout. A trackpad or mouse works like on a desktop. |
 | **Server** | "Server: …" on the start screen (or the error screen) sets the address. |
 
 ## Why a native shell and not Capacitor
@@ -46,13 +52,14 @@ open ios/MusicScan.xcodeproj
 
 ### 3. Try it in the simulator (no signing needed)
 
-Pick an iPhone simulator in the toolbar (for example *iPhone 15*) and press **⌘R**. The simulator uses
+Pick an iPad simulator in the toolbar (for example *iPad Pro 11-inch* or *iPad Air*) and press **⌘R**; iPhone
+simulators work too. In the simulator, *I/O > Keyboard > Connect Hardware Keyboard* lets you try the ⌘ shortcuts. The simulator uses
 `http://localhost:8000` automatically. "Scan a page" opens the photo picker there: drag a photo of sheet music onto
 the simulator window first to put it in its Photos library.
 
-### 4. Run it on your iPhone
+### 4. Run it on your iPad (or iPhone)
 
-1. Plug the iPhone in (or pair it over Wi-Fi in Xcode's *Devices* window). On the phone, turn on
+1. Plug the iPad in (or pair it over Wi-Fi in Xcode's *Devices* window). On the phone, turn on
    **Settings > Privacy & Security > Developer Mode** if asked (iOS 16+), then restart it.
 2. In Xcode, click the **MusicScan** project in the left sidebar, then the **MusicScan** target, then
    **Signing & Capabilities**. Choose your **Team** (sign in with your Apple ID under *Add an Account…*; a free
@@ -60,7 +67,7 @@ the simulator window first to put it in its Photos library.
    your own, such as `com.yourname.musicscan`.
 3. Optional: set your Mac's address as the default under the target's **Build Settings**, search
    `MUSICSCAN_SERVER_URL` (it starts as `http://192.168.1.20:8000`). You can also just type it in the app.
-4. Pick your iPhone in the toolbar and press **⌘R**.
+4. Pick your iPad in the toolbar and press **⌘R**.
 5. The first launch on the phone: if it says the developer is not trusted, go to
    **Settings > General > VPN & Device Management**, tap your Apple ID and **Trust**. Open the app again and tap
    **Allow** when it asks to find devices on your local network.
@@ -73,7 +80,7 @@ and allows TestFlight.
 ### Debugging the editor on the phone
 
 The web view is inspectable: on the Mac open Safari > Settings > Advanced > *Show features for web developers*, then
-**Develop > [your iPhone] > MusicScan** for the console, network and element inspector.
+**Develop > [your iPad] > MusicScan** for the console, network and element inspector.
 
 ## What's in here
 
@@ -91,7 +98,7 @@ ios/
 ```
 
 The web side of the bridge is [`web/js/native.js`](../web/js/native.js); in a normal browser it does nothing, so the
-web app is unchanged. `tests/touch.js` runs the editor on an emulated iPhone with a fake bridge (drag, swap, add,
+web app is unchanged. `tests/ipad.js` checks iPad layouts, Apple Pencil and the ⌘ commands; `tests/touch.js` runs the editor on an emulated iPhone with a fake bridge (drag, swap, add,
 export via the share sheet).
 
 ## Handing off to another agent

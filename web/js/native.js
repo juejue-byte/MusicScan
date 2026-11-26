@@ -60,5 +60,8 @@ export async function share(name, blob) {
   return true;
 }
 
+/** Commands sent by the app: hardware-keyboard ⌘ shortcuts and Apple Pencil double-tap ('toggle-mode'). */
+export function onCommand(fn) { window.__msCommand = (cmd) => { try { fn(cmd); } catch (e) { console.error(e); } }; }
+
 /** Open the app's server settings. */
 export function openSettings() { fire('settings'); }
