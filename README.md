@@ -34,6 +34,11 @@ Python 3.12+. A page takes about 15–20 s on a 4-core CPU with copista-28m and 
 the GPU is used automatically when present (NVIDIA CUDA, or MPS on Apple Silicon Macs, with a CPU fallback for any op MPS
 lacks). Force a device with `MUSICSCAN_DEVICE=cpu|mps|cuda scripts/run.sh`. Sample photos are on the start screen.
 
+## Host it (HTTPS + GPU, for the phone app anywhere)
+
+`modal deploy deploy/modal_app.py` puts the reader on a public `https://…modal.run` address with a GPU and an access
+key. Steps, costs and where the iOS app takes the address: [deploy/README.md](deploy/README.md).
+
 ## Preview without a server
 
 `web/` also works on any static host (GitHub Pages, Cloudflare Pages, a plain file server). When no MusicScan server

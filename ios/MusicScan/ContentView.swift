@@ -56,7 +56,7 @@ struct ConnectionErrorView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            Text("Start it on your computer with  HOST=0.0.0.0 scripts/run.sh  and keep the phone on the same Wi-Fi.")
+            Text("A hosted server can take a minute to wake up: tap Try again. On your own computer, start it with  HOST=0.0.0.0 scripts/run.sh  and keep the phone on the same Wi-Fi.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

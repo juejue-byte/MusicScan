@@ -22,7 +22,7 @@ struct ServerSettingsView: View {
                 } header: {
                     Text("MusicScan server")
                 } footer: {
-                    Text("On your computer run HOST=0.0.0.0 scripts/run.sh, then enter its address on your Wi-Fi network (System Settings > Wi-Fi > Details > IP address) with port 8000. The simulator can use http://localhost:8000.")
+                    Text("Hosted: paste the address modal deploy printed, with your key, like https://you--musicscan.modal.run/?key=… (see deploy/README.md).\nOn your own computer: run HOST=0.0.0.0 scripts/run.sh and enter its Wi-Fi address with port 8000. The simulator can use http://localhost:8000.")
                 }
                 Section {
                     Button(checking ? "Checking…" : "Test connection") { Task { await test() } }
@@ -59,13 +59,23 @@ struct ServerSettingsView: View {
         guard let base = ServerConfig.normalize(draft) else { return }
         checking = true
         defer { checking = false }
-        var request = URLRequest(url: base.appendingPathComponent("api/samples"))
-        request.timeoutInterval = 6
+        guard let health = ServerConfig.endpoint(base, "api/health") else { return }
+        var request = URLRequest(url: health)
+        request.timeoutInterval = 60  // a hosted server that scaled to zero takes up to a minute to wake
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request)
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-            reachable = code == 200
-            status = code == 200 ? "Connected to MusicScan." : "Something answered, but not MusicScan (HTTP \(code))."
+            let info = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            if code == 200, info?["app"] as? String == "musicscan" {
+                let authorized = info?["authorized"] as? Bool ?? true
+                reachable = authorized
+                status = authorized ? "Connected to MusicScan."
+                    : "Connected, but the access key is missing or wrong. Add ?key=… to the address."
+            } else {
+                reachable = false
+                status = code == 404 ? "Something answered, but not an up-to-date MusicScan server (HTTP 404)."
+                    : "Something answered, but not MusicScan (HTTP \(code))."
+            }
         } catch {
             reachable = false
             status = "Could not reach it: \(error.localizedDescription)"
