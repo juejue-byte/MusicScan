@@ -4,4 +4,7 @@
 // writes it); Xcode turns it back into https://host.
 MUSICSCAN_SERVER_URL = http:/$()/192.168.1.20:8000
 MUSICSCAN_ACCESS_KEY =
+// Supabase project "musicscan" (sign-in). The publishable key is meant to ship in apps; the secret key never does.
+SUPABASE_URL = https:/$()/fliegieshsoywgrjyltw.supabase.co
+SUPABASE_PUBLISHABLE_KEY = sb_publishable_NSgNUem98tSERXluFmypuQ_kQr81wXB
 #include? "Secrets.xcconfig"

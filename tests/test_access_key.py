@@ -102,3 +102,25 @@ def test_signin_jwks_es256(monkeypatch):
                        "is_anonymous": True}, priv, algorithm="ES256")
     assert auth.verify(good) == {"id": "u2", "email": None, "provider": None, "anonymous": True}
     assert auth.verify(_token()) is None  # an HS256 token is refused when the project uses signing keys
+
+
+# --- page allowance (server/usage.py) and job ownership ---
+def test_allowance_and_owner(signin, monkeypatch, tmp_path):
+    from server import usage
+    calls = []
+    monkeypatch.setenv("SUPABASE_SECRET_KEY", "sb_secret_x")
+    monkeypatch.setattr(usage, "_rpc", lambda fn, a: calls.append((fn, a)) or
+                        {"access": "preview", "pages_used": 0, "page_limit": 30, "renews_at": None})
+    monkeypatch.setattr(srv.threading, "Thread", lambda **k: type("T", (), {"start": lambda self: None})())
+    mine = {"Authorization": "Bearer " + _token("user-1")}
+    r = signin.post("/api/jobs", files={"file": ("a.jpg", b"x")}, headers=mine)
+    assert r.status_code == 200 and r.json()["allowance"]["access"] == "preview"
+    jid = r.json()["id"]
+    assert calls == [("claim_page", {"p_user": "user-1", "p_job": jid, "p_limit": 30})]
+    assert signin.get(f"/api/jobs/{jid}", headers=mine).status_code == 200
+    other = {"Authorization": "Bearer " + _token("user-2")}
+    assert signin.get(f"/api/jobs/{jid}", headers=other).status_code == 404
+    monkeypatch.setattr(usage, "_rpc", lambda fn, a: {"access": "cap", "pages_used": 30, "page_limit": 30,
+                                                      "renews_at": "2026-12-26"})
+    r = signin.post("/api/jobs", files={"file": ("a.jpg", b"x")}, headers=mine)
+    assert r.status_code == 402 and r.json()["detail"]["code"] == "page_cap"

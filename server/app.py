@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT))
 from musicscan import imageio, omr, preprocess  # noqa: E402
 from musicscan import sanitize as san  # noqa: E402
 from musicscan.quality import assess  # noqa: E402
-from server import auth  # noqa: E402
+from server import auth, usage  # noqa: E402
 
 # Jobs (photo, cleaned page, reading) live here. A hosted server points it at a persistent volume.
 WORK = Path(os.environ.get("MUSICSCAN_WORK", ROOT / "work"))
@@ -175,7 +175,7 @@ def _pdf_pages(data: bytes, name: str) -> int:
 
 
 @app.post("/api/jobs")
-async def create_job(file: UploadFile = File(...), detector: str = Form("28m"), flatten: str = Form("auto"),
+async def create_job(request: Request, file: UploadFile = File(...), detector: str = Form("28m"), flatten: str = Form("auto"),
                      strip_pen: bool = Form(True), page: int = Form(0), context: str | None = Form(None)):
     """Read one page. A PDF reads page `page` (0-based); the reply says how many pages it has.
     context (JSON, optional): the layout, key, time and clefs in force at the end of the score this page continues
@@ -193,22 +193,45 @@ async def create_job(file: UploadFile = File(...), detector: str = Form("28m"), 
         except ValueError:
             ctx = None
     jid = uuid.uuid4().hex[:12]
+    user = request.state.user
+    try:
+        allowance = usage.claim(user, jid)
+    except Exception:
+        traceback.print_exc()
+        raise HTTPException(503, "Could not check your pages right now. Please try again in a moment.")
+    if allowance["access"] == "cap":
+        raise HTTPException(402, {"code": "page_cap", "renews_at": allowance["renews_at"],
+                                  "message": f"You've read all {allowance['page_limit']} pages for this month."})
     (WORK / jid).mkdir()
     JOBS[jid] = {"id": jid, "status": "queued", "name": file.filename, "created": time.time(),
-                 "page": page if n_pdf else 0, "pages": n_pdf or 1}
+                 "page": page if n_pdf else 0, "pages": n_pdf or 1, "user": user["id"] if user else None,
+                 "allowance": allowance}
     opts = {"detector": detector if detector in ("28m", "2m") else "28m",
             "flatten": None if flatten == "auto" else flatten == "on", "strip_pen": strip_pen,
             "page": page if n_pdf else 0, "pdf": bool(n_pdf), "context": ctx}
     threading.Thread(target=_run, args=(jid, data, file.filename or "", opts), daemon=True).start()
-    return {"id": jid, "pages": n_pdf or 1, "page": page if n_pdf else 0}
+    return {"id": jid, "pages": n_pdf or 1, "page": page if n_pdf else 0, "allowance": allowance}
+
+
+@app.post("/api/jobs/{jid}/unlock")
+def unlock_job(jid: str, request: Request):
+    """After a purchase: the preview of this page becomes a full Pro page (counts toward the month's pages)."""
+    j = _job(jid, request)
+    allowance = usage.unlock(request.state.user, j.get("reread_of") or jid)
+    if allowance["access"] == "cap":
+        raise HTTPException(402, {"code": "page_cap", "renews_at": allowance["renews_at"],
+                                  "message": f"You've read all {allowance['page_limit']} pages for this month."})
+    j["allowance"] = allowance
+    _save_job(j)
+    return allowance
 
 
 @app.post("/api/jobs/{jid}/reread")
-async def reread(jid: str, quad: str = Form(...), detector: str = Form("28m"), context: str | None = Form(None)):
+async def reread(jid: str, request: Request, quad: str = Form(...), detector: str = Form("28m"), context: str | None = Form(None)):
     """Read a page again from its stored photo, with page corners the user placed (the automatic page finder missed
     the page, or cut a row off). quad: JSON [[x, y] x4] in original.jpg pixels, any order; an empty list reads the
     whole photo without flattening. Returns a new job, like POST /api/jobs."""
-    old = _job(jid)
+    old = _job(jid, request)
     src = WORK / jid / "original.jpg"
     if not src.exists():
         raise HTTPException(404, "The photo of this page is no longer on the server")
@@ -226,32 +249,38 @@ async def reread(jid: str, quad: str = Form(...), detector: str = Form("28m"), c
             ctx = None
     nid = uuid.uuid4().hex[:12]
     (WORK / nid).mkdir()
-    JOBS[nid] = {"id": nid, "status": "queued", "name": old.get("name"), "created": time.time(), "page": 0, "pages": 1}
+    # the same page read again: same owner and allowance, not another page counted
+    JOBS[nid] = {"id": nid, "status": "queued", "name": old.get("name"), "created": time.time(), "page": 0, "pages": 1,
+                 "user": old.get("user"), "allowance": old.get("allowance"), "reread_of": old.get("reread_of") or jid}
     opts = {"detector": detector if detector in ("28m", "2m") else "28m", "flatten": None, "strip_pen": True,
             "page": 0, "pdf": False, "context": ctx, "lock_page": bool(q),
             "quad": preprocess.order_quad(q) if q else None}
     threading.Thread(target=_run, args=(nid, src.read_bytes(), "original.jpg", opts), daemon=True).start()
-    return {"id": nid, "pages": 1, "page": 0}
+    return {"id": nid, "pages": 1, "page": 0, "allowance": old.get("allowance")}
 
 
-def _job(jid):
+def _job(jid, request: Request | None = None):
     j = JOBS.get(jid)
     if j is None:
         p = WORK / jid / "job.json"
         if not p.exists() or "/" in jid or ".." in jid:
             raise HTTPException(404, "No such job")
         j = JOBS[jid] = json.loads(p.read_text())
+    if request is not None and j.get("user"):  # a signed-in user's scans are visible to that user only
+        user = getattr(request.state, "user", None)
+        if not user or user["id"] != j["user"]:
+            raise HTTPException(404, "No such job")
     return j
 
 
 @app.get("/api/jobs/{jid}")
-def get_job(jid: str):
-    return _job(jid)
+def get_job(jid: str, request: Request):
+    return _job(jid, request)
 
 
 @app.get("/api/jobs/{jid}/{name}")
-def job_file(jid: str, name: str):
-    _job(jid)
+def job_file(jid: str, name: str, request: Request):
+    _job(jid, request)
     if name not in ("page.png", "original.jpg"):
         raise HTTPException(404)
     return FileResponse(WORK / jid / name)
@@ -324,13 +353,13 @@ def _variant(img: Image.Image, way: str):
 
 
 @app.post("/api/jobs/{jid}/rescan")
-async def rescan(jid: str, measures: str = Form(...), attempt: int = Form(0), file: UploadFile | None = File(None),
+async def rescan(jid: str, request: Request, measures: str = Form(...), attempt: int = Form(0), file: UploadFile | None = File(None),
                  context: str | None = Form(None)):
     """Re-read the rows holding the selected measures. With a file: read that close-up instead.
     context (JSON, optional): the parts/staves, key, time and clefs in force at the first target bar in the score
     being edited (the editor sends it so the user's own key/time fixes carry over). Without it, it is taken from
     the original reading."""
-    j = _job(jid)
+    j = _job(jid, request)
     if j.get("status") != "done":
         raise HTTPException(409, "Job not finished")
     sel = sorted({int(x) for x in measures.split(",") if x.strip() != ""})

@@ -111,18 +111,34 @@ See the launch plan (linked from the project) for the full list. In short: Sign 
 counts and StoreKit entitlements checked on the server, previews cut to the first half on the server, jobs in shared
 storage (so `max_containers` can go up), photo retention and a Privacy Policy, and the web editor bundled into the app.
 
-## Sign-in (Supabase Auth)
+## Sign-in and page allowance (Supabase)
 
-The server already accepts per-user Supabase access tokens (`server/auth.py`): when `SUPABASE_URL` is set, every
-API call needs `Authorization: Bearer <token>` or the `musicscan_session` cookie, verified against the project's
-signing keys. The shared key keeps working beside it while testing. To switch it on once the project exists:
+Supabase project **musicscan** (`https://fliegieshsoywgrjyltw.supabase.co`, free plan, us-east-1) holds accounts and
+page counts. Its schema is `supabase/migrations/` (already applied): `profiles`, `entitlements`, `page_usage`, and the
+functions `claim_page` / `unlock_page` / `set_entitlement`, callable only with the server's secret key.
+
+What the server does when it is switched on:
+
+- `server/auth.py`: every API call needs a Supabase access token (`Authorization: Bearer …` or the
+  `musicscan_session` cookie), checked against the project's signing keys. The shared key keeps working beside it.
+- `server/usage.py`: each new page by a signed-in user asks `claim_page`: `free` (first page), `full` (Pro, under 30
+  this billing period), `preview` (half page), or `cap` (HTTP 402). `POST /api/jobs/{id}/unlock` turns a preview
+  into a Pro page after a purchase. Jobs are visible only to the user who made them.
+
+Switch it on (copy the **secret** key from Supabase > Project Settings > API Keys; it never goes in the app or git):
 
 ```bash
-. ./.env   # your saved key (scripts/use_server.sh); --force replaces the whole secret, so pass the key again
-modal secret create musicscan MUSICSCAN_ACCESS_KEY="$MUSICSCAN_ACCESS_KEY" SUPABASE_URL=https://YOURPROJECT.supabase.co --force
+. ./.env   # your saved test key; --force replaces the whole secret, so it is passed again
+modal secret create musicscan --force \
+  MUSICSCAN_ACCESS_KEY="$MUSICSCAN_ACCESS_KEY" \
+  SUPABASE_URL=https://fliegieshsoywgrjyltw.supabase.co \
+  SUPABASE_SECRET_KEY=sb_secret_...
 modal deploy deploy/modal_app.py
 ```
 
 Providers to turn on in Supabase (Authentication > Sign In / Providers): **Anonymous** (first launch, no screen),
-**Apple** (required by App Review as soon as Google is offered), **Google**, and **Email** (magic link). The app side
-(supabase-swift, the sign-in sheet, setting the cookie in the web view) is in the launch plan.
+**Apple** (required by App Review as soon as Google is offered), **Google**, and **Email** (magic link).
+
+Still to build: the app side (supabase-swift, anonymous sign-in at launch, the token as the `musicscan_session`
+cookie in the web view, the sign-in sheet), cutting previews to the top half on the server, and the RevenueCat
+webhook that calls `set_entitlement`.
