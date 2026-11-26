@@ -83,7 +83,7 @@
         <div class="toolbar" id="toolbar">
           <div class="seg" role="group" aria-label="Mode">
             <button data-mode="select" class="on" title="Select and drag notes (V)">↖ Select</button>
-            <button data-mode="add" title="Click on the staff to add notes (N)">✎ Add notes</button>
+            <button data-mode="add" title="Click on the staff to add notes (N)">✎ Add<span class="tb-more">&nbsp;notes</span></button>
             <button data-mode="ink" title="Draw on the score with Apple Pencil, a mouse or a finger (P). Ink never changes the notes."><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Ink</button>
           </div>
           <div class="seg ink-tools" role="group" aria-label="Ink">
@@ -119,17 +119,15 @@
             <button data-act="tie" title="Tie to the next note of the same pitch (T)"><svg width="20" height="12" viewBox="0 0 20 12" aria-hidden="true"><path d="M2 3 Q10 12 18 3" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round"/></svg>Tie</button>
             <button data-act="tuplet" title="Triplet: three notes in the time of this one (Alt+3). Again removes it.">³ Triplet</button>
           </div>
-          <div class="seg" role="group" aria-label="Markings">
+          <div class="seg" role="group" aria-label="Markings and bars">
             <button data-act="marks" id="btnMarks" title="Marks: dynamics, hairpins, fingering, text and rehearsal marks for the selected note (M)" aria-label="Marks"><i class="mf">mf</i><span class="wide-only">&nbsp;Marks</span>&nbsp;▾</button>
-          </div>
-          <div class="seg" role="group" aria-label="Bars">
             <button data-act="bar" id="btnBar" title="Split, join, add or delete bars">𝄀 Bar ▾</button>
           </div>
           <div class="seg fix">
             <button class="fix-btn" title="Fix it: check the flagged bars one by one (F)" disabled>✓ Fix it <span class="n"></span></button>
           </div>
           <div class="seg right">
-            <button data-act="keytime" id="btnKeyTime" title="Fix the key or time signature">♯ Key / time</button>
+            <button data-act="keytime" id="btnKeyTime" title="Fix the key or time signature">♯ Key<span class="tb-more">&nbsp;/ time</span></button>
             <button data-act="rescan" id="btnRescan" title="Re-read the selected bars from the photo" disabled>⟳ Rescan<span class="tb-more">&nbsp;bars</span></button>
             <button data-act="photo" id="btnPhoto" title="Show the photo next to the score">🖼 Photo</button>
           </div>

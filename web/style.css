@@ -354,3 +354,5 @@ i.mf { font-family: 'Times New Roman', Times, serif; font-weight: 700; font-size
 .marks-pop .reh { border: 1.5px solid currentColor; padding: 0 4px; font-weight: 700; margin-right: 4px; }
 .modal-card input.text { width: 100%; font-size: 17px; padding: 10px 12px; border: 1px solid var(--line2); border-radius: 8px; margin: 8px 0 12px; }
 @media (max-width: 1280px) { #btnMarks .wide-only { display: none; } }
+/* touch iPad in landscape: one more pixel between groups would push the toolbar onto a second row */
+@media (pointer: coarse) and (hover: none) { .toolbar { gap: 5px; } #btnMarks { padding: 0 5px; } }

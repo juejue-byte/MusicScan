@@ -179,8 +179,8 @@ function serve() {
   await p2.goto(base);
   await p2.evaluate((xx) => window.__ms.openScore(xx), fs.readFileSync(path.join(ROOT, 'bench/data/mozart_k545.musicxml'), 'utf8'));
   await p2.waitForTimeout(300);
-  const tb = await p2.evaluate(() => ({ h: document.querySelector('.toolbar').offsetHeight, hidden: document.querySelector('.toolbar').scrollWidth > document.querySelector('.toolbar').clientWidth + 1 }));
-  ok(tb.h < 70 && !tb.hidden, `the editing toolbar fits one row on a touch iPad in landscape (${tb.h}px)`);
+  const tb = await p2.evaluate(() => ({ segs: [...document.querySelector('.toolbar').children].filter((c) => c.offsetWidth).map((c) => c.offsetWidth), cw: document.querySelector('.toolbar').clientWidth, h: document.querySelector('.toolbar').offsetHeight, hidden: document.querySelector('.toolbar').scrollWidth > document.querySelector('.toolbar').clientWidth + 1 }));
+  ok(tb.h < 70 && !tb.hidden, `the editing toolbar fits one row on a touch iPad in landscape (${tb.h}px ${JSON.stringify(tb.segs)} of ${tb.cw})`);
   await p2.screenshot({ path: `${out}/ipad_toolbar.png` });
   await ctx2.close();
 
