@@ -356,3 +356,13 @@ i.mf { font-family: 'Times New Roman', Times, serif; font-weight: 700; font-size
 @media (max-width: 1280px) { #btnMarks .wide-only { display: none; } }
 /* touch iPad in landscape: one more pixel between groups would push the toolbar onto a second row */
 @media (pointer: coarse) and (hover: none) { .toolbar { gap: 5px; } #btnMarks { padding: 0 5px; } }
+
+/* keyboard shortcut sheet (?) */
+.keys-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 6px 22px; }
+.keys-grid h3 { font-size: 13px; margin: 12px 0 4px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.keys-grid dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: 13px; }
+.keys-grid dt { white-space: nowrap; }
+.keys-grid dd { margin: 0; }
+.keys-grid kbd { font: 12px ui-monospace, monospace; color: inherit; background: var(--bg, #f1f5f9); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; }
+.keys-btn { font-weight: 700; }
+@media (pointer: coarse) { .keys-btn { display: none; } }

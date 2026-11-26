@@ -9,6 +9,7 @@ import * as practice from './practice.js';
 import * as native from './native.js';
 import { api, jobFile, isDemo } from './demo.js';
 import * as review from './review.js';
+import { createNoteInput } from './input.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -138,7 +139,7 @@ function openScore(xml, meta, quality, job) {
   S.score = new Score(xml);
   S.meta = (meta || []).map((m) => ({ ...m }));
   S.job = job;
-  S.sel = null; S.measures = new Set(); S.focus = -1; S.undo = []; S.redo = [];
+  S.sel = null; S.measures = new Set(); S.focus = -1; S.undo = []; S.redo = []; S.caret = null;
   $('#docTitle').textContent = S.name;
   show('viewEditor');
   renderBanner(quality);
@@ -207,6 +208,7 @@ function redraw() {
   $('#scoreScroll').scrollTop = keep;
   el.classList.toggle('mode-add', S.mode === 'add');
   drawPhotoOverlay();
+  NI.drawCaret();
   updateToolbar();
   updateStatus();
   updateUndoButtons();
@@ -246,7 +248,8 @@ function updateStatus() {
   for (let mi = 0; mi < S.score.nMeasures; mi++) if (S.score.parts.some((p, pi) => S.score.measureProblems(pi, mi).over)) over.push(mi);
   let txt = '';
   const mk = selMarkInfo();
-  if (S.mode === 'ink') {
+  if (S.mode === 'add' && S.caret) txt = NI.status(S.touch || matchMedia('(pointer: coarse)').matches);
+  else if (S.mode === 'ink') {
     const nInk = ink.strokes(S.score).length;
     txt = `Ink · ${nInk} stroke${nInk === 1 ? '' : 's'}. Ink is saved with the score and kept in the MusicXML export; other apps ignore it.`;
   } else if (mk) {
@@ -254,13 +257,18 @@ function updateStatus() {
   } else if (n) {
     const num = barNumber(n.ev.mi);
     const what = n.ev.rest ? `${n.ev.type || ''} rest` : n.ev.chord.map((c) => pitchName(c.pitch)).join(' + ') + ` · ${n.ev.type || ''}${n.ev.dots ? ' dotted' : ''}`;
-    const keys = S.touch ? 'Drag up/down for pitch, sideways to swap. Tap a length to change it' : '↑↓ pitch · Shift+↑↓ octave · 1–6 length · R rest · T tie · Alt+3 triplet · | split bar here · Del delete';
-    txt = `Bar ${num} · staff ${n.ev.staff} · ${what}.  ${keys}`;
+    const keys = S.touch ? 'Drag up/down for pitch, sideways to swap. Tap a length to change it' : 'A–G change pitch · ↑↓ semitone · ⌘↑↓ octave · 1–7 length · 0 rest · R repeat · T tie · N write notes here';
+    txt = `Bar ${num}, beat ${beatOf(n.ev)} · staff ${n.ev.staff} · ${what}.  ${keys}`;
   } else if (S.measures.size) {
     txt = `${S.measures.size} bar${S.measures.size > 1 ? 's' : ''} selected. Rescan re-reads them from the photo; Play starts here; Bar ▾ splits, joins, adds or deletes bars.`;
   } else txt = `${S.score.nMeasures} bars · ${S.score.parts.length} part${S.score.parts.length > 1 ? 's' : ''}`;
   if (over.length) txt += `  ·  ⚠ ${over.length} bar${over.length > 1 ? 's are' : ' is'} too long (${over.map(barNumber).slice(0, 6).join(', ')})`;
   st.textContent = txt;
+}
+function beatOf(ev) {
+  const a = S.score.attrs(ev.pi, ev.mi);
+  const b = 1 + (ev.onset / ev.div) / (4 / a.beatType);
+  return Number.isInteger(+b.toFixed(3)) ? String(Math.round(b)) : b.toFixed(2).replace(/0+$/, '');
 }
 const barNumber = (mi) => S.score.parts[0].measures[mi]?.getAttribute('number') ?? String(mi + 1);
 
@@ -476,6 +484,7 @@ function addAt(h, x, y, shift) {
   });
   S.sel = created;
   S.measures = new Set([st.mi]);
+  if (created) NI.caretAfter(created);
   if (!S.restMode) audio.preview(midiOf(pitch));
   native.haptic('medium');
   redraw();
@@ -793,7 +802,7 @@ function del() {
   S.sel = others.length ? (s.member.el === s.ev.el ? others[0].el : s.ev.el) : s.ev.el;
   redraw();
 }
-function stepSel(dir) {
+function stepSel(dir, opts = {}) {
   const notes = S.layout.notes.filter((n) => !n.ghost).sort((a, b) => a.ev.mi - b.ev.mi || a.staffIdx - b.staffIdx || noteX(a) - noteX(b));
   const n = selEvent();
   if (!n) { if (notes.length) { S.sel = notes[0].ev.el; redraw(); } return; }
@@ -803,14 +812,16 @@ function stepSel(dir) {
   if (next) {
     S.sel = next.ev.el;
     S.measures = new Set([next.ev.mi]);
-    if (!next.ev.rest) audio.preview(midiOf(next.ev.chord[0].pitch));
+    if (!next.ev.rest && !opts.quiet) audio.preview(midiOf(next.ev.chord[0].pitch));
     focusBar(next.ev.mi, false);
     redraw();
     scrollToBar(next.ev.mi);
   }
 }
 function setMode(m) {
+  const was = S.mode;
   S.mode = m;
+  if (m === 'add' && was !== 'add' && S.score) NI.startAtSelection();
   updateToolbar();
   for (const b of $$('[data-mode]')) b.classList.toggle('on', b.dataset.mode === m);
   $('#score').classList.toggle('mode-add', m === 'add');
@@ -822,49 +833,132 @@ function setMode(m) {
   $('#hint').innerHTML = m === 'ink' ? inkHint() : m === 'add'
     ? (tap
       ? 'Touch the staff and slide to the pitch you want; the <b>' + S.dur + (S.dot ? ' (dotted)' : '') + (S.restMode ? ' rest' : ' note') + '</b> is written when you lift. Tapping a rest fills it. Tap <b>Select</b> to stop.'
-      : 'Click on the staff to write a <b>' + S.dur + (S.dot ? ' (dotted)' : '') + (S.restMode ? ' rest' : ' note') + '</b> there. Clicking a rest fills it. <b>Shift-click</b> a note to build a chord. Press <b>V</b> or Esc to stop.')
+      : 'Type <b>A–G</b> to write ' + S.dur + (S.dot ? ' (dotted)' : '') + ' notes at the blue caret, or click on the staff. <b>0</b> rest · <b>R</b> repeat · <b>Shift+letter</b> chord · <b>?</b> all shortcuts · <b>Esc</b> to stop.')
     : (tap ? 'Tap' : 'Click') + ' a note to select it. <b>Drag up/down</b> to change pitch, <b>left/right</b> to swap it. Pick a length, <b>Rest</b>, <b>Tie</b> or <b>Triplet</b> to turn it into that. <b>Bar ▾</b> splits, joins, adds or deletes bars.';
   clearOverlay('ghost');
 }
 
+// One shortcut map for the whole editor, following the conventions of the popular notation editors.
+// SHORTCUTS drives the ? help sheet, so keep it in step with onKey.
+const SHORTCUTS = [
+  ['Write notes', [
+    ['N', 'Note input on / off (the caret starts at the selection)'],
+    ['A – G', 'Write that note at the caret (nearest octave). With a note selected outside note input: change its pitch and move on'],
+    ['Shift + A – G', 'Add that note above the last one (a chord)'],
+    ['0', 'Rest (at the caret, or turn the selection into a rest)'],
+    ['R', 'Repeat the last note or chord'],
+    ['1 – 7', 'Length: 64th, 32nd, 16th, eighth, quarter, half, whole'],
+    ['.', 'Dotted'],
+    ['+  −  =', 'Sharp, flat, natural'],
+    ['T', 'Tie (in note input: a tied note of the same pitch)'],
+    ['Alt + 3', 'Triplet (Alt+5, 6, 7, 9 for other tuplets)'],
+    ['Backspace', 'In note input: step back and clear that note'],
+  ]],
+  ['Move and change', [
+    ['↑ ↓', 'Up or down a semitone'],
+    ['Alt + ↑ ↓', 'Up or down a scale step'],
+    ['⌘/Ctrl + ↑ ↓', 'Up or down an octave'],
+    ['← →', 'Previous / next note (the caret in note input)'],
+    ['⌘/Ctrl + ← →', 'Previous / next bar'],
+    ['Delete', 'Delete the note (a rest stays in its place)'],
+    ['⌘/Ctrl + Z,  ⇧⌘/Ctrl + Z', 'Undo, redo'],
+    ['Esc', 'Leave note input, then clear the selection'],
+  ]],
+  ['Bars', [
+    ['|', 'Split the bar before the selected note'],
+    ['J', 'Join with the next bar'],
+    ['I,  Shift + I', 'Insert an empty bar after / before'],
+    ['Shift + Delete', 'Delete the selected bars'],
+  ]],
+  ['Play and mark up', [
+    ['Space', 'Play / stop'],
+    ['L', 'Loop the selected bars'],
+    ['[  ]', 'Slower / faster'],
+    ['M', 'Metronome click on / off'],
+    ['K', 'Marks menu (dynamics, fingering, text)'],
+    ['P', 'Ink (draw with Apple Pencil); X switches to the eraser'],
+    ['F', 'Fix it: step through the flagged bars (when no note is selected)'],
+    ['V', 'Select'],
+    ['?', 'This list'],
+  ]],
+];
+function showShortcuts() {
+  const card = $('#modalCard');
+  $('#modal').classList.remove('hidden');
+  card.innerHTML = `<h2>Keyboard shortcuts</h2><div class="keys-grid">${SHORTCUTS.map(([h, rows]) => `<section><h3>${h}</h3><dl>${rows.map(([k, d]) => `<dt><kbd>${k}</kbd></dt><dd>${d}</dd>`).join('')}</dl></section>`).join('')}</div>
+    <div class="modal-actions"><button class="btn primary" data-m="close">Done</button></div>`;
+  card.onclick = (ev) => { if (ev.target.closest('[data-m]')) closeModal(); };
+}
+
+// length keys, as in MuseScore and Dorico: 5 is a quarter, up for longer, down for shorter
+const DUR_KEYS = { 1: '64th', 2: '32nd', 3: '16th', 4: 'eighth', 5: 'quarter', 6: 'half', 7: 'whole' };
 function onKey(e) {
+  if (e.key === 'Escape' && !$('#modal').classList.contains('hidden')) { closeModal(); return; }
   if ($('#viewEditor').classList.contains('hidden') || !$('#modal').classList.contains('hidden')) return;
-  if (e.target.closest('input, textarea')) return;
+  if (e.target.closest('input, textarea, select')) return;
   const k = e.key;
   const mod = e.metaKey || e.ctrlKey;
+  const add = S.mode === 'add';
   if (mod && (k === 'z' || k === 'Z')) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && k === 'y') { e.preventDefault(); redo(); return; }
+  if (mod && (k === 'ArrowUp' || k === 'ArrowDown')) { e.preventDefault(); NI.pitchKey(k === 'ArrowUp' ? 1 : -1, 'octave'); return; }
+  if (mod && (k === 'ArrowLeft' || k === 'ArrowRight')) { e.preventDefault(); const d = k === 'ArrowRight' ? 1 : -1; if (add) NI.moveCaret(d, true); else stepBar(d); return; }
   if (mod) return;
   // Alt+3 / Alt+5 ...: tuplets (by key position, so it works with any keyboard layout's Alt characters)
   if (e.altKey && /^Digit[35679]$/.test(e.code)) { e.preventDefault(); tuplet(+e.code.slice(5)); return; }
-  const map = { 1: 'whole', 2: 'half', 3: 'quarter', 4: 'eighth', 5: '16th', 6: '32nd' };
-  if (map[k]) { e.preventDefault(); setDur(map[k]); return; }
+  if (e.altKey && (k === 'ArrowUp' || k === 'ArrowDown')) { e.preventDefault(); NI.pitchKey(k === 'ArrowUp' ? 1 : -1, 'step'); return; }
+  if (e.altKey) return;
+  // number keys by position too, so Shift or a non-US layout still picks a length
+  const dk = /^Digit[0-7]$/.test(e.code) ? e.code.slice(5) : /^[0-7]$/.test(k) ? k : null;
+  if (dk === '0') { e.preventDefault(); if (add) NI.write(null); else makeRest(); return; }
+  if (dk && DUR_KEYS[dk]) { e.preventDefault(); setDur(DUR_KEYS[dk]); return; }
+  // note names
+  if (/^[a-gA-G]$/.test(k)) {
+    if (S.mode === 'ink') return;
+    e.preventDefault();
+    NI.letter(k.toUpperCase(), e.shiftKey && add);
+    return;
+  }
   switch (k) {
-    case 'ArrowUp': e.preventDefault(); moveSel(e.shiftKey ? 7 : 1); break;
-    case 'ArrowDown': e.preventDefault(); moveSel(e.shiftKey ? -7 : -1); break;
-    case 'ArrowLeft': e.preventDefault(); stepSel(-1); break;
-    case 'ArrowRight': e.preventDefault(); stepSel(1); break;
+    case 'ArrowUp': e.preventDefault(); NI.pitchKey(1, e.shiftKey ? 'octave' : 'semi'); break;
+    case 'ArrowDown': e.preventDefault(); NI.pitchKey(-1, e.shiftKey ? 'octave' : 'semi'); break;
+    case 'ArrowLeft': e.preventDefault(); if (add) NI.moveCaret(-1); else stepSel(-1); break;
+    case 'ArrowRight': e.preventDefault(); if (add) NI.moveCaret(1); else stepSel(1); break;
     case '.': toggleDot(); break;
     case '+': case '#': setAcc(1); break;
     case '-': case '_': setAcc(-1); break;
     case '=': setAcc(0); break;
-    case 'r': case 'R': makeRest(); break;
-    case 't': case 'T': tie(); break;
+    case 'r': case 'R': NI.repeat(); break;
+    case 't': case 'T': if (add) NI.tieOn(); else tie(); break;
     case '|': splitBar(); break;
     case 'j': case 'J': joinBars(); break;
     case 'i': insertBar('after'); break;
     case 'I': insertBar('before'); break;
-    case 'Delete': case 'Backspace': e.preventDefault(); if (e.shiftKey || (!selected() && S.measures.size)) deleteBars(); else del(); break;
-    case 'n': case 'N': setMode(S.mode === 'add' ? 'select' : 'add'); break;
+    case 'Backspace': if (add && !e.shiftKey) { e.preventDefault(); NI.backspace(); break; } // falls through
+    case 'Delete': e.preventDefault(); if (e.shiftKey || (!selected() && S.measures.size)) deleteBars(); else del(); break;
+    case 'n': case 'N': setMode(add ? 'select' : 'add'); break;
     case 'p': case 'P': setMode(S.mode === 'ink' ? 'select' : 'ink'); break;
     case 'x': case 'X': if (S.mode === 'ink') setPen(S.eraser ? S.inkPen : 'eraser'); break;
     case 'k': case 'K': if (S.mode !== 'ink') openMarksMenu($('#btnMarks')); break;
     case 'v': case 'V': setMode('select'); break;
+    case '?': e.preventDefault(); showShortcuts(); break;
     case 'Escape': if ($('#marksMenu').classList.contains('open')) closeMenus(); else if (S.mode !== 'select') setMode('select'); else { S.sel = null; S.measures.clear(); hideInspector(); redraw(); } break;
     case ' ': e.preventDefault(); togglePlay(); break;
     case 'l': case 'L': toggleLoop(); break;
     default: practice.key(e); break;
   }
+}
+// ⌘← / ⌘→ outside note input: the first note of the previous / next bar
+function stepBar(dir) {
+  const n = selEvent();
+  const cur = n ? n.ev.mi : S.measures.size ? Math.min(...S.measures) : -1;
+  const mi = Math.max(0, Math.min(S.score.nMeasures - 1, cur + dir));
+  const first = S.layout.notes.filter((x) => !x.ghost && x.ev.mi === mi && (!n || x.staffIdx === n.staffIdx)).sort((a, b) => noteX(a) - noteX(b))[0];
+  S.sel = first ? first.ev.el : null;
+  S.measures = new Set([mi]);
+  focusBar(mi, false);
+  redraw();
+  scrollToBar(mi);
 }
 
 // ---------------------------------------------------------------- photo panel + inspector
@@ -1486,6 +1580,7 @@ function wire() {
   $('#photoClose').onclick = () => { $('#photoCol').classList.add('closed'); redraw(); if (S.focus >= 0) focusBar(S.focus, false); };
   for (const b of $$('[data-dur]')) b.querySelector('.g').innerHTML = noteIcon(b.dataset.dur);
   $('#btnUndo').onclick = undo;
+  $('#btnKeys').onclick = showShortcuts;
   $('#btnRedo').onclick = redo;
   $('#btnPlay').onclick = togglePlay;
   $('#btnLoop').onclick = toggleLoop;
@@ -1558,6 +1653,11 @@ function loadResume() {
   };
   $('.upload-row').appendChild(b);
 }
+
+const NI = createNoteInput({
+  S, act, redraw, toast, selected, stepSel, scrollToBar, noteX, barNumber, metaInsert,
+  preview: (midis) => midis.forEach((m, i) => setTimeout(() => audio.preview(m), i * 25)),
+});
 
 wire();
 review.initReview({

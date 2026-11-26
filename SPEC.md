@@ -24,7 +24,7 @@ the staff or rescan them, plays them back and exports MusicXML / MIDI.
 1. **Upload**: drag/drop, file picker, phone camera, paste; samples on the start screen.
 2. **Transcribe**: job → cleanup → OMR → confidence → editor. Typical 15–20 s CPU (28m), ~4 s fast mode.
 3. **Quality warning**: banner good / check / retake with reasons (too small, blurry, dark, many uncertain symbols).
-4. **Edit**: select + drag pitch, keyboard (↑↓, 1–6, `.`, ♭♮♯, R, Del), Add-notes mode with ghost preview, chords,
+4. **Edit**: select + drag pitch, keyboard like MuseScore/Dorico (N note input with a caret, A–G letters, 1–7 lengths with 5 = quarter, 0 rest, R repeat, ↑↓ semitone, Alt+↑↓ step, ⌘↑↓ octave, `.`, ♭♮♯, Del; ? lists every shortcut), Add-notes mode with ghost preview, chords,
    undo/redo, bar-length check.
 5. **Rescan**: selected bars → rows re-read from the cleaned page (second model, enlarged, high-contrast; or a close-up
    photo) → side-by-side comparison → splice (key/time/clef inherited; bar-count changes allowed with a warning).

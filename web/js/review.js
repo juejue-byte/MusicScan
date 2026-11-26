@@ -315,11 +315,14 @@ function onKey(e) {
   if (!A.S.score || $('#viewEditor').classList.contains('hidden') || !$('#modal').classList.contains('hidden')) return;
   if (e.target.closest?.('input, textarea, select') || e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key;
+  // F is also a note name: in note input, or with a note selected, the letter belongs to the editor
+  const letterForEditor = A.S.mode === 'add' || (!!A.S.sel && !R.on);
   if (!R.on) {
-    if ((k === 'f' || k === 'F') && !e.shiftKey) { e.preventDefault(); e.stopImmediatePropagation(); start(); }
+    if ((k === 'f' || k === 'F') && !e.shiftKey && !letterForEditor) { e.preventDefault(); e.stopImmediatePropagation(); start(); }
     return;
   }
   const take = () => { e.preventDefault(); e.stopImmediatePropagation(); };
+  if (A.S.mode === 'add' && /^[a-gA-G]$/.test(k)) return;
   if (k === 'Enter') { take(); accept(); }
   else if (k === ']' || k === 'PageDown') { take(); step(1); }
   else if (k === '[' || k === 'PageUp') { take(); step(-1); }
