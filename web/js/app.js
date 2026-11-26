@@ -6,6 +6,7 @@ import * as audio from './audio.js';
 import * as practice from './practice.js';
 import * as native from './native.js';
 import { api, jobFile, isDemo } from './demo.js';
+import * as review from './review.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -51,7 +52,7 @@ function download(name, data, type) {
 }
 const baseName = () => (S.name || 'score').replace(/\.[^.]+$/, '').replace(/[^\w\- ]+/g, '').trim() || 'score';
 function saveLocal() {
-  try { localStorage.setItem(LS_KEY, JSON.stringify({ job: S.job, xml: S.score.toXML(), meta: S.meta, name: S.name, result: S.result ? { quality: S.result.quality, page_size: S.result.page_size, systems: S.result.systems } : null, t: Date.now() })); } catch (e) { /* storage full or blocked */ }
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ job: S.job, xml: S.score.toXML(), meta: S.meta, name: S.name, result: S.result ? { quality: S.result.quality, page_size: S.result.page_size, systems: S.result.systems, second_opinion: S.result.second_opinion } : null, t: Date.now() })); } catch (e) { /* storage full or blocked */ }
 }
 
 // ---------------------------------------------------------------- upload flow
@@ -124,6 +125,7 @@ function openResult(res) {
 }
 
 function openScore(xml, meta, quality, job) {
+  review.stop();
   S.score = new Score(xml);
   S.meta = (meta || []).map((m) => ({ ...m }));
   S.job = job;
@@ -164,13 +166,14 @@ function renderBanner(q) {
   }[q.level];
   b.className = 'banner ' + q.level;
   b.innerHTML = `<div class="b-icon">${icon}</div><div class="b-body"><div class="b-title"></div>${q.reasons.length ? '<ul></ul>' : ''}</div>
-    <div class="b-actions">${q.level !== 'good' ? '<button class="btn small" data-b="retake">Retake photo</button>' : ''}<button class="btn small ghost" data-b="close">✕</button></div>`;
+    <div class="b-actions">${flagged ? `<button class="btn small primary" data-b="fix">✓ Fix it: check ${flagged} bar${flagged > 1 ? 's' : ''}</button>` : ''}${q.level !== 'good' ? '<button class="btn small" data-b="retake">Retake photo</button>' : ''}<button class="btn small ghost" data-b="close">✕</button></div>`;
   b.querySelector('.b-title').textContent = `${title} (quality ${q.score}/100)`;
   const ul = b.querySelector('ul');
   if (ul) for (const r of q.reasons) { const li = document.createElement('li'); li.textContent = r; ul.appendChild(li); }
   b.onclick = (e) => {
     const a = e.target.closest('[data-b]')?.dataset.b;
     if (a === 'close') b.classList.add('hidden');
+    if (a === 'fix') { b.classList.add('hidden'); review.start(); }
     if (a === 'retake') { audio.stop(); show('viewUpload'); }
   };
 }
@@ -196,6 +199,7 @@ function redraw() {
   updateStatus();
   updateUndoButtons();
   $('#btnRescan').disabled = !S.job || targetBars().length === 0;
+  review.afterRedraw();
 }
 
 function updateUndoButtons() {
@@ -1278,6 +1282,11 @@ function loadResume() {
 }
 
 wire();
+review.initReview({
+  S, redraw, edit, toast, setMode, scrollToBar, scrollPhotoTo, rescan, stopPlay, drawCursor, clearOverlay, barNumber, barReason, subScoreXML,
+  haptic: native.haptic,
+  showPhoto: (mi) => { if (!S.job) return; $('#photoCol').classList.remove('closed'); setTimeout(() => { redraw(); scrollPhotoTo(mi); }, 0); },
+});
 loadSamples();
 show('viewUpload');
 // for automated tests

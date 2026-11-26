@@ -7,6 +7,7 @@
 <meta name="theme-color" content="#0f172a">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%232563eb'/><path d='M12 22V9l10-2v13' stroke='white' stroke-width='2.4' fill='none'/><circle cx='9.5' cy='22' r='3' fill='white'/><circle cx='19.5' cy='20' r='3' fill='white'/></svg>">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="review.css">
 </head>
 <body>
 <header class="top">
@@ -108,6 +109,9 @@
           <div class="seg" role="group" aria-label="Bars">
             <button data-act="bar" id="btnBar" title="Split, join, add or delete bars">𝄀 Bar ▾</button>
           </div>
+          <div class="seg fix">
+            <button id="btnFix" title="Fix it: check the flagged bars one by one (F)" disabled>✓ Fix it <span class="n"></span></button>
+          </div>
           <div class="seg right">
             <button data-act="keytime" id="btnKeyTime" title="Fix the key or time signature">♯ Key / time</button>
             <button data-act="rescan" id="btnRescan" title="Re-read the selected bars from the photo" disabled>⟳ Rescan<span class="tb-more">&nbsp;bars</span></button>
@@ -115,6 +119,30 @@
           </div>
         </div>
         <div class="hint" id="hint">Click a note to select it, then drag it up or down. Use <b>Add notes</b> to write new ones.</div>
+        <section class="review hidden" id="review" aria-label="Fix it: check the flagged bars">
+          <div class="rv-head">
+            <button class="btn icon rv-nav" id="rvPrev" title="Previous flag ([)" aria-label="Previous flag">‹</button>
+            <div class="rv-title"><span class="rv-badge" id="rvBadge"></span><b id="rvBar"></b><span class="muted" id="rvPos"></span></div>
+            <div class="rv-progress"><span id="rvCount"></span><div class="rv-track"><div id="rvMeter"></div></div></div>
+            <button class="btn icon rv-nav" id="rvNext" title="Next flag (])" aria-label="Next flag">›</button>
+            <button class="btn small ghost" id="rvClose" title="Close Fix it (Esc)">Close</button>
+          </div>
+          <div class="rv-sub"><div class="rv-why" id="rvWhy"></div><label class="check rv-auto"><input type="checkbox" id="rvAuto" checked> Play each flag</label></div>
+          <div class="rv-pics" id="rvPics">
+            <figure id="rvPhotoBox" title="Open the photo at this bar"><figcaption>Your photo</figcaption><canvas id="rvCrop"></canvas></figure>
+            <figure id="rvReadBox"><figcaption>Reading</figcaption><div class="rv-score" id="rvRead"></div></figure>
+            <figure id="rvAltBox" class="hidden"><figcaption>Second reading</figcaption><div class="rv-score" id="rvAlt"></div></figure>
+          </div>
+          <div class="rv-actions">
+            <button class="btn" id="rvPlay" title="Play this bar (P)">▶ Play bar <kbd>P</kbd></button>
+            <span class="rv-gap"></span>
+            <button class="btn" id="rvUnmark" title="Mark as not checked">↺ Unmark</button>
+            <button class="btn" id="rvRescan" title="Re-read this row from the photo">⟳ Rescan</button>
+            <button class="btn" id="rvUseAlt" title="Replace this bar with the second reading">⇄ Second reading</button>
+            <button class="btn" id="rvEdit" title="Edit this bar in the score (E)">✎ Edit <kbd>E</kbd></button>
+            <button class="btn primary" id="rvAccept">✓ Looks right <kbd>↵</kbd></button>
+          </div>
+        </section>
         <div class="inspector hidden" id="inspector">
           <div class="insp-head"><span id="inspTitle">Bar</span><span class="muted" id="inspConf"></span><button class="btn small" id="inspRescan">⟳ Rescan this row</button><button class="btn small ghost" id="inspClose">✕</button></div>
           <div class="insp-img"><canvas id="inspCanvas"></canvas></div>

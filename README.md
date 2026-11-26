@@ -11,6 +11,9 @@ Web first, built so the same editor can ship inside an iOS app.
   when the photo itself is too blurry, dark or small to trust.
 - **Edit on the staff.** Click a note and drag it up or down; arrows, number keys and ♭ ♮ ♯ for everything else;
   Add-notes mode writes new notes where you click, with a ghost preview of the pitch. Undo everything.
+- **Fix it.** Steps through the flagged bars one at a time: plays the bar, shows it from your photo beside the
+  reading (and beside the second model's reading when the two disagreed), says why it was flagged, and offers
+  one-tap Looks right, Edit, Rescan or Second reading, with "3 of 7 checked" progress.
 - **Rescan** a bad bar: re-read its row from the same photo another way, or from a close-up, compare old and new, keep
   the better one. Untouched bars keep their slurs, dynamics and beams.
 - **Play** with a moving cursor and the sounding notes lit up (sampled piano), **export** `.musicxml` and `.mid`.
@@ -49,6 +52,7 @@ the server. Force it with `?demo`.
 | Wrong key or meter | **Key / time** (notes that followed the misread key are re-spelled) |
 | Select bars | Click a bar number (Shift-click for a range), or a bar on the photo |
 | Rescan | Select bars → **Rescan bars** → compare → keep or try another way |
+| Check the flagged bars | **Fix it** (F): Enter looks right · `]` `[` next / previous flag · P play the bar · E edit it · Esc close. iPad keyboard: ⌘] ⌘[ ⌘⇧↵ ⌘⇧F |
 | Play / stop | Space (starts at the selected bar) |
 | Loop | L or ⟲: the selected bars repeat (nothing selected: the whole piece) |
 | Undo / redo | Ctrl/Cmd+Z · Ctrl/Cmd+Shift+Z |
@@ -85,6 +89,7 @@ python bench/report.py bench/results         # tables + quality-flag check
 ```bash
 python -m pytest tests -q            # Python: scoring, cleanup, OMR smoke test
 node tests/e2e.js http://localhost:8000/ /tmp/e2e   # browser: upload → edit → rescan → play → export
+node tests/review.js /tmp/review        # browser (demo data, no server): the Fix it flow on iPad and iPhone
 ```
 
 ## iOS
