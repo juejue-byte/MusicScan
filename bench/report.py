@@ -56,7 +56,7 @@ def flags(d: Path, data: Path):
     the sanitizer repaired, and, where bench/results/pred2m holds the small model's reading, disagreement."""
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from musicscan.compare import compare
-    from musicscan.omr import fix_pickup, level, restore_bar_rests
+    from musicscan.omr import disagreement, fix_pickup, level, restore_bar_rests
     from musicscan.sanitize import sanitize
     prep = lambda x: restore_bar_rests(fix_pickup(x))  # noqa: E731
     tot = {"wrong": 0, "right": 0, "wrong_flag": 0, "right_flag": 0, "wrong_bad": 0, "right_bad": 0}
@@ -73,18 +73,15 @@ def flags(d: Path, data: Path):
         if c["bar_ok"] is None or len(c["bar_ok"]) != len(r["bars"]):
             continue
         n += 1
-        dis = set()
+        dis = None
         f2 = d / "pred2m" / f"{r['id']}__{r['cond']}.musicxml"
         if f2.exists():
-            c2 = compare(x, prep(f2.read_text()))
-            if c2["bar_ok"] is not None:
-                dis = {i for i, ok in enumerate(c2["bar_ok"]) if not ok}
+            dis = disagreement(x, prep(f2.read_text()))
         fixed = {int(k) for k in sanitize(x)[1].get("bars", {})}
         wrong = set()
         for i, (b, ok) in enumerate(zip(r["bars"], c["bar_ok"])):
-            lv = level({"n": 1, "min": b["min"], "disagree": i in dis})
-            if lv == "ok" and i in fixed:
-                lv = "check"
+            lv = level({"n": 1, "min": b["min"], "disagree": (dis or {}).get(i), "fixes": i in fixed},
+                       second_reading=dis is not None)
             flagged, bad = lv != "ok", lv == "bad"
             if not ok:
                 wrong.add(i)

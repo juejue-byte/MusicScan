@@ -308,17 +308,57 @@ def add_bar_signs(xml: str, signs: list) -> str:
     return head + etree.tostring(root, encoding="unicode")
 
 
-# Per-bar warning levels, calibrated on the benchmark (bench/REPORT.md): confidence alone finds about half of the
-# wrong bars; adding "the small model reads this bar differently" finds about 85% of them.
+# Per-bar warning levels, calibrated on the benchmark (bench/REPORT.md, 1,638 bars). What the small model's second
+# reading says about a bar, and how often the bar really was wrong:
+#   it has notes the big model lacks ("missed")       91%   -> red
+#   both have notes the other lacks ("differs")       43%   -> red
+#   only rests differ ("rests")                        54%   -> amber
+#   the big model has notes it lacks ("small_missed")  9%   -> not marked: the small model just missed them
+# Confidence alone is a weak signal once the second reading is in (bars below 0.85 without a disagreement were wrong
+# 15% of the time), so it only marks bars when there is no usable second reading.
+# Result: 80% of wrong bars marked, half of the marks are real errors, 16% of all bars marked (was 28%).
 CHECK_BELOW, BAD_BELOW = 0.85, 0.5
+RED_DISAGREE = {"missed", "differs"}
+AMBER_DISAGREE = {"rests"}
 
 
-def level(m: dict) -> str:
-    if m.get("disagree") or (m["n"] > 0 and m["min"] < BAD_BELOW):
+def level(m: dict, second_reading: bool = False) -> str:
+    d = m.get("disagree")
+    if d is True or d in RED_DISAGREE:
+        return "bad"
+    if d in AMBER_DISAGREE or m.get("fixes"):
+        return "check"
+    if second_reading:
+        return "check" if m["n"] > 0 and m["min"] < BAD_BELOW else "ok"
+    if m["n"] > 0 and m["min"] < BAD_BELOW:
         return "bad"
     if m["n"] == 0 or m["min"] < CHECK_BELOW:
         return "check"
     return "ok"
+
+
+def disagreement(xml: str, other: str) -> dict[int, str] | None:
+    """Bar index -> how the second reading differs ("missed", "differs", "rests", "small_missed"), or None when the
+    two readings have a different number of bars and can't be lined up."""
+    from collections import Counter
+    from .compare import parse
+    a, b = parse(xml), parse(other)
+    if a["measures"] != b["measures"]:
+        return None
+    out = {}
+    for mi in range(a["measures"]):
+        A, B = Counter(), Counter()
+        for k in a["bars"]:
+            A.update(map(tuple, a["bars"][k].get(mi, [])))
+        for k in b["bars"]:
+            B.update(map(tuple, b["bars"][k].get(mi, [])))
+        if A == B:
+            continue
+        only_a = sum(1 for e in (A - B).elements() if e[0] != "r")
+        only_b = sum(1 for e in (B - A).elements() if e[0] != "r")
+        out[mi] = ("rests" if only_a == only_b == 0 else "missed" if only_a == 0 else
+                   "small_missed" if only_b == 0 else "differs")
+    return out
 
 
 def second_opinion(r: dict, im: Image.Image) -> dict:
@@ -326,20 +366,19 @@ def second_opinion(r: dict, im: Image.Image) -> dict:
     models rarely make the same mistake, so a disagreement points at a likely error, including notes the big model
     missed with full confidence. Adds a few seconds per page."""
     try:
-        from .compare import compare
         other = transcribe(im, detector="2m" if r.get("detector") != "2m" else "28m")
-        c = compare(r["xml"], other["xml"])
+        dis = disagreement(r["xml"], other["xml"])
     except Exception:
         return r
-    if c.get("bar_ok") is None:          # the two readings found a different number of bars: can't line them up
+    if dis is None:                      # the two readings found a different number of bars: can't line them up
         r["second_opinion"] = {"aligned": False}
         return r
     n = 0
-    for m, ok in zip(r["measures"], c["bar_ok"]):
-        if not ok:
-            m["disagree"] = True
-            n += 1
-        m["level"] = level(m)
+    for i, m in enumerate(r["measures"]):
+        if i in dis:
+            m["disagree"] = dis[i]
+            n += dis[i] != "small_missed"
+        m["level"] = level(m, second_reading=True)
     # keep the second reading so the editor can offer it bar by bar ("Use second reading" in Fix it); bar k of it
     # lines up with measure index k of this reading (before any sanitizer split)
     alt = other["xml"]

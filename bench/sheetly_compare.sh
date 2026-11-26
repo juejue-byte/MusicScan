@@ -3,12 +3,15 @@
 # "after fixing the marked bars"). Run from the MusicScan folder after scripts/setup.sh:
 #   bench/sheetly_compare.sh                 # engrave their ground truth ourselves, photos via their photo_sim.py
 #   bench/sheetly_compare.sh path/to/images  # or use their page-image bundle (<suite>/<slug>/p<N>.png)
-# Takes about an hour on CPU (49 pages x 2 suites); much less with the Mac GPU.
+#   bench/sheetly_compare.sh --max-pages 1   # quick: page one of each piece (about 10 minutes)
+#   bench/sheetly_compare.sh --fast          # small detector, no second reading
+# The full run reads every page (about 170 pages over both suites), so it takes an hour or more. It resumes if stopped.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . .venv/bin/activate
 [ -d ../omr-benchmark ] || git clone --depth 1 https://github.com/loveranmar/omr-benchmark ../omr-benchmark
 python -c 'import cv2, numpy' 2>/dev/null || pip install opencv-python-headless numpy
 export MUSICSCAN_DEVICE="${MUSICSCAN_DEVICE:-auto}" PYTORCH_ENABLE_MPS_FALLBACK=1
-python bench/sheetly_run.py ../omr-benchmark bench/sheetly_out ${1:+--images "$1"}
+if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then img="$1"; shift; set -- --images "$img" "$@"; fi
+python bench/sheetly_run.py ../omr-benchmark bench/sheetly_out "$@"
 echo "Their published figures (page one only): python ../omr-benchmark/score.py ../omr-benchmark"
