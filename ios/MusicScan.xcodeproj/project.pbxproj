@@ -11,6 +11,7 @@
 		DC9FAE570192D37C27935F1A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38975E18CADD92D5D0DF4D85 /* ContentView.swift */; };
 		47DBC62AB94FC595431ACAF5 /* EditorWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F6ADBF806AF8C5FD98DFB46 /* EditorWebView.swift */; };
 		7F61FCDDAB45B3F486DFD3A8 /* ServerConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE169D7E622F8EA5F830710C /* ServerConfig.swift */; };
+		A1D3E5F7092B4C6D8E0F1A2B /* Auth.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2E4F6A8103C5D7E9F1A2B3C /* Auth.swift */; };
 		A1AD3C7E5D3229201A280E14 /* ServerSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 035C7D144CB3CB5FA3F1F862 /* ServerSettingsView.swift */; };
 		4E8F372CB7F2B81A77E29D85 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 32BB636196F91ED59D7A4919 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
@@ -21,6 +22,7 @@
 		38975E18CADD92D5D0DF4D85 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		9F6ADBF806AF8C5FD98DFB46 /* EditorWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorWebView.swift; sourceTree = "<group>"; };
 		AE169D7E622F8EA5F830710C /* ServerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfig.swift; sourceTree = "<group>"; };
+		B2E4F6A8103C5D7E9F1A2B3C /* Auth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Auth.swift; sourceTree = "<group>"; };
 		035C7D144CB3CB5FA3F1F862 /* ServerSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSettingsView.swift; sourceTree = "<group>"; };
 		32BB636196F91ED59D7A4919 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		707A1B8AA6F495C9BF6658C2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -62,6 +64,7 @@
 				38975E18CADD92D5D0DF4D85 /* ContentView.swift */,
 				9F6ADBF806AF8C5FD98DFB46 /* EditorWebView.swift */,
 				AE169D7E622F8EA5F830710C /* ServerConfig.swift */,
+				B2E4F6A8103C5D7E9F1A2B3C /* Auth.swift */,
 				035C7D144CB3CB5FA3F1F862 /* ServerSettingsView.swift */,
 				32BB636196F91ED59D7A4919 /* Assets.xcassets */,
 				707A1B8AA6F495C9BF6658C2 /* Info.plist */,
@@ -142,6 +145,7 @@
 				DC9FAE570192D37C27935F1A /* ContentView.swift in Sources */,
 				47DBC62AB94FC595431ACAF5 /* EditorWebView.swift in Sources */,
 				7F61FCDDAB45B3F486DFD3A8 /* ServerConfig.swift in Sources */,
+				A1D3E5F7092B4C6D8E0F1A2B /* Auth.swift in Sources */,
 				A1AD3C7E5D3229201A280E14 /* ServerSettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

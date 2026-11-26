@@ -75,7 +75,12 @@ struct EditorWebView: UIViewRepresentable {
             guard let webView, url != loadedURL || token != loadedToken else { return }
             loadedURL = url
             loadedToken = token
-            webView.load(URLRequest(url: url, cachePolicy: .reloadRevalidatingCacheData, timeoutInterval: 60))  // a hosted server may be waking up
+            // Sign-in token as a cookie first, so the editor's own api/ requests carry it (Auth.swift).
+            let store = webView.configuration.websiteDataStore.httpCookieStore
+            Task { @MainActor in
+                await AuthManager.shared.prepareWebView(store, for: url)
+                webView.load(URLRequest(url: url, cachePolicy: .reloadRevalidatingCacheData, timeoutInterval: 60))  // a hosted server may be waking up
+            }
         }
 
         // MARK: navigation

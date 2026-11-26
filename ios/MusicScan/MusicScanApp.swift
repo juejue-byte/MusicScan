@@ -13,6 +13,7 @@ struct MusicScanApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .task { await AuthManager.shared.start() }  // anonymous account on first launch (Auth.swift)
         }
     }
 }

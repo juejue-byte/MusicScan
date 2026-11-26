@@ -139,6 +139,23 @@ modal deploy deploy/modal_app.py
 Providers to turn on in Supabase (Authentication > Sign In / Providers): **Anonymous** (first launch, no screen),
 **Apple** (required by App Review as soon as Google is offered), **Google**, and **Email** (magic link).
 
-Still to build: the app side (supabase-swift, anonymous sign-in at launch, the token as the `musicscan_session`
-cookie in the web view, the sign-in sheet), cutting previews to the top half on the server, and the RevenueCat
-webhook that calls `set_entitlement`.
+### In the iOS app (ios/MusicScan/Auth.swift)
+
+The app talks to Supabase Auth directly (no package to add). On first launch it makes an anonymous account; the token
+goes to the server as a Bearer header and as the `musicscan_session` cookie in the editor's web view, refreshed before
+it expires. **Server: …** now has an **Account** section: "Guest on this device", or add an email with a 6-digit code
+(on a guest account the email is attached to the same account, so its pages carry over). Apple and Google buttons
+are behind `AuthFlags` in Auth.swift, off until those providers are set up.
+
+Supabase dashboard settings this needs:
+
+1. Authentication > Sign In / Providers: **Allow anonymous sign-ins** on, **Email** on.
+2. Authentication > Emails: in the **Magic Link** and **Change Email Address** templates, include the code,
+   for example `<p>Your MusicScan code: <strong>{{ .Token }}</strong></p>`.
+3. For Apple/Google later: Authentication > URL Configuration > Redirect URLs: add `musicscan://auth-callback`.
+
+Check it: **Server: …** > **Test connection** says "Connected to MusicScan, signed in." when the server accepted
+the token; "…did not accept the sign-in" means the server's `SUPABASE_URL` is missing or the project still signs
+tokens with the legacy secret (then add `SUPABASE_JWT_SECRET` to the Modal secret).
+
+Still to build elsewhere: previews cut to the top half and purchases (Stream 5, Store*.swift / server/billing.py).

@@ -24,6 +24,7 @@ struct ServerSettingsView: View {
                 } footer: {
                     Text("Hosted: paste the address modal deploy printed, with your key, like https://you--musicscan.modal.run/?key=… (see deploy/README.md).\nOn your own computer: run HOST=0.0.0.0 scripts/run.sh and enter its Wi-Fi address with port 8000. The simulator can use http://localhost:8000.")
                 }
+                AccountSection()
                 Section {
                     Button(checking ? "Checking…" : "Test connection") { Task { await test() } }
                         .disabled(checking || ServerConfig.normalize(draft) == nil)
@@ -55,13 +56,14 @@ struct ServerSettingsView: View {
         dismiss()
     }
 
-    private func test() async {
+    @MainActor private func test() async {
         guard let base = ServerConfig.normalize(draft) else { return }
         checking = true
         defer { checking = false }
         guard let health = ServerConfig.endpoint(base, "api/health") else { return }
         var request = URLRequest(url: health)
         request.timeoutInterval = 60  // a hosted server that scaled to zero takes up to a minute to wake
+        if let bearer = await AuthManager.shared.bearer() { request.setValue(bearer, forHTTPHeaderField: "Authorization") }
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -69,7 +71,12 @@ struct ServerSettingsView: View {
             if code == 200, info?["app"] as? String == "musicscan" {
                 let authorized = info?["authorized"] as? Bool ?? true
                 reachable = authorized
-                status = authorized ? "Connected to MusicScan."
+                let signedIn = info?["user"] is String
+                let signInOn = info?["sign_in"] as? Bool ?? false
+                status = authorized ? (signedIn ? "Connected to MusicScan, signed in."
+                                       : signInOn && AuthManager.shared.isConfigured
+                                       ? "Connected to MusicScan, but the server did not accept the sign-in."
+                                       : "Connected to MusicScan.")
                     : "Connected, but the access key is missing or wrong. Add ?key=… to the address."
             } else {
                 reachable = false
