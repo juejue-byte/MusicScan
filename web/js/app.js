@@ -2,6 +2,7 @@
 import { Score, pitchName, midiOf, clefTop, toMidi } from './score.js';
 import { render, pitchAtY, noteYs } from './render.js';
 import * as audio from './audio.js';
+import * as native from './native.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -36,6 +37,7 @@ function show(view) {
 }
 function download(name, data, type) {
   const blob = data instanceof Blob ? data : new Blob([data], { type });
+  if (native.isNative) { native.share(name, blob).catch((e) => toast('Could not share the file: ' + e.message)); return; }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;
@@ -275,7 +277,9 @@ function staveAt(x, y) {
 function notesIn(st) {
   return S.layout.notes.filter((n) => n.ev.mi === st.mi && n.ev.pi === st.pi && n.ev.staff === st.staff).sort((a, b) => noteX(a) - noteX(b));
 }
-function hitTest(x, y) {
+// fingers are less precise than a mouse: widen the hit area while the last pointer was a touch
+const TOUCH = { dx: 24, dy: 14, rest: 22 };
+function hitTest(x, y, touch = S.touch) {
   for (const m of S.layout.measures) if (m && x >= m.x0 && x <= m.x1 && y >= m.y0 - 16 && y < m.y0 + 2) return { type: 'num', mi: m.mi };
   const st = staveAt(x, y);
   if (!st) return null;
@@ -284,12 +288,12 @@ function hitTest(x, y) {
   for (const n of notes) {
     if (n.ghost) continue;
     const dx = Math.abs(x - noteX(n));
-    if (dx > 16) continue;
+    if (dx > (touch ? TOUCH.dx : 16)) continue;
     const ys = n.ev.rest ? [{ el: n.ev.el, y: restY(n) }] : noteYs(n);
     for (const m of ys) {
       const dy = Math.abs(y - m.y);
       const d = Math.hypot(dx, dy * 1.3);
-      if (dy < (n.ev.rest ? 16 : 8) && d < bd) { bd = d; best = { n, member: m.el, my: m.y }; }
+      if (dy < (n.ev.rest ? (touch ? TOUCH.rest : 16) : (touch ? TOUCH.dy : 8)) && d < bd) { bd = d; best = { n, member: m.el, my: m.y }; }
     }
   }
   if (best) return { type: 'note', st, ...best };
@@ -326,9 +330,19 @@ function staffPitch(st, y, x) {
 // ---------------------------------------------------------------- pointer interaction
 function onPointerDown(e) {
   if (!S.layout || e.button > 0) return;
+  S.touch = e.pointerType === 'touch' || e.pointerType === 'pen';
   audio.audioCtx();
   const { x, y } = localPoint(e);
   const h = hitTest(x, y);
+  // touch in Add mode: the ghost note follows the finger and the note is written when the finger lifts
+  if (S.touch && S.mode === 'add' && h && (h.type === 'staff' || (h.type === 'note' && h.n.ev.rest))) {
+    S.drag = { addTouch: true, x, y, startX: e.clientX, startY: e.clientY, pointer: e.pointerId };
+    $('#score').setPointerCapture(e.pointerId);
+    drawGhost(x, y);
+    native.haptic('light');
+    e.preventDefault();
+    return;
+  }
   if (!h) { S.sel = null; S.measures.clear(); redraw(); hideInspector(); return; }
   if (h.type === 'num') { toggleBar(h.mi, e.shiftKey || e.metaKey || e.ctrlKey); return; }
   const addMode = S.mode === 'add';
@@ -350,16 +364,21 @@ function onPointerDown(e) {
     e.preventDefault();
     return;
   }
-  const st = h.st;
-  const { pitch } = staffPitch(st, y, x);
   if (!addMode) {
+    const st = h.st;
     // empty staff in select mode: select the bar
     S.sel = null;
     toggleBar(st.mi, e.shiftKey || e.metaKey || e.ctrlKey, true);
     return;
   }
-  // add mode
-  if (h.type === 'note' && e.shiftKey && !h.n.ev.rest) {
+  addAt(h, x, y, e.shiftKey);
+}
+
+// Add mode: write a note (or a chord tone with shift) at a point on the staff
+function addAt(h, x, y, shift) {
+  const st = h.st;
+  const { pitch } = staffPitch(st, y, x);
+  if (h.type === 'note' && shift && !h.n.ev.rest) {
     const n = h.n;
     edit(() => S.score.addChordTone(n.ev, pitch));
     S.sel = null;
@@ -369,7 +388,7 @@ function onPointerDown(e) {
   }
   // shift-click near a note column adds to the chord
   const near = (h.notes || []).find((n) => !n.ghost && !n.ev.rest && Math.abs(noteX(n) - x) < 9);
-  if (near && e.shiftKey) { edit(() => S.score.addChordTone(near.ev, pitch)); audio.preview(midiOf(pitch)); return; }
+  if (near && shift) { edit(() => S.score.addChordTone(near.ev, pitch)); audio.preview(midiOf(pitch)); return; }
   const place = h.type === 'note' && h.n.ev.rest ? { where: 'at', n: h.n } : placementAt(st, h.notes || [], x);
   let created = null;
   edit(() => {
@@ -379,12 +398,20 @@ function onPointerDown(e) {
   S.sel = created;
   S.measures = new Set([st.mi]);
   audio.preview(midiOf(pitch));
+  native.haptic('medium');
   redraw();
 }
 
 function onPointerMove(e) {
   if (!S.layout) return;
   const { x, y } = localPoint(e);
+  if (S.drag?.addTouch) {
+    S.drag.x = x; S.drag.y = y;
+    const before = $('#overlay .ghost text')?.textContent;
+    drawGhost(x, y, true);
+    if ($('#overlay .ghost text')?.textContent !== before) native.haptic('selection');
+    return;
+  }
   if (S.drag) {
     const dx = e.clientX - S.drag.startX, dy = e.clientY - S.drag.startY;
     if (!S.drag.axis) {
@@ -393,7 +420,9 @@ function onPointerMove(e) {
       if (!S.drag.axis) return;
     }
     if (S.drag.axis === 'x') { dragSideways(x); return; }
-    const steps = Math.round((S.drag.startY - e.clientY) / (5 * S.zoom));
+    // one staff step per half line-space; a finger gets a little more travel per step so it is easy to hit
+    const stepPx = 5 * S.zoom * (S.touch ? 1.6 : 1);
+    const steps = Math.round((S.drag.startY - e.clientY) / stepPx);
     if (steps !== S.drag.steps) {
       if (!S.drag.pushed) { S.undo.push(snapshot()); S.redo = []; S.drag.pushed = true; }
       S.drag.steps = steps;
@@ -404,11 +433,13 @@ function onPointerMove(e) {
         S.sel = S.drag.el;
         redraw();
         audio.preview(midiOf(p));
+        native.haptic('selection');
         drawDragLabel(p, x, y);
       }
     }
     return;
   }
+  if (e.pointerType === 'mouse') S.touch = false;
   if (S.mode === 'add') { drawGhost(x, y); return; }
   // hover feedback in select mode
   const h = hitTest(x, y);
@@ -429,10 +460,19 @@ function dragSideways(x) {
   };
   if (next && x > noteX(next) - 4) ok = doSwap(n.ev);
   else if (prev && x < noteX(prev) + 4) ok = doSwap(prev.ev);
-  if (ok) { redraw(); clearOverlay('drag'); }
+  if (ok) { redraw(); clearOverlay('drag'); native.haptic('light'); }
 }
 
-function onPointerUp() {
+function onPointerUp(e) {
+  if (S.drag?.addTouch) {
+    const { x, y } = S.drag;
+    S.drag = null;
+    clearOverlay('ghost');
+    if (e?.type === 'pointercancel') return;
+    const h = hitTest(x, y);
+    if (h && h.type !== 'num') addAt(h, x, y, false);
+    return;
+  }
   if (S.drag) {
     if (S.drag.pushed) saveLocal();
     S.drag = null;
@@ -442,7 +482,7 @@ function onPointerUp() {
 
 function clearOverlay(cls) { for (const el of $('#overlay').querySelectorAll('.' + cls)) el.remove(); }
 
-function drawGhost(x, y) {
+function drawGhost(x, y, finger = false) {
   clearOverlay('ghost');
   const h = hitTest(x, y);
   if (!h || h.type === 'num') return;
@@ -460,7 +500,7 @@ function drawGhost(x, y) {
   Object.entries({ cx: gx, cy: sy, rx: 6.2, ry: 4.6, fill: '#2563eb', 'fill-opacity': 0.45, transform: `rotate(-20 ${gx} ${sy})` }).forEach(([k, v]) => head.setAttribute(k, v));
   g.appendChild(head);
   const t = document.createElementNS(SVGNS, 'text');
-  Object.entries({ x: gx - 10, y: Math.min(sy, top) - 14, 'font-size': 12, fill: '#1e40af', 'font-family': 'system-ui, sans-serif', 'font-weight': 600 }).forEach(([k, v]) => t.setAttribute(k, v));
+  Object.entries({ x: gx - 10, y: Math.min(sy, top) - (finger ? 48 : 14), 'font-size': finger ? 16 : 12, fill: '#1e40af', 'font-family': 'system-ui, sans-serif', 'font-weight': 600 }).forEach(([k, v]) => t.setAttribute(k, v));
   t.textContent = pitchName(pitch);
   t.setAttribute('paint-order', 'stroke');
   t.setAttribute('stroke', '#fff');
@@ -476,7 +516,7 @@ function line(x1, y1, x2, y2) {
 function drawDragLabel(p, x, y) {
   clearOverlay('drag');
   const t = document.createElementNS(SVGNS, 'text');
-  Object.entries({ x: x + 14, y: y - 10, 'font-size': 13, fill: '#1e40af', 'font-weight': 700, 'font-family': 'system-ui, sans-serif', class: 'drag' }).forEach(([k, v]) => t.setAttribute(k, v));
+  Object.entries({ x: x + (S.touch ? -8 : 14), y: y - (S.touch ? 46 : 10), 'font-size': S.touch ? 16 : 13, fill: '#1e40af', 'font-weight': 700, 'font-family': 'system-ui, sans-serif', class: 'drag' }).forEach(([k, v]) => t.setAttribute(k, v));
   t.textContent = pitchName(p);
   $('#overlay').appendChild(t);
 }
@@ -892,6 +932,20 @@ function wire() {
   const drop = $('#drop');
   $('#fileInput').onchange = (e) => startUpload(e.target.files[0]);
   $('#cameraInput').onchange = (e) => startUpload(e.target.files[0]);
+  if (native.isNative) {
+    // in the iOS app: Apple's document camera finds the page edges and flattens the page before upload
+    const cam = $('#cameraInput').closest('label');
+    cam.lastChild.textContent = '📷 Scan a page';
+    cam.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try { const f = await native.scanDocument(); if (f) startUpload(f); } catch (err) { toast(err.message); }
+    });
+    const srv = document.createElement('button');
+    srv.className = 'btn ghost server-link';
+    srv.textContent = 'Server: ' + location.host;
+    srv.onclick = () => native.openSettings();
+    $('.upload-row').appendChild(srv);
+  }
   for (const ev of ['dragenter', 'dragover']) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); });
   for (const ev of ['dragleave', 'drop']) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); });
   drop.addEventListener('drop', (e) => startUpload(e.dataTransfer.files[0]));
@@ -903,9 +957,11 @@ function wire() {
     if (!S.layout || e.touches.length !== 1) return;
     const t = e.touches[0];
     const { x, y } = localPoint(t);
-    const h = hitTest(x, y);
+    const h = hitTest(x, y, true);
     if (h && (h.type === 'note' || S.mode === 'add')) e.preventDefault();
   }, { passive: false });
+  // and once a note drag is under way the page must not start scrolling under the finger
+  sc.addEventListener('touchmove', (e) => { if (S.drag) e.preventDefault(); }, { passive: false });
   sc.addEventListener('pointerdown', onPointerDown);
   sc.addEventListener('pointermove', onPointerMove);
   sc.addEventListener('pointerup', onPointerUp);

@@ -118,6 +118,9 @@ kbd { font: 10px ui-monospace, monospace; color: var(--muted); }
 .score-scroll { position: relative; flex: 1; overflow: auto; background: #fff; touch-action: pan-x pan-y; }
 .score { padding: 8px 0 230px; user-select: none; -webkit-user-select: none; }
 .score svg { display: block; }
+.score svg, .score svg * { pointer-events: none !important; } /* hits go to #score, which survives redraws (a touch keeps its target) */
+.score { -webkit-touch-callout: none; }
+button, .btn { touch-action: manipulation; }
 .overlay { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
 .score.mode-add { cursor: crosshair; }
 .statusbar { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); background: var(--panel); padding: 3px 8px 3px 14px; }
