@@ -50,6 +50,7 @@ the server. Force it with `?demo`.
 | Select bars | Click a bar number (Shift-click for a range), or a bar on the photo |
 | Rescan | Select bars → **Rescan bars** → compare → keep or try another way |
 | Play / stop | Space (starts at the selected bar) |
+| Loop | L or ⟲: the selected bars repeat (nothing selected: the whole piece) |
 | Undo / redo | Ctrl/Cmd+Z · Ctrl/Cmd+Shift+Z |
 
 Bars that no longer add up are outlined in red dashes and listed in the status bar.

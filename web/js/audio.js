@@ -61,26 +61,40 @@ export function preview(midi) {
 
 // events: [{time, dur, midi, measure}] in quarter notes; starts: start time of each played bar in quarters;
 // order (optional): the bar played at each step, when repeats make the playing order differ from the page
-export async function play({ events, starts, order }, { bpm = 90, fromMeasure = 0, onMeasure, onTime, onEnd } = {}) {
+// toMeasure (optional): last bar to play; with loop, the bars fromMeasure..toMeasure repeat until stop()
+export async function play({ events, starts, order }, { bpm = 90, fromMeasure = 0, toMeasure = null, loop = false, onMeasure, onTime, onEnd } = {}) {
   stop();
   const c = audioCtx();
   await loadPiano();
   const spq = 60 / bpm;
+  const steps = starts.length - 1;
   const step0 = order ? Math.max(0, order.indexOf(fromMeasure)) : fromMeasure;
-  const t0q = starts[step0] || 0;
-  const base = c.currentTime + 0.12;
-  for (const e of events) {
-    if (e.time < t0q - 1e-6) continue;
-    hit(e.midi, base + (e.time - t0q) * spq, e.dur * spq * 0.95, 78);
+  let step1 = steps;
+  if (toMeasure !== null) {
+    const i = order ? order.indexOf(toMeasure, step0) : toMeasure;
+    if (i >= step0) step1 = Math.min(steps, i + 1);
   }
-  const endQ = starts[starts.length - 1];
+  const t0q = starts[step0] || 0;
+  const endQ = starts[step1];
+  let base = c.currentTime + 0.12;
+  const schedule = (at) => {
+    for (const e of events) {
+      if (e.time < t0q - 1e-6 || e.time >= endQ - 1e-6) continue;
+      hit(e.midi, at + (e.time - t0q) * spq, Math.min(e.dur, endQ - e.time) * spq * 0.95, 78);
+    }
+  };
+  schedule(base);
   stopAt = base + (endQ - t0q) * spq;
-  let last = -1;
+  let last = -1, queued = false;
   const tick = () => {
+    if (loop && !queued && c.currentTime >= stopAt - 0.25) { schedule(stopAt); queued = true; }
+    if (c.currentTime >= stopAt) {
+      if (!loop) { stop(); onEnd && onEnd(); return; }
+      base = stopAt; stopAt = base + (endQ - t0q) * spq; queued = false; last = -1;
+    }
     const q = (c.currentTime - base) / spq + t0q;
-    if (c.currentTime >= stopAt) { stop(); onEnd && onEnd(); return; }
     let m = step0;
-    while (m + 1 < starts.length - 1 && starts[m + 1] <= q) m++;
+    while (m + 1 < step1 && starts[m + 1] <= q) m++;
     if (m !== last && q >= t0q) { last = m; onMeasure && onMeasure(order ? order[m] : m); }
     if (onTime && q >= t0q) onTime(q);
     timer = requestAnimationFrame(tick);

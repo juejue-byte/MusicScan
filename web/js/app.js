@@ -33,7 +33,7 @@ function show(view) {
   for (const v of ['viewUpload', 'viewProgress', 'viewEditor']) $('#' + v).classList.toggle('hidden', v !== view);
   const editing = view === 'viewEditor';
   document.body.classList.toggle('editing', editing);
-  for (const b of ['#btnPlay', '#btnExport']) $(b).disabled = !editing;
+  for (const b of ['#btnPlay', '#btnLoop', '#btnExport']) $(b).disabled = !editing;
   $('.top-actions').classList.toggle('hidden', !editing);
   if (!editing) $('#docTitle').textContent = '';
   updateUndoButtons();
@@ -817,6 +817,7 @@ function onKey(e) {
     case 'v': case 'V': setMode('select'); break;
     case 'Escape': if (S.mode === 'add') setMode('select'); else { S.sel = null; S.measures.clear(); hideInspector(); redraw(); } break;
     case ' ': e.preventDefault(); togglePlay(); break;
+    case 'l': case 'L': toggleLoop(); break;
     default: break;
   }
 }
@@ -1057,6 +1058,9 @@ function togglePlay() {
   if (!S.score) return;
   if (audio.isPlaying()) { stopPlay(); return; }
   const from = S.measures.size ? Math.min(...S.measures) : 0;
+  // Loop on: repeat the selected bars (one bar selected loops that bar), or the whole piece with nothing selected
+  const loop = !!S.loop;
+  const to = loop && S.measures.size ? Math.max(...S.measures) : null;
   const bpm = Math.max(30, Math.min(240, +$('#tempo').value || 90));
   $('#btnPlay').querySelector('.pi').textContent = '■';
   $('#btnPlay').querySelector('.pl').textContent = 'Stop';
@@ -1066,7 +1070,7 @@ function togglePlay() {
   for (const n of S.layout.notes) if (!n.ghost && !n.ev.rest) for (const m of noteYs(n)) pos.set(m.el, { x: noteX(n), y: m.y });
   let lastKey = '';
   audio.play(pe, {
-    bpm, fromMeasure: from,
+    bpm, fromMeasure: from, toMeasure: to, loop,
     onMeasure: (m) => drawCursor(m),
     onTime: (q) => {
       const on = pe.events.filter((e) => e.time <= q && q < e.time + Math.max(e.dur, 0.05));
@@ -1084,6 +1088,13 @@ function togglePlay() {
     },
     onEnd: () => stopPlay(),
   });
+}
+function toggleLoop() {
+  S.loop = !S.loop;
+  $('#btnLoop').classList.toggle('on', S.loop);
+  $('#btnLoop').setAttribute('aria-pressed', String(S.loop));
+  if (audio.isPlaying()) { stopPlay(); togglePlay(); }
+  toast(S.loop ? (S.measures.size ? 'Loop on: the selected bars repeat.' : 'Loop on. Select bars to loop just those.') : 'Loop off.');
 }
 function stopPlay() {
   audio.stop();
@@ -1192,6 +1203,7 @@ function wire() {
   $('#btnUndo').onclick = undo;
   $('#btnRedo').onclick = redo;
   $('#btnPlay').onclick = togglePlay;
+  $('#btnLoop').onclick = toggleLoop;
   $('#btnNew').onclick = () => { stopPlay(); show('viewUpload'); loadResume(); };
   // iPad app: ⌘ shortcuts from a hardware keyboard (listed when you hold ⌘) and Apple Pencil double-tap
   native.onCommand((cmd) => {
