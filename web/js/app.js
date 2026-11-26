@@ -870,6 +870,13 @@ const SHORTCUTS = [
     ['I,  Shift + I', 'Insert an empty bar after / before'],
     ['Shift + Delete', 'Delete the selected bars'],
   ]],
+  ['While Fix it is open', [
+    ['Enter', 'This bar looks right'],
+    ['[  ]', 'Previous / next flagged bar'],
+    ['P', 'Play the bar'],
+    ['E', 'Edit the bar in the score'],
+    ['F or Esc', 'Close Fix it'],
+  ]],
   ['Play and mark up', [
     ['Space', 'Play / stop'],
     ['L', 'Loop the selected bars'],
