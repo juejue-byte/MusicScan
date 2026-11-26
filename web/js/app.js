@@ -820,6 +820,7 @@ function openBarMenu(btn) {
   cp.disabled = !r;
   cp.firstChild.textContent = r && r[1] > r[0] ? `Copy ${r[1] - r[0] + 1} bars ` : 'Copy the bar ';
   ps.disabled = !r || CLIP?.kind !== 'bars';
+  for (const k of ['octup', 'octdown']) menu.querySelector(`[data-bar="${k}"]`).disabled = !r;
   ps.firstChild.textContent = CLIP?.kind === 'bars' && CLIP.n > 1 ? `Paste ${CLIP.n} bars here ` : 'Paste over this bar ';
   menu.classList.add('open');
   const b = btn.getBoundingClientRect();
@@ -827,10 +828,17 @@ function openBarMenu(btn) {
   menu.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, b.left)) + 'px';
   menu.style.top = (b.bottom + 4) + 'px';
 }
+// Bar menu: a whole bar (or the selected bars) up or down an octave; with a note selected, its bar
+function barOctave(dir) {
+  const s = selected();
+  if (s) { S.measures = new Set([s.ev.mi]); S.barStaff = { pi: s.ev.pi, staff: s.ev.staff }; S.sel = null; }
+  if (!S.measures.size) { toast('Select a bar first'); return; }
+  NI.pitchKey(dir, 'octave');
+}
 function barAction(a) {
   $('#barMenu').classList.remove('open');
   if (!S.score) return;
-  ({ split: splitBar, join: joinBars, before: () => insertBar('before'), after: () => insertBar('after'), delete: deleteBars, copy: () => copySel(false, true), paste: () => paste(true) })[a]?.();
+  ({ split: splitBar, join: joinBars, before: () => insertBar('before'), after: () => insertBar('after'), delete: deleteBars, copy: () => copySel(false, true), paste: () => paste(true), octup: () => barOctave(1), octdown: () => barOctave(-1) })[a]?.();
 }
 function del() {
   if (S.selMark) { removeSelMark(); return; }

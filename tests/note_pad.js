@@ -75,6 +75,11 @@ function serve() {
       await p.evaluate(() => { const S = window.__ms.S; S.sel = null; S.measures = new Set([3]); window.__ms.redraw(); });
       await tap('#btnBar'); await tap('[data-bar="paste"]');
       ok(await sig(3) === await sig(1), `${dev}: Bar menu copies and pastes a bar`);
+      const oc = () => p.evaluate(() => window.__ms.S.score.events(0, 3).filter((e) => !e.rest).flatMap((e) => e.chord.map((c) => c.pitch.octave)).join());
+      const before = await oc();
+      await p.evaluate(() => { const S = window.__ms.S; S.sel = null; S.barStaff = null; S.measures = new Set([3]); window.__ms.redraw(); });
+      await tap('#btnBar'); await tap('[data-bar="octdown"]');
+      ok((await oc()) === before.split(',').map((o) => +o - 1).join(), `${dev}: Bar menu moves a bar down an octave`);
     }
     ok(!errs.length, `${dev}: no page errors ${errs.join('; ')}`);
     await ctx.close();
