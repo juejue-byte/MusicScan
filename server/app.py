@@ -1,6 +1,7 @@
 """MusicScan MVP server.  Run:  uvicorn server.app:app --port 8000  (from the musicscan folder)."""
 from __future__ import annotations
 
+import hashlib
 import hmac
 import io
 import json
@@ -36,14 +37,19 @@ app = FastAPI(title="MusicScan")
 #  - a shared access key (MUSICSCAN_ACCESS_KEY) while testing: open the app once as  https://host/?key=KEY  and a
 #    cookie keeps it, or send the X-MusicScan-Key header.
 # Neither set (the default on your own computer) means the API is open.
-ACCESS_KEY = os.environ.get("MUSICSCAN_ACCESS_KEY", "")
+ACCESS_KEY = os.environ.get("MUSICSCAN_ACCESS_KEY", "").strip().strip('"').strip("'")
 OPEN_API = ("/api/health", "/api/samples", "/api/config", "/api/billing/notifications")
 KEY_COOKIE = "musicscan_key"
 
 
 def _given_key(request: Request) -> str:
     return (request.query_params.get("key") or request.headers.get("x-musicscan-key")
-            or request.cookies.get(KEY_COOKIE) or "")
+            or request.cookies.get(KEY_COOKIE) or "").strip()
+
+
+def _fingerprint(key: str) -> str | None:
+    """6 hex characters of the key's SHA-256: enough to tell two keys apart, useless for guessing one."""
+    return hashlib.sha256(key.encode()).hexdigest()[:6] if key else None
 
 
 def _key_ok(request: Request) -> bool:
@@ -79,6 +85,9 @@ def health(request: Request):
     return {"ok": True, "app": "musicscan", "authorized": _authorized(request), "key_required": bool(ACCESS_KEY),
             "sign_in": auth.enabled(), "user": user["id"] if user else None,
             "key_sent": bool(_given_key(request)),  # a key arrived (query, header or cookie), right or wrong
+            # compare with scripts/sync_modal_secret.sh's local fingerprint to see which side differs
+            "key_fingerprint": _fingerprint(ACCESS_KEY), "key_length": len(ACCESS_KEY),
+            "sent_fingerprint": _fingerprint(_given_key(request)),
             "device": omr.pick_device() if omr._DEV else None}
 
 
