@@ -846,7 +846,7 @@ function setMode(m) {
 const SHORTCUTS = [
   ['Write notes', [
     ['N', 'Note input on / off (the caret starts at the selection)'],
-    ['A – G', 'Write that note at the caret (nearest octave). With a note selected outside note input: change its pitch and move on'],
+    ['A – G', 'Write that note at the caret, nearest octave. Outside note input: re-pitch the selected note and move on'],
     ['Shift + A – G', 'Add that note above the last one (a chord)'],
     ['0', 'Rest (at the caret, or turn the selection into a rest)'],
     ['R', 'Repeat the last note or chord'],
