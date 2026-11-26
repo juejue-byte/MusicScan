@@ -41,12 +41,13 @@ Run a test with `NODE_PATH=$(npm root -g) node tests/<name>.js`.
 ## Notes for iOS
 
 - Capture on iOS should keep VisionKit's document camera. The live photo check in `capture.js` is for the web; its thresholds (sharpness, paper brightness, fill and motion) are a starting point if you add a check before upload.
-- Paywall prices are $44.99 a year (default, "Best value"), $6.99 a month and $5.99 a week, with 3 free scans a month. Editing and practice stay free. Payments are not connected anywhere yet.
+- Plans (Allen, 2026-11-26): Pro $15.99 a month or $99.99 a year (default, "Best value", 7-day free trial for intro-offer eligible users), up to 30 pages a month. New users get 1 free page with every feature; after that a scan previews the first half of the page and blurs the rest, and editing, playback and export ask to unlock. No weekly plan. Payments are not connected yet (see docs/AGENT_PROMPTS.md, Stream 5).
+- The two paywall wireframes (iPad 8, iPhone 5) still show the earlier weekly/monthly/yearly prices. Use their layout only; prices, plans and copy come from `PLAN` in `web/js/paywall.js` (see `screens/` for the built paywall).
 - On iPhone the editor puts durations in a bottom bar and the paywall is a bottom sheet. On iPad the photo sits beside the score.
 
 ## Assumptions to confirm
 
-These choices were made without a review and are easy to change: the welcome copy, the free allowance (3 scans a month), Yearly as the default plan, Marigold for Pro, and Nunito as the fallback for the rounded face.
+These choices were made without a review and are easy to change: the welcome copy, Yearly as the default plan, Marigold for Pro, and Nunito as the fallback for the rounded face.
 
 ## Rebuilding the wireframes
 
