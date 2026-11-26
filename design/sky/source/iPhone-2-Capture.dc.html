@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>iPhone capture</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#BFE0FF}a:hover{color:#FFFFFF}
+.pill{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:99px;font-size:13px;font-weight:600}
+</style>
+</helmet>
+<div style="width:390px;height:844px;box-sizing:border-box;background:#0E2238;font-family:Inter,system-ui,sans-serif;color:#FFFFFF;display:flex;flex-direction:column;position:relative;overflow:hidden">
+<div style="padding:58px 16px 0;display:flex;align-items:center;gap:8px">
+<a href="iPhone-1-Library.dc.html" aria-label="Close" style="display:grid;place-items:center;width:44px;height:44px;border-radius:99px;background:rgba(255,255,255,.12);color:#FFFFFF"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></a>
+<span style="margin-left:auto" class="pill"><span style="background:rgba(255,255,255,.12);padding:6px 12px;border-radius:99px">Page 1</span></span>
+</div>
+<div style="flex:1;display:grid;place-items:center;position:relative">
+<div style="width:280px;height:380px;background:#E9E3D6;border-radius:4px;transform:rotate(-3deg);filter:brightness(.85);background-image:repeating-linear-gradient(transparent 0 30px,#555 30px 31px,transparent 31px 36px,#555 36px 37px,transparent 37px 42px,#555 42px 43px,transparent 43px 48px,#555 48px 49px,transparent 49px 54px,#555 54px 55px,transparent 55px 70px)"></div>
+<svg width="330" height="440" viewBox="0 0 330 440" aria-hidden="true" style="position:absolute"><path d="M6 50V6h44M280 6h44v44M324 390v44h-44M50 434H6v-44" fill="none" stroke="#5FAEEB" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+</div>
+<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;padding:0 16px 14px">
+<span class="pill" style="background:#E2F5EA;color:#1D7A4E">✓ Whole page</span>
+<span class="pill" style="background:#E2F5EA;color:#1D7A4E">✓ Sharp</span>
+<span class="pill" style="background:#FFF1D6;color:#8A5300">● A bit dark</span>
+</div>
+<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 36px 44px">
+<a href="#" style="font-size:15px;font-weight:600">Photos</a>
+<button aria-label="Take photo" style="width:78px;height:78px;border-radius:99px;border:5px solid #FFFFFF;background:#1769C2"></button>
+<a href="iPhone-3-Editor.dc.html" style="font-size:15px;font-weight:600">Done</a>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

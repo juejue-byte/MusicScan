@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iPhone practice</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Nunito:wght@700;800;900&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0F56A3}a:hover{color:#0E2238}
+.disp{font-family:Nunito,ui-rounded,system-ui,sans-serif}
+.staff{position:absolute;left:16px;right:8px;height:33px;background:repeating-linear-gradient(#0E2238 0 1px,transparent 1px 8px)}
+.dk{display:flex;align-items:center;justify-content:center;gap:6px;height:44px;border-radius:12px;font:600 14px Inter,system-ui,sans-serif;background:#1D3554;color:#E3F0FC;border:0}
+.dk.on{background:#D8EAFC;color:#0F56A3}
+</style>
+</head>
+<body>
+<div style="width:390px;height:844px;box-sizing:border-box;background:#F5FAFF;font-family:Inter,system-ui,sans-serif;color:#0E2238;display:flex;flex-direction:column">
+<div style="padding:56px 16px 10px;display:flex;align-items:center;gap:8px;background:#EAF4FE">
+<a href="iPhone-3-Editor.html" style="font-weight:600;text-decoration:none">‹ Edit</a>
+<b class="disp" style="font-size:17px;font-weight:800;flex:1;text-align:center">Sonatina in C</b>
+<span style="width:44px"></span>
+</div>
+<div style="flex:1;margin:10px 8px 0;border-radius:18px;background:#FFFFFF;box-shadow:0 6px 20px rgba(23,105,194,.08);overflow:hidden">
+<div style="position:relative;height:120px;margin-top:40px">
+<div style="position:absolute;left:18px;width:170px;top:-26px;height:6px;border-radius:99px;background:#5FAEEB"></div>
+<div style="position:absolute;left:186px;width:174px;top:-10px;height:118px;background:#EAF4FE;border-radius:6px"></div>
+<div class="staff" style="top:0"></div><div class="staff" style="top:72px"></div>
+<div style="position:absolute;left:16px;top:0;width:1px;height:105px;background:#0E2238"></div>
+<div style="position:absolute;left:186px;top:0;width:1px;height:105px;background:#0E2238"></div>
+<div style="position:absolute;left:363px;top:0;width:1px;height:105px;background:#0E2238"></div>
+<div style="position:absolute;left:250px;top:-14px;width:4px;height:132px;border-radius:2px;background:#1769C2;box-shadow:0 0 12px rgba(95,174,235,.9)"></div>
+</div>
+<div style="position:relative;height:120px;margin-top:40px"><div class="staff" style="top:0"></div><div class="staff" style="top:72px"></div></div>
+<div style="position:relative;height:120px;margin-top:40px"><div class="staff" style="top:0"></div><div class="staff" style="top:72px"></div></div>
+</div>
+<div style="margin:10px 8px 30px;padding:14px;border-radius:22px;background:#0E2238;color:#FFFFFF;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;align-items:center;gap:12px">
+<button aria-label="Pause" style="display:grid;place-items:center;flex:none;width:52px;height:52px;border-radius:99px;background:#FFFFFF;color:#0E2238;border:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></button>
+<div style="flex:1;display:flex;flex-direction:column;gap:8px">
+<div style="display:flex;justify-content:space-between;font-size:13px;color:#BFD7EE"><span>Bar 6 of 12</span><span><b style="color:#FFFFFF">♩ 72</b> of 90</span></div>
+<div style="position:relative;height:6px;border-radius:99px;background:#2B4566"><div style="width:60%;height:6px;border-radius:99px;background:#5FAEEB"></div><div style="position:absolute;left:57%;top:-7px;width:20px;height:20px;border-radius:99px;background:#FFFFFF"></div></div>
+</div>
+</div>
+<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px">
+<button class="dk on">Loop</button><button class="dk">Click</button><button class="dk on">Count</button><button class="dk">Hands</button>
+</div>
+</div>
+</div>
+</body>
+</html>

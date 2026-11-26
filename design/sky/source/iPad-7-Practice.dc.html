@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Practice</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Nunito:wght@700;800;900&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0F56A3}a:hover{color:#0E2238}
+.disp{font-family:Nunito,ui-rounded,system-ui,sans-serif}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:44px;padding:0 16px;border-radius:14px;font:600 15px Inter,system-ui,sans-serif;border:1px solid #C9DDF1;background:#FFFFFF;color:#0E2238;text-decoration:none}
+.staff{position:absolute;left:40px;right:10px;height:41px;background:repeating-linear-gradient(#0E2238 0 1px,transparent 1px 10px)}
+.dk{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:44px;padding:0 14px;border-radius:12px;font:600 14px Inter,system-ui,sans-serif;background:#1D3554;color:#E3F0FC;border:0}
+.dk.on{background:#D8EAFC;color:#0F56A3}
+.hand{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 12px;border-radius:12px;background:#1D3554;color:#E3F0FC;font-size:14px;font-weight:600}
+.ms{display:grid;place-items:center;width:32px;height:32px;border-radius:8px;background:#2B4566;color:#E3F0FC;font-size:13px;font-weight:700;border:0}
+</style>
+</helmet>
+<div style="width:1194px;height:834px;box-sizing:border-box;background:#F5FAFF;font-family:Inter,system-ui,sans-serif;color:#0E2238;display:flex;flex-direction:column">
+<div style="display:flex;align-items:center;gap:10px;height:64px;padding:0 16px;background:#EAF4FE">
+<a class="btn" href="iPad-5-Editor.dc.html" aria-label="Back to editing" style="width:44px;padding:0;background:transparent;border-color:transparent"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a>
+<b class="disp" style="font-size:18px;font-weight:800">Sonatina in C</b>
+<span style="font-size:13px;color:#4E647C;margin-left:6px">Practising · loop bars 5–6</span>
+<a class="btn" href="iPad-5-Editor.dc.html" style="margin-left:auto">Edit</a>
+</div>
+<div style="flex:1;position:relative;margin:14px 16px 0;border-radius:20px;background:#FFFFFF;box-shadow:0 1px 2px rgba(14,34,56,.05),0 8px 28px rgba(23,105,194,.08);padding:20px 20px 0;overflow:hidden">
+<sc-for list="{{rows}}" as="row" hint-placeholder-count="3">
+<div style="position:relative;height:150px;margin-top:40px">
+<sc-for list="{{row.bars}}" as="bar" hint-placeholder-count="4">
+<div style="position:absolute;left:{{bar.left}}px;width:{{bar.width}}px;top:-14px;height:148px;background:{{bar.bg}};border-radius:8px"></div>
+<div style="position:absolute;left:{{bar.left}}px;width:{{bar.width}}px;top:-28px;height:6px;border-radius:99px;background:{{bar.loop}}"></div>
+<span style="position:absolute;left:{{bar.lx}}px;top:-20px;font-size:11px;color:#4E647C">{{bar.label}}</span>
+<div style="position:absolute;left:{{bar.right}}px;top:0;width:1px;height:131px;background:#0E2238"></div>
+</sc-for>
+<div class="staff" style="top:0"></div>
+<div class="staff" style="top:90px"></div>
+<div style="position:absolute;left:40px;top:0;width:1px;height:131px;background:#0E2238"></div>
+<span style="position:absolute;left:44px;top:-14px;font-size:44px;font-family:'Noto Music','Apple Symbols',serif;line-height:1">𝄞</span>
+<span style="position:absolute;left:46px;top:84px;font-size:32px;font-family:'Noto Music','Apple Symbols',serif;line-height:1">𝄢</span>
+<sc-for list="{{row.notes}}" as="n" hint-placeholder-count="20">
+<div style="position:absolute;left:{{n.x}}px;top:{{n.y}}px;width:12px;height:9px;border-radius:50%;background:{{n.c}};transform:rotate(-20deg)"></div>
+<div style="position:absolute;left:{{n.sx}}px;top:{{n.st}}px;width:1.5px;height:30px;background:{{n.c}}"></div>
+</sc-for>
+<sc-if value="{{row.head}}" hint-placeholder-val="{{ false }}"><div style="position:absolute;left:{{row.hx}}px;top:-18px;width:4px;height:160px;border-radius:2px;background:#1769C2;box-shadow:0 0 14px rgba(95,174,235,.9)"></div></sc-if>
+</div>
+</sc-for>
+</div>
+<div style="margin:12px 16px 16px;padding:12px;border-radius:22px;background:#0E2238;color:#FFFFFF;display:flex;align-items:center;gap:12px">
+<button aria-label="Pause" style="display:grid;place-items:center;width:56px;height:56px;border-radius:99px;background:#FFFFFF;color:#0E2238;border:0"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></button>
+<div style="display:flex;flex-direction:column;gap:6px;width:250px">
+<div style="display:flex;justify-content:space-between;font-size:13px;color:#BFD7EE"><span>Tempo</span><span><b style="color:#FFFFFF;font-size:15px">♩ 72</b> of 90 · +4 each loop</span></div>
+<div style="position:relative;height:6px;border-radius:99px;background:#2B4566"><div style="width:60%;height:6px;border-radius:99px;background:#5FAEEB"></div><div style="position:absolute;left:58%;top:-7px;width:20px;height:20px;border-radius:99px;background:#FFFFFF"></div></div>
+</div>
+<button class="dk on"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3l3 3-3 3M4 12v-2a4 4 0 0 1 4-4h12M7 21l-3-3 3-3M20 12v2a4 4 0 0 1-4 4H4"/></svg>Loop</button>
+<button class="dk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6l4 18H5zM12 16l5-8M7 16h10"/></svg>Click</button>
+<button class="dk on">Count-in 1 bar</button>
+<div style="width:1px;height:36px;background:#2B4566"></div>
+<div class="hand">Right hand<button class="ms" aria-label="Mute right hand">M</button><button class="ms" aria-label="Solo right hand">S</button></div>
+<div class="hand" style="opacity:.75">Left hand<button class="ms" style="background:#D8EAFC;color:#0F56A3" aria-label="Left hand muted">M</button><button class="ms" aria-label="Solo left hand">S</button></div>
+<button class="dk" style="margin-left:auto">Grand piano ▾</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1194,"height":834}}'>
+class Component extends DCLogic {
+renderVals() {
+let seed = 11;
+const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+const W = 1120, R = 3, B = 4, x0 = 40, bw = (W - x0 - 10) / B;
+const rows = [];
+for (let r = 0; r < R; r++) {
+const bars = [], notes = [];
+for (let b = 0; b < B; b++) {
+const n = r * B + b + 1, left = x0 + b * bw;
+const inLoop = n === 5 || n === 6;
+bars.push({ left: left + 2, width: bw - 4, right: Math.round(left + bw), lx: left + 6, bg: n === 6 ? '#EAF4FE' : 'transparent', loop: inLoop ? '#5FAEEB' : 'transparent', label: String(n) });
+const start = left + (b === 0 ? 50 : 16), step = (bw - (b === 0 ? 62 : 30)) / 6;
+for (let k = 0; k < 6; k++) {
+const x = Math.round(start + k * step + step / 2);
+const y = Math.round(rnd() * 8) * 5 - 4;
+const played = n < 6 || (n === 6 && k < 3);
+const c = n === 6 && k < 3 ? '#1769C2' : '#0E2238';
+notes.push({ x, y, c, sx: x + 10, st: y - 26 });
+if (k % 2 === 0) { const y2 = 90 + Math.round(rnd() * 8) * 5 - 4; notes.push({ x, y: y2, c: '#0E2238', sx: x + 10, st: y2 - 26 }); }
+}
+}
+rows.push({ bars, notes, head: r === 1, hx: Math.round(x0 + bw + bw * 0.52) });
+}
+return { rows };
+}
+}
+</script>
+</body>
+</html>

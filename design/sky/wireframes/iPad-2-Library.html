@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Library</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Nunito:wght@700;800;900&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0F56A3}a:hover{color:#0E2238}
+.disp{font-family:Nunito,ui-rounded,system-ui,sans-serif}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:44px;padding:0 18px;border-radius:14px;font:600 15px Inter,system-ui,sans-serif;border:1px solid transparent;text-decoration:none}
+.card{display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:20px;background:#FFFFFF;border:1px solid #D6E4F2;text-decoration:none;color:#0E2238}
+.thumb{height:150px;border-radius:12px;background:#FFFFFF;border:1px solid #E6EFF8;overflow:hidden}
+.flag{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:99px;font-size:12px;font-weight:600}
+.tab{display:inline-flex;align-items:center;height:36px;padding:0 14px;border-radius:10px;font-size:14px;font-weight:600;color:#4E647C}
+</style>
+</head>
+<body>
+<div style="width:1194px;height:834px;box-sizing:border-box;background:#F5FAFF;font-family:Inter,system-ui,sans-serif;color:#0E2238;display:flex;flex-direction:column">
+<div style="display:flex;align-items:center;gap:14px;height:68px;padding:0 28px;background:#EAF4FE">
+<svg width="36" height="36" viewBox="0 0 64 64" role="img" aria-label="MusicScan"><rect width="64" height="64" rx="18" fill="#1769C2"/><path d="M14 24v-10h10M40 14h10v10M50 40v10H40M24 50H14V40" fill="none" stroke="#BFE0FF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="29" cy="40" rx="6.5" ry="5" transform="rotate(-20 29 40)" fill="#FFFFFF"/><path d="M35 38V20c4 1 8 3 8 8" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"/></svg>
+<span class="disp" style="font-size:21px;font-weight:900">MusicScan</span>
+<label style="margin-left:24px;flex:1;max-width:380px;display:flex;align-items:center;gap:8px;height:40px;padding:0 14px;border-radius:12px;background:#FFFFFF;border:1px solid #D6E4F2;color:#4E647C;font-size:15px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg><input aria-label="Search your music" placeholder="Search your music" style="border:0;outline:0;background:transparent;font:inherit;flex:1;color:#0E2238"></label>
+<div style="margin-left:auto;display:flex;align-items:center;gap:12px">
+<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:12px;color:#4E647C">2 of 3 free scans left<div style="width:120px;height:6px;border-radius:99px;background:#D8EAFC"><div style="width:66%;height:6px;border-radius:99px;background:#1769C2"></div></div></div>
+<a class="btn" href="iPad-3-Capture.html" style="background:#1769C2;color:#FFFFFF"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>Scan</a>
+</div>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:20px;padding:28px">
+<div style="display:flex;align-items:flex-end;gap:16px">
+<h1 class="disp" style="margin:0;font-size:32px;font-weight:900;letter-spacing:-.02em">Your music</h1>
+<div style="display:flex;gap:4px;padding:4px;border-radius:14px;background:#EAF4FE;margin-left:12px"><span class="tab" style="background:#FFFFFF;color:#0F56A3">All</span><span class="tab">Practising</span><span class="tab">Needs a look</span></div>
+<button class="btn" style="margin-left:auto;background:#FFFFFF;color:#0E2238;border-color:#C9DDF1">Import PDF or photo</button>
+</div>
+<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px">
+
+<a class="card" href="iPad-5-Editor.html">
+<div class="thumb"><svg width="100%" height="150" viewBox="0 0 240 150" preserveAspectRatio="none" aria-hidden="true"><g stroke="#9DB3C9" stroke-width="1"><path d="M14 24h212M14 30h212M14 36h212M14 42h212M14 48h212M14 66h212M14 72h212M14 78h212M14 84h212M14 90h212M14 112h212M14 118h212M14 124h212M14 130h212M14 136h212"/></g><g fill="#0E2238"><circle cx="30" cy="36" r="3"/><circle cx="80" cy="30" r="3"/><circle cx="120" cy="42" r="3"/><circle cx="160" cy="78" r="3"/><circle cx="200" cy="72" r="3"/><circle cx="30" cy="124" r="3"/><circle cx="120" cy="118" r="3"/></g></svg></div>
+<div style="display:flex;flex-direction:column;gap:2px"><b style="font-size:15px">Für Elise</b><span style="font-size:12px;color:#4E647C">Piano · 2 pages · today</span></div>
+<span class="flag" style="align-self:flex-start;background:#D8EAFC;color:#0F56A3">Practising · ♩ 66</span>
+</a>
+
+<a class="card" href="iPad-5-Editor.html">
+<div class="thumb"><svg width="100%" height="150" viewBox="0 0 240 150" preserveAspectRatio="none" aria-hidden="true"><g stroke="#9DB3C9" stroke-width="1"><path d="M14 24h212M14 30h212M14 36h212M14 42h212M14 48h212M14 66h212M14 72h212M14 78h212M14 84h212M14 90h212M14 112h212M14 118h212M14 124h212M14 130h212M14 136h212"/></g><g fill="#0E2238"><circle cx="47" cy="36" r="3"/><circle cx="103" cy="30" r="3"/><circle cx="133" cy="42" r="3"/><circle cx="167" cy="78" r="3"/><circle cx="211" cy="72" r="3"/><circle cx="47" cy="124" r="3"/><circle cx="133" cy="118" r="3"/></g></svg></div>
+<div style="display:flex;flex-direction:column;gap:2px"><b style="font-size:15px">Clarinet Concerto, mvt 2</b><span style="font-size:12px;color:#4E647C">Clarinet · 1 page · today</span></div>
+<span class="flag" style="align-self:flex-start;background:#FFF1D6;color:#8A5300">2 bars to glance at</span>
+</a>
+
+<a class="card" href="iPad-5-Editor.html">
+<div class="thumb"><svg width="100%" height="150" viewBox="0 0 240 150" preserveAspectRatio="none" aria-hidden="true"><g stroke="#9DB3C9" stroke-width="1"><path d="M14 24h212M14 30h212M14 36h212M14 42h212M14 48h212M14 66h212M14 72h212M14 78h212M14 84h212M14 90h212M14 112h212M14 118h212M14 124h212M14 130h212M14 136h212"/></g><g fill="#0E2238"><circle cx="64" cy="36" r="3"/><circle cx="96" cy="30" r="3"/><circle cx="146" cy="42" r="3"/><circle cx="174" cy="78" r="3"/><circle cx="202" cy="72" r="3"/><circle cx="64" cy="124" r="3"/><circle cx="146" cy="118" r="3"/></g></svg></div>
+<div style="display:flex;flex-direction:column;gap:2px"><b style="font-size:15px">Sonatina in C</b><span style="font-size:12px;color:#4E647C">Piano · 3 pages · yesterday</span></div>
+<span class="flag" style="align-self:flex-start;background:#E2F5EA;color:#1D7A4E">Ready to play</span>
+</a>
+
+<a class="card" href="iPad-5-Editor.html">
+<div class="thumb"><svg width="100%" height="150" viewBox="0 0 240 150" preserveAspectRatio="none" aria-hidden="true"><g stroke="#9DB3C9" stroke-width="1"><path d="M14 24h212M14 30h212M14 36h212M14 42h212M14 48h212M14 66h212M14 72h212M14 78h212M14 84h212M14 90h212M14 112h212M14 118h212M14 124h212M14 130h212M14 136h212"/></g><g fill="#0E2238"><circle cx="41" cy="36" r="3"/><circle cx="89" cy="30" r="3"/><circle cx="159" cy="42" r="3"/><circle cx="181" cy="78" r="3"/><circle cx="213" cy="72" r="3"/><circle cx="41" cy="124" r="3"/><circle cx="159" cy="118" r="3"/></g></svg></div>
+<div style="display:flex;flex-direction:column;gap:2px"><b style="font-size:15px">Ragtime study</b><span style="font-size:12px;color:#4E647C">Piano · 1 page · Mon</span></div>
+<span class="flag" style="align-self:flex-start;background:#E2F5EA;color:#1D7A4E">Ready to play</span>
+</a>
+
+<a class="card" href="iPad-5-Editor.html">
+<div class="thumb"><svg width="100%" height="150" viewBox="0 0 240 150" preserveAspectRatio="none" aria-hidden="true"><g stroke="#9DB3C9" stroke-width="1"><path d="M14 24h212M14 30h212M14 36h212M14 42h212M14 48h212M14 66h212M14 72h212M14 78h212M14 84h212M14 90h212M14 112h212M14 118h212M14 124h212M14 130h212M14 136h212"/></g><g fill="#0E2238"><circle cx="58" cy="36" r="3"/><circle cx="82" cy="30" r="3"/><circle cx="132" cy="42" r="3"/><circle cx="188" cy="78" r="3"/><circle cx="204" cy="72" r="3"/><circle cx="58" cy="124" r="3"/><circle cx="132" cy="118" r="3"/></g></svg></div>
+<div style="display:flex;flex-direction:column;gap:2px"><b style="font-size:15px">Ave verum corpus</b><span style="font-size:12px;color:#4E647C">Choir · 2 pages · Sun</span></div>
+<span class="flag" style="align-self:flex-start;background:#FFF1D6;color:#8A5300">1 bar to fix</span>
+</a>
+
+<a class="card" href="iPad-5-Editor.html">
+<div class="thumb"><svg width="100%" height="150" viewBox="0 0 240 150" preserveAspectRatio="none" aria-hidden="true"><g stroke="#9DB3C9" stroke-width="1"><path d="M14 24h212M14 30h212M14 36h212M14 42h212M14 48h212M14 66h212M14 72h212M14 78h212M14 84h212M14 90h212M14 112h212M14 118h212M14 124h212M14 130h212M14 136h212"/></g><g fill="#0E2238"><circle cx="35" cy="36" r="3"/><circle cx="105" cy="30" r="3"/><circle cx="145" cy="42" r="3"/><circle cx="165" cy="78" r="3"/><circle cx="215" cy="72" r="3"/><circle cx="35" cy="124" r="3"/><circle cx="145" cy="118" r="3"/></g></svg></div>
+<div style="display:flex;flex-direction:column;gap:2px"><b style="font-size:15px">Minuet in G</b><span style="font-size:12px;color:#4E647C">Piano · 1 page · last week</span></div>
+<span class="flag" style="align-self:flex-start;background:#D8EAFC;color:#0F56A3">Practising · ♩ 80</span>
+</a>
+
+<a class="card" href="iPad-5-Editor.html">
+<div class="thumb"><svg width="100%" height="150" viewBox="0 0 240 150" preserveAspectRatio="none" aria-hidden="true"><g stroke="#9DB3C9" stroke-width="1"><path d="M14 24h212M14 30h212M14 36h212M14 42h212M14 48h212M14 66h212M14 72h212M14 78h212M14 84h212M14 90h212M14 112h212M14 118h212M14 124h212M14 130h212M14 136h212"/></g><g fill="#0E2238"><circle cx="52" cy="36" r="3"/><circle cx="98" cy="30" r="3"/><circle cx="158" cy="42" r="3"/><circle cx="172" cy="78" r="3"/><circle cx="206" cy="72" r="3"/><circle cx="52" cy="124" r="3"/><circle cx="158" cy="118" r="3"/></g></svg></div>
+<div style="display:flex;flex-direction:column;gap:2px"><b style="font-size:15px">Cello suite prelude</b><span style="font-size:12px;color:#4E647C">Cello · 2 pages · last week</span></div>
+<span class="flag" style="align-self:flex-start;background:#E2F5EA;color:#1D7A4E">Ready to play</span>
+</a>
+
+<a class="card" href="iPad-5-Editor.html">
+<div class="thumb"><svg width="100%" height="150" viewBox="0 0 240 150" preserveAspectRatio="none" aria-hidden="true"><g stroke="#9DB3C9" stroke-width="1"><path d="M14 24h212M14 30h212M14 36h212M14 42h212M14 48h212M14 66h212M14 72h212M14 78h212M14 84h212M14 90h212M14 112h212M14 118h212M14 124h212M14 130h212M14 136h212"/></g><g fill="#0E2238"><circle cx="69" cy="36" r="3"/><circle cx="91" cy="30" r="3"/><circle cx="131" cy="42" r="3"/><circle cx="179" cy="78" r="3"/><circle cx="217" cy="72" r="3"/><circle cx="69" cy="124" r="3"/><circle cx="131" cy="118" r="3"/></g></svg></div>
+<div style="display:flex;flex-direction:column;gap:2px"><b style="font-size:15px">Hymn 112</b><span style="font-size:12px;color:#4E647C">Piano · 1 page · Nov 2</span></div>
+<span class="flag" style="align-self:flex-start;background:#E2F5EA;color:#1D7A4E">Ready to play</span>
+</a>
+
+</div>
+</div>
+</div>
+</body>
+</html>

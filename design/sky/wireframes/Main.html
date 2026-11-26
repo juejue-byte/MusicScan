@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sky design system</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Nunito:wght@600;700;800;900&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0F56A3}a:hover{color:#0E2238}
+.ds{font-family:Inter,system-ui,sans-serif;color:#0E2238}
+.disp{font-family:Nunito,ui-rounded,system-ui,sans-serif}
+.sec{font-family:Nunito,ui-rounded,sans-serif;font-weight:800;font-size:22px;margin:0 0 14px}
+.lbl{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#4E647C}
+.card{background:#FFFFFF;border:1px solid #D6E4F2;border-radius:20px;padding:24px}
+.sw{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#4E647C}
+.chip{width:100%;height:64px;border-radius:14px;border:1px solid rgba(14,34,56,.08)}
+.sw b{font-size:13px;color:#0E2238}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:44px;padding:0 18px;border-radius:14px;font:600 15px Inter,system-ui,sans-serif;border:1px solid transparent;cursor:pointer}
+.b1{background:#1769C2;color:#FFFFFF}
+.b2{background:#FFFFFF;color:#0E2238;border-color:#C9DDF1}
+.b3{background:#EAF4FE;color:#0F56A3}
+.bi{width:44px;padding:0;background:#FFFFFF;border-color:#C9DDF1;color:#0E2238}
+.seg{display:inline-flex;padding:4px;gap:4px;background:#EAF4FE;border-radius:14px}
+.seg span{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:44px;height:40px;padding:0 12px;border-radius:10px;font-size:14px;font-weight:600;color:#4E647C}
+.seg .on{background:#FFFFFF;color:#0F56A3;box-shadow:0 1px 2px rgba(14,34,56,.10),0 2px 8px rgba(23,105,194,.10)}
+.flag{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:99px;font-size:13px;font-weight:600}
+.ico{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:11px;color:#4E647C;width:72px}
+.ico span{display:grid;place-items:center;width:48px;height:48px;border-radius:14px;background:#EAF4FE;color:#0F56A3}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="ds" style="width:1440px;height:1720px;box-sizing:border-box;padding:56px 64px;background:#F5FAFF;display:flex;flex-direction:column;gap:28px">
+
+<div style="display:flex;align-items:center;gap:20px">
+<svg width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="MusicScan logo"><rect width="64" height="64" rx="18" fill="#1769C2"/><path d="M14 24v-10h10M40 14h10v10M50 40v10H40M24 50H14V40" fill="none" stroke="#BFE0FF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><ellipse cx="29" cy="40" rx="6.5" ry="5" transform="rotate(-20 29 40)" fill="#FFFFFF"/><path d="M35 38V20c4 1 8 3 8 8" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"/></svg>
+<div style="display:flex;flex-direction:column;gap:4px">
+<div class="disp" style="font-size:44px;font-weight:900;letter-spacing:-.02em;line-height:1">MusicScan <span style="color:#1769C2">Sky</span></div>
+<div style="font-size:17px;color:#4E647C">Scan it. Fix it. Play it. A calm, bright, paper-first look: light blue around the music, crisp white paper for the notes.</div>
+</div>
+<svg width="300" height="60" viewBox="0 0 300 60" aria-hidden="true" style="margin-left:auto"><g stroke="#B9D9F7" stroke-width="2"><path d="M0 10h300M0 20h300M0 30h300M0 40h300M0 50h300"/></g><g fill="#5FAEEB"><ellipse cx="60" cy="45" rx="7" ry="5" transform="rotate(-20 60 45)"/><ellipse cx="110" cy="35" rx="7" ry="5" transform="rotate(-20 110 35)"/><ellipse cx="160" cy="25" rx="7" ry="5" transform="rotate(-20 160 25)"/><ellipse cx="210" cy="30" rx="7" ry="5" transform="rotate(-20 210 30)"/><ellipse cx="260" cy="15" rx="7" ry="5" transform="rotate(-20 260 15)"/></g><g stroke="#5FAEEB" stroke-width="2.5"><path d="M66 43V12M116 33V4M166 23V-6M216 28V-2M266 13V-14"/></g></svg>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px">
+<div class="card">
+<h2 class="sec">Colour</h2>
+<div class="lbl" style="margin-bottom:10px">Sky (surfaces)</div>
+<div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:18px">
+<div class="sw"><div class="chip" style="background:#F5FAFF"></div><b>Sky 25</b>#F5FAFF<br>App background</div>
+<div class="sw"><div class="chip" style="background:#EAF4FE"></div><b>Sky 50</b>#EAF4FE<br>Bars, wells</div>
+<div class="sw"><div class="chip" style="background:#D8EAFC"></div><b>Sky 100</b>#D8EAFC<br>Selected</div>
+<div class="sw"><div class="chip" style="background:#B9D9F7"></div><b>Sky 200</b>#B9D9F7<br>Staff motif</div>
+<div class="sw"><div class="chip" style="background:#5FAEEB"></div><b>Sky 400</b>#5FAEEB<br>Art only</div>
+<div class="sw"><div class="chip" style="background:#FFFFFF"></div><b>Paper</b>#FFFFFF<br>Score page</div>
+</div>
+<div class="lbl" style="margin-bottom:10px">Ink and action</div>
+<div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:18px">
+<div class="sw"><div class="chip" style="background:#1769C2"></div><b>Blue 600</b>#1769C2<br>Primary · 5.5:1 white</div>
+<div class="sw"><div class="chip" style="background:#0F56A3"></div><b>Blue 700</b>#0F56A3<br>Links, on Sky 100 · 5.9:1</div>
+<div class="sw"><div class="chip" style="background:#0E2238"></div><b>Navy 900</b>#0E2238<br>Text · 14.5:1</div>
+<div class="sw"><div class="chip" style="background:#4E647C"></div><b>Slate 600</b>#4E647C<br>Muted · 5.5:1</div>
+<div class="sw"><div class="chip" style="background:#D6E4F2"></div><b>Line</b>#D6E4F2<br>Dividers</div>
+<div class="sw"><div class="chip" style="background:#F6B93B"></div><b>Marigold</b>#F6B93B<br>Pro, celebrations</div>
+</div>
+<div class="lbl" style="margin-bottom:10px">Reading confidence (colour plus shape)</div>
+<div class="row">
+<span class="flag" style="background:#E2F5EA;color:#1D7A4E"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>Sure · 4.7:1</span>
+<span class="flag" style="background:#FFF1D6;color:#8A5300"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="#E39B1B"/></svg>Glance · 5.7:1</span>
+<span class="flag" style="background:#FDE8E6;color:#C2362B"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l10 18H2z" fill="#C2362B"/></svg>Likely wrong · 4.6:1</span>
+<span class="flag" style="background:#D8EAFC;color:#0F56A3">Selected</span>
+</div>
+</div>
+
+<div class="card" style="display:flex;flex-direction:column;gap:12px">
+<h2 class="sec">Type</h2>
+<div style="display:flex;align-items:baseline;gap:16px"><span class="lbl" style="width:110px">Display 34</span><span class="disp" style="font-size:34px;font-weight:900;letter-spacing:-.02em">Scan your first page</span></div>
+<div style="display:flex;align-items:baseline;gap:16px"><span class="lbl" style="width:110px">Title 22</span><span class="disp" style="font-size:22px;font-weight:800">Moonlight Sonata, page 1</span></div>
+<div style="display:flex;align-items:baseline;gap:16px"><span class="lbl" style="width:110px">Body 16</span><span style="font-size:16px">Tap a bar to hear it. Drag a note up or down to fix it.</span></div>
+<div style="display:flex;align-items:baseline;gap:16px"><span class="lbl" style="width:110px">Label 14</span><span style="font-size:14px;font-weight:600">Half · Quarter · Eighth</span></div>
+<div style="display:flex;align-items:baseline;gap:16px"><span class="lbl" style="width:110px">Caption 12</span><span style="font-size:12px;color:#4E647C">12 bars · 2 to check · read just now</span></div>
+<div style="font-size:13px;color:#4E647C;line-height:1.5;margin-top:4px">Display and titles use a rounded face (SF Pro Rounded on iPad and iPhone, Nunito on the web), which gives the app its friendly character. Everything you tap uses the system face (SF Pro, Inter on the web). Minimum text is 12 px; tap targets are 44 px.</div>
+<h2 class="sec" style="margin-top:10px">Space, shape, depth</h2>
+<div class="row" style="gap:18px;align-items:flex-end">
+<div style="display:flex;gap:6px;align-items:flex-end"><div style="width:4px;height:4px;background:#5FAEEB"></div><div style="width:8px;height:8px;background:#5FAEEB"></div><div style="width:12px;height:12px;background:#5FAEEB"></div><div style="width:16px;height:16px;background:#5FAEEB"></div><div style="width:24px;height:24px;background:#5FAEEB"></div><div style="width:32px;height:32px;background:#5FAEEB"></div><div style="width:48px;height:48px;background:#5FAEEB"></div></div>
+<div style="font-size:12px;color:#4E647C;line-height:1.5">4-pt grid: 4 8 12 16 24 32 48<br>Radius: 10 controls · 14 buttons · 20 cards · 28 sheets<br>Shadow: one soft blue lift for floating things only</div>
+<div style="width:120px;height:64px;border-radius:20px;background:#FFFFFF;box-shadow:0 2px 6px rgba(14,34,56,.06),0 12px 32px rgba(23,105,194,.14);display:grid;place-items:center;font-size:12px;color:#4E647C">Floating</div>
+</div>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px">
+<div class="card">
+<h2 class="sec">Icons</h2>
+<div style="font-size:13px;color:#4E647C;margin:-6px 0 14px">Original line icons: 24 px grid, 1.75 px round strokes, filled only when active. Music glyphs come from the engraving font, never from icons.</div>
+<div class="row" style="gap:6px">
+<div class="ico"><span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></span>Scan</div>
+<div class="ico"><span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>Camera</div>
+<div class="ico"><span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg></span>Play</div>
+<div class="ico"><span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3l3 3-3 3M4 12v-2a4 4 0 0 1 4-4h12M7 21l-3-3 3-3M20 12v2a4 4 0 0 1-4 4H4"/></svg></span>Loop</div>
+<div class="ico"><span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6l4 18H5zM12 16l5-8M7 16h10"/></svg></span>Metronome</div>
+<div class="ico"><span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19l10-10M14 4v2M19 9h2M17.5 5.5L19 4M3 21l2-2"/></svg></span>Fix it</div>
+<div class="ico"><span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg></span>Ink</div>
+<div class="ico"><span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3"/></svg></span>Undo</div>
+<div class="ico"><span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3"/></svg></span>Redo</div>
+<div class="ico"><span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 14v6h14v-6"/></svg></span>Export</div>
+<div class="ico"><span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></span>Mixer</div>
+<div class="ico"><span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h4v16H5zM11 4h4v16h-4zM17 5l3 1-3 14"/></svg></span>Library</div>
+</div>
+</div>
+
+<div class="card" style="display:flex;flex-direction:column;gap:16px">
+<h2 class="sec" style="margin:0">Components</h2>
+<div class="row">
+<button class="btn b1"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>Play</button>
+<button class="btn b2">New scan</button>
+<button class="btn b3">Fix it · 2</button>
+<button class="btn bi" aria-label="Undo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+<button class="btn" style="background:#F6B93B;color:#0E2238">Go Pro</button>
+</div>
+<div class="row">
+<div class="seg"><span class="on">Select</span><span>Add</span><span>Ink</span></div>
+<div class="seg"><span style="font-size:20px">𝅗𝅥</span><span class="on" style="font-size:20px">♩</span><span style="font-size:20px">♪</span><span>·</span><span>Rest</span></div>
+</div>
+<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:16px;background:#FFF1D6;color:#5A3700;font-size:14px"><svg width="20" height="20" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="#E39B1B"/></svg><div style="flex:1"><b>Good read.</b> 2 bars worth a glance before you play.</div><button class="btn b1" style="height:36px;border-radius:10px;font-size:14px">Fix it</button></div>
+<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;border-radius:18px;background:#0E2238;color:#FFFFFF">
+<span style="display:grid;place-items:center;width:40px;height:40px;border-radius:99px;background:#FFFFFF;color:#0E2238"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></span>
+<div style="flex:1;height:6px;border-radius:99px;background:#2B4566"><div style="width:42%;height:6px;border-radius:99px;background:#5FAEEB"></div></div>
+<span style="font-size:13px;color:#BFD7EE">Bar 5 of 12 · ♩ 72</span>
+</div>
+<div style="font-size:13px;color:#4E647C;line-height:1.5">Primary is one per screen (Play or Scan). Selected uses Sky 100 with Blue 700 text. Banners say the outcome in a few words with one action. The practice bar is the one dark surface, so it reads as "now playing".</div>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px">
+<div class="card">
+<h2 class="sec">Empty state</h2>
+<div style="display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:8px 0">
+<svg width="160" height="96" viewBox="0 0 160 96" aria-hidden="true"><rect x="30" y="8" width="100" height="80" rx="10" fill="#FFFFFF" stroke="#B9D9F7" stroke-width="2"/><g stroke="#D8EAFC" stroke-width="2"><path d="M42 30h76M42 36h76M42 42h76M42 48h76M42 54h76"/></g><path d="M22 26V14h12M126 14h12v12M138 70v12h-12M34 82H22V70" fill="none" stroke="#1769C2" stroke-width="3" stroke-linecap="round"/><ellipse cx="72" cy="51" rx="6" ry="4.5" transform="rotate(-20 72 51)" fill="#5FAEEB"/><path d="M77.5 49V30" stroke="#5FAEEB" stroke-width="2.5"/></svg>
+<div class="disp" style="font-size:20px;font-weight:800">No music yet</div>
+<div style="font-size:14px;color:#4E647C;max-width:260px">Point your camera at a printed page. We'll read it in about 20 seconds.</div>
+<button class="btn b1">Scan a page</button>
+</div>
+</div>
+<div class="card">
+<h2 class="sec">Loading</h2>
+<div style="display:flex;flex-direction:column;gap:12px">
+<svg width="100%" height="70" viewBox="0 0 360 70" aria-hidden="true"><g stroke="#D6E4F2" stroke-width="2"><path d="M0 15h360M0 25h360M0 35h360M0 45h360M0 55h360"/></g><g stroke="#1769C2" stroke-width="2"><path d="M0 15h200M0 25h200M0 35h200M0 45h200M0 55h200"/></g><rect x="198" y="4" width="4" height="62" rx="2" fill="#1769C2"/><g fill="#0E2238"><ellipse cx="40" cy="50" rx="6" ry="4.5" transform="rotate(-20 40 50)"/><ellipse cx="90" cy="40" rx="6" ry="4.5" transform="rotate(-20 90 40)"/><ellipse cx="140" cy="30" rx="6" ry="4.5" transform="rotate(-20 140 30)"/><ellipse cx="185" cy="45" rx="6" ry="4.5" transform="rotate(-20 185 45)"/></g></svg>
+<div style="font-size:15px;font-weight:600">Reading row 3 of 4…</div>
+<div style="height:8px;border-radius:99px;background:#EAF4FE"><div style="width:62%;height:8px;border-radius:99px;background:#1769C2"></div></div>
+<div style="font-size:13px;color:#4E647C">A scan line sweeps the staff and notes appear as they're read. Steps: straighten, find rows, read notes, check.</div>
+</div>
+</div>
+<div class="card">
+<h2 class="sec">Voice</h2>
+<div style="display:flex;flex-direction:column;gap:10px;font-size:14px;line-height:1.45">
+<div><b>Say what happened, then what to do.</b> "Good read. 2 bars worth a glance."</div>
+<div><b>Never blame.</b> "The page is a bit dark. Try near a window." not "Bad photo".</div>
+<div><b>Musician words.</b> Bar, row, hand, tempo. Not measure index or system.</div>
+<div><b>Celebrate once.</b> A small marigold burst when every flag is checked.</div>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{"v":3,"createdOnFiles":{"v":1,"at":"2026-11-26T06:20:00Z"},"title":"MusicScan Sky design","launch":{"view":"canvas"},"pages":[],
+"boards":{
+"Main.dc.html":{"x":0,"y":0,"w":1440,"h":1720,"title":"Sky design system"},
+"iPad-1-Welcome.dc.html":{"x":0,"y":2120,"w":1194,"h":834,"title":"iPad · Welcome (first run)"},
+"iPad-2-Library.dc.html":{"x":1274,"y":2120,"w":1194,"h":834,"title":"iPad · Library + empty state"},
+"iPad-3-Capture.dc.html":{"x":2548,"y":2120,"w":1194,"h":834,"title":"iPad · Capture + photo check"},
+"iPad-4-Reading.dc.html":{"x":3822,"y":2120,"w":1194,"h":834,"title":"iPad · Reading (loading)"},
+"iPad-5-Editor.dc.html":{"x":0,"y":3074,"w":1194,"h":834,"title":"iPad · Editor with flags + ink"},
+"iPad-6-FixIt.dc.html":{"x":1274,"y":3074,"w":1194,"h":834,"title":"iPad · Fix it"},
+"iPad-7-Practice.dc.html":{"x":2548,"y":3074,"w":1194,"h":834,"title":"iPad · Practice"},
+"iPad-8-Paywall.dc.html":{"x":3822,"y":3074,"w":1194,"h":834,"title":"iPad · Export paywall"},
+"iPhone-1-Library.dc.html":{"x":0,"y":4330,"w":390,"h":844,"title":"iPhone · Library (empty)"},
+"iPhone-2-Capture.dc.html":{"x":470,"y":4330,"w":390,"h":844,"title":"iPhone · Capture"},
+"iPhone-3-Editor.dc.html":{"x":940,"y":4330,"w":390,"h":844,"title":"iPhone · Editor"},
+"iPhone-4-Practice.dc.html":{"x":1410,"y":4330,"w":390,"h":844,"title":"iPhone · Practice"},
+"iPhone-5-Paywall.dc.html":{"x":1880,"y":4330,"w":390,"h":844,"title":"iPhone · Paywall"}
+},
+"order":["Main.dc.html","iPad-1-Welcome.dc.html","iPad-2-Library.dc.html","iPad-3-Capture.dc.html","iPad-4-Reading.dc.html","iPad-5-Editor.dc.html","iPad-6-FixIt.dc.html","iPad-7-Practice.dc.html","iPad-8-Paywall.dc.html","iPhone-1-Library.dc.html","iPhone-2-Capture.dc.html","iPhone-3-Editor.dc.html","iPhone-4-Practice.dc.html","iPhone-5-Paywall.dc.html"],
+"notes":{
+"t0":{"x":0,"y":-300,"text":"MusicScan · Sky: Scan it. Fix it. Play it.","kind":"title1","maxW":1440},
+"a0":{"x":1520,"y":0,"w":420,"text":"Assumptions (Allen was asleep, so these are my calls):\n• Name stays MusicScan; new original logo (viewfinder corners around a note).\n• Light blue chrome, white paper for the score so notes keep full contrast.\n• Rounded display type (SF Pro Rounded on Apple, Nunito fallback) for character; SF Pro / system for UI.\n• One warm accent (marigold) only for Pro and celebrations.\n• Flags stay red / amber / green but each also has a shape (triangle, dot, check) so they don't rely on colour.\n• Prices from the brief: $5.99/wk, $6.99/mo, $44.99/yr, 3 free scans a month.","size":"m","fill":"blue"},
+"t1":{"x":0,"y":1820,"text":"iPad landscape (primary)","kind":"title1","maxW":5016},
+"t2":{"x":0,"y":4030,"text":"iPhone (secondary)","kind":"title1","maxW":2270}
+},
+"designSystems":[]}
