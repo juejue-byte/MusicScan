@@ -78,6 +78,7 @@ def health(request: Request):
     user = request.state.user
     return {"ok": True, "app": "musicscan", "authorized": _authorized(request), "key_required": bool(ACCESS_KEY),
             "sign_in": auth.enabled(), "user": user["id"] if user else None,
+            "key_sent": bool(_given_key(request)),  # a key arrived (query, header or cookie), right or wrong
             "device": omr.pick_device() if omr._DEV else None}
 
 
