@@ -938,7 +938,12 @@ function wire() {
     cam.lastChild.textContent = '📷 Scan a page';
     cam.addEventListener('click', async (e) => {
       e.preventDefault();
-      try { const f = await native.scanDocument(); if (f) startUpload(f); } catch (err) { toast(err.message); }
+      try {
+        const f = await native.scanDocument();
+        if (!f) return;
+        startUpload(f);
+        if (f.pages > 1) toast(`Reading the first of ${f.pages} pages. Multi-page scores are coming later.`, 4000);
+      } catch (err) { toast(err.message); }
     });
     const srv = document.createElement('button');
     srv.className = 'btn ghost server-link';

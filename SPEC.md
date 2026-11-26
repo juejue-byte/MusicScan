@@ -31,8 +31,8 @@ the staff or rescan them, plays them back and exports MusicXML / MIDI.
 6. **Play / export**: cursor follows the bar; starts at the selected bar; `.musicxml`, `.mid`.
 
 ## iOS plan
-Server inference for v1; VisionKit document camera for capture; the same editor in a WKWebView (Capacitor or native
-shell). On-device OMR only after porting copista-2m to Core ML and the Python pipeline to Swift. Verovio is not used in
+Server inference for v1; VisionKit document camera for capture; the same editor in a WKWebView inside a native
+SwiftUI shell (`ios/`, chosen over Capacitor: four native features, no Node/CocoaPods; bridge in `web/js/native.js`). On-device OMR only after porting copista-2m to Core ML and the Python pipeline to Swift. Verovio is not used in
 the app (LGPL static-linking question avoided).
 
 ## Deferred

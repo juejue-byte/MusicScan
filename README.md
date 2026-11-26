@@ -81,9 +81,10 @@ node tests/e2e.js http://localhost:8000/ /tmp/e2e   # browser: upload â†’ edit â
 
 ## iOS
 
-The plan (see [SPEC.md](SPEC.md)): keep OMR on the server, capture with VisionKit's document camera, and ship the same
-web editor inside a WKWebView (e.g. Capacitor). The editor is framework-free ES modules, uses pointer events (mouse and
-touch), and keeps note drags from scrolling the page on touch screens.
+A prototype app is in [`ios/`](ios/README.md): a small SwiftUI shell that scans pages with Apple's document camera,
+runs the same editor in a WKWebView (finger dragging with haptic ticks, Add-notes under your finger), plays through
+the silent switch and exports through the share sheet. Reading still happens on the MusicScan server. Build steps:
+[ios/README.md](ios/README.md); start the server with `HOST=0.0.0.0 scripts/run.sh` so the phone can reach it.
 
 ## Layout
 
@@ -92,7 +93,8 @@ musicscan/   Python: image decoding, cleanup, OMR wrapper, confidence, scoring
 server/      FastAPI app (jobs, rescan, static web app)
 web/         the app: index.html, style.css, js/ (score model, renderer, editor, audio), vendor/
 bench/       benchmark: ground truth, degradations, runner, report
-tests/       pytest + Playwright end-to-end
+tests/       pytest + Playwright end-to-end (tests/touch.js: iPhone touch editing)
+ios/         iOS app shell (SwiftUI + WKWebView)
 scripts/     setup.sh, run.sh
 ```
 

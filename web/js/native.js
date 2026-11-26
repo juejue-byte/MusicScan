@@ -7,6 +7,8 @@
 const handler = window.webkit?.messageHandlers?.musicscan;
 export const isNative = !!handler;
 if (isNative) document.documentElement.classList.add('native');
+// a music app should be heard with the silent switch on (Safari 16.4+ Audio Session API)
+if (isNative && navigator.audioSession) { try { navigator.audioSession.type = 'playback'; } catch (e) { /* older WebKit */ } }
 
 let seq = 0;
 const pending = new Map();
@@ -46,7 +48,9 @@ export function haptic(kind = 'selection') { fire('haptic', { kind }); }
 export async function scanDocument() {
   const r = await call('scan');
   if (!r || !r.b64) return null;
-  return new File([b64ToBytes(r.b64)], r.name || 'scan.jpg', { type: 'image/jpeg' });
+  const f = new File([b64ToBytes(r.b64)], r.name || 'scan.jpg', { type: 'image/jpeg' });
+  f.pages = r.pages || 1;
+  return f;
 }
 
 /** Save or send a file with the iOS share sheet (Files, AirDrop, Mail...). Returns false outside the app. */
