@@ -673,3 +673,37 @@ body.editing .doc-title:hover { background: var(--hover); color: var(--ink); }
 .corners-stage .c-handle .c-hit { fill: transparent; stroke: none; }
 .corners-actions { display: flex; gap: 8px; align-items: center; }
 .corners-actions .grow { flex: 1; }
+
+/* Hide sample cards on the live start screen for now (demo mode keeps them visible) */
+body:not(.demo) #samples { display: none !important; }
+
+/* Compact single-row bottom tips toolbar instead of 4 separate tip boxes */
+.tips.tips-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 18px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--sky-50);
+  border: 1px solid var(--line);
+}
+.tips-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-right: 2px;
+}
+.tip-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+}
