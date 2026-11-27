@@ -38,6 +38,7 @@ app = FastAPI(title="MusicScan")
 # container handles static assets, auth, billing, polling, and cached samples).
 _OMR_TRANSCRIBE: Callable[..., dict] | None = None
 _OMR_RESCAN: Callable[..., dict] | None = None
+_OMR_WARMUP: Callable[[], bool] | None = None
 _REMOTE_DEVICE: str | None = None
 
 
@@ -45,10 +46,12 @@ def set_omr_backend(
     transcribe_fn: Callable[..., dict] | None,
     rescan_fn: Callable[..., dict] | None,
     device_label: str | None = None,
+    warmup_fn: Callable[[], bool] | None = None,
 ) -> None:
-    global _OMR_TRANSCRIBE, _OMR_RESCAN, _REMOTE_DEVICE
+    global _OMR_TRANSCRIBE, _OMR_RESCAN, _OMR_WARMUP, _REMOTE_DEVICE
     _OMR_TRANSCRIBE = transcribe_fn
     _OMR_RESCAN = rescan_fn
+    _OMR_WARMUP = warmup_fn
     _REMOTE_DEVICE = device_label
 
 
@@ -199,6 +202,13 @@ def health(request: Request):
             "cached_samples": len(_sample_cache())}
 
 
+@app.post("/api/warmup")
+def warmup_gpu():
+    """Non-blocking GPU container pre-warm triggered as soon as the user opens the camera or photo picker."""
+    warming = bool(_OMR_WARMUP()) if _OMR_WARMUP is not None else False
+    return {"ok": True, "warming": warming, "split_gpu": _OMR_TRANSCRIBE is not None}
+
+
 @app.get("/api/config")
 def public_config():
     """Client bootstrap values only; the Supabase service secret is never exposed here."""
@@ -302,10 +312,12 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
         im.save(d / "original.jpg", quality=90)
         pre = preprocess.preprocess(im, flatten=opts.get("flatten"), strip_pen=opts.get("strip_pen", True),
                                     lock_page=opts.get("lock_page", True), quad=opts.get("quad"))
-        pre["image"].save(d / "page.full.png")
-        pre["image"].save(d / "page.png")
         j["status"] = "Reading the music"
         det = opts.get("detector", "28m")
+
+        def _save_page(img: Image.Image) -> None:
+            img.save(d / "page.full.png", format="PNG", compress_level=1)
+            shutil.copyfile(d / "page.full.png", d / "page.png")
 
         def _transcribe(img):
             if _OMR_TRANSCRIBE is not None:
@@ -326,22 +338,41 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
                     omr.second_opinion(res, read_im)
             return res
 
-        r = _transcribe(pre["image"])
-        # Safety net for sideways photos (e.g. from Photos library or tilted iPad): if primary OMR
-        # found 0 measures and line gradients indicate vertical staves, retry rotated 90° CW then CCW.
-        if not (r.get("stats") or {}).get("measures") and preprocess.looks_sideways(pre["image"]):
-            for label, transpose in (("auto-rotate-90cw", Image.Transpose.ROTATE_270),
-                                     ("auto-rotate-90ccw", Image.Transpose.ROTATE_90)):
-                j["status"] = "Checking page orientation"
-                rot_im = pre["image"].transpose(transpose)
-                r_rot = _transcribe(rot_im)
-                if (r_rot.get("stats") or {}).get("measures"):
-                    pre["image"] = rot_im
-                    pre["steps"].append(label)
-                    rot_im.save(d / "page.full.png")
-                    rot_im.save(d / "page.png")
-                    r = r_rot
-                    break
+        # If a photo is unmistakably sideways (landscape capture with vertical staff lines), rotate 90° CW
+        # BEFORE calling GPU OMR so we don't burn a full pass on sideways staves.
+        orig_pre_im = pre["image"]
+        if preprocess.strongly_sideways(orig_pre_im):
+            rot_cw = orig_pre_im.transpose(Image.Transpose.ROTATE_270)
+            r_cw = _transcribe(rot_cw)
+            if (r_cw.get("stats") or {}).get("measures"):
+                pre["image"] = rot_cw
+                pre["steps"].append("auto-rotate-90cw")
+                r = r_cw
+            else:
+                rot_ccw = orig_pre_im.transpose(Image.Transpose.ROTATE_90)
+                r_ccw = _transcribe(rot_ccw)
+                if (r_ccw.get("stats") or {}).get("measures"):
+                    pre["image"] = rot_ccw
+                    pre["steps"].append("auto-rotate-90ccw")
+                    r = r_ccw
+                else:
+                    r = _transcribe(orig_pre_im)
+        else:
+            r = _transcribe(orig_pre_im)
+            # Safety net for mildly sideways photos: if primary OMR found 0 measures and gradients look
+            # sideways, retry rotated 90° CW then CCW.
+            if not (r.get("stats") or {}).get("measures") and preprocess.looks_sideways(orig_pre_im):
+                for label, transpose in (("auto-rotate-90cw", Image.Transpose.ROTATE_270),
+                                         ("auto-rotate-90ccw", Image.Transpose.ROTATE_90)):
+                    j["status"] = "Checking page orientation"
+                    rot_im = orig_pre_im.transpose(transpose)
+                    r_rot = _transcribe(rot_im)
+                    if (r_rot.get("stats") or {}).get("measures"):
+                        pre["image"] = rot_im
+                        pre["steps"].append(label)
+                        r = r_rot
+                        break
+        _save_page(pre["image"])
         ctx, notes = page_context(r["xml"], opts.get("context"))
         _clean(r, context=ctx)
         if notes and r["measures"]:

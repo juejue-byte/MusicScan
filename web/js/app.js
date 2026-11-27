@@ -300,7 +300,7 @@ async function readPage(fd, onStatus, path = 'api/jobs') {
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Upload failed');
   const { id, pages } = await r.json();
   for (;;) {
-    await new Promise((res) => setTimeout(res, 700));
+    await new Promise((res) => setTimeout(res, 350));
     const j = await (await api('api/jobs/' + id)).json();
     if (j.status === 'done') return { id, result: j.result, pages: pages || j.pages || 1 };
     if (j.status === 'error') throw new Error(j.error || 'Transcription failed');

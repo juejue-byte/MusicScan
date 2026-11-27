@@ -187,11 +187,7 @@ def preprocess(im: Image.Image, flatten: bool | None = None, strip_pen: bool = T
             "metrics": before, "pen_frac": round(pen_frac, 4)}
 
 
-def looks_sideways(im: Image.Image) -> bool:
-    """Fast heuristic: true when dominant line gradients and ink periodicity are vertical (90°-rotated sheet music).
-
-    Used only as a zero-overhead fallback when primary OMR finds 0 measures on a page.
-    """
+def _orientation_metrics(im: Image.Image) -> tuple[int, int, float, float, float]:
     g = np.asarray(im.convert("L"), dtype=np.float32)
     h, w = g.shape[:2]
     if max(h, w) > 1000:
@@ -203,4 +199,22 @@ def looks_sideways(im: Image.Image) -> bool:
     dark = (g < np.percentile(g, 18)).astype(np.float32)
     row_hp = float(np.abs(np.diff(dark.mean(axis=1))).mean())
     col_hp = float(np.abs(np.diff(dark.mean(axis=0))).mean())
+    return w, h, ratio, row_hp, col_hp
+
+
+def looks_sideways(im: Image.Image) -> bool:
+    """Fast heuristic: true when dominant line gradients and ink periodicity are vertical (90°-rotated sheet music).
+
+    Used as a zero-overhead fallback when primary OMR finds 0 measures on a page.
+    """
+    _, _, ratio, row_hp, col_hp = _orientation_metrics(im)
     return ratio < 0.85 or (ratio < 0.96 and col_hp > row_hp * 1.25)
+
+
+def strongly_sideways(im: Image.Image) -> bool:
+    """High-confidence pre-OMR check for clearly sideways portrait sheets (e.g. landscape 4:3 capture with vertical
+    staves), avoiding a wasted sideways GPU pass before rotating 90° CW."""
+    w, h, ratio, row_hp, col_hp = _orientation_metrics(im)
+    if w <= h * 1.05:
+        return False
+    return ratio < 0.78 or (ratio < 0.90 and col_hp > row_hp * 1.35)
