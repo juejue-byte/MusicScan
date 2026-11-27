@@ -152,10 +152,12 @@ async function startUpload(file) {
   fd.append('detector', fast ? '2m' : '28m');
   const t0 = Date.now();
   const expected = fast ? 6 : 18;
+  $('#progressBar').style.width = '6%';
   const tick = setInterval(() => {
-    const p = Math.min(95, ((Date.now() - t0) / 1000 / expected) * 100);
-    $('#progressBar').style.width = p + '%';
-  }, 300);
+    const elapsed = (Date.now() - t0) / 1000;
+    const p = Math.min(96, 6 + 90 * (1 - Math.exp((-elapsed / expected) * 1.45)));
+    $('#progressBar').style.width = p.toFixed(1) + '%';
+  }, 240);
   try {
     const { id, result, pages } = await readPage(fd, (status) => {
       setStep(/Clean/.test(status) ? 'clean' : /Read|Double/.test(status) ? 'read' : 'upload');
@@ -2345,7 +2347,11 @@ async function renderLibrary() {
   document.body.classList.toggle('has-library', items.length > 0);
   if (items.length) $('#resume')?.remove();
   box.classList.toggle('hidden', !items.length);
-  if (!items.length) return;
+  if (!items.length) {
+    window.__msLibraryReady = true;
+    window.dispatchEvent(new Event('ms:library-ready'));
+    return;
+  }
   const toCheck = items.filter((e) => library.summary(e).status.kind !== 'ok').length;
   const shown = libFilter === 'check' ? items.filter((e) => library.summary(e).status.kind !== 'ok') : items;
   box.innerHTML = `<div class="lib-head"><h2>Your music</h2>
@@ -2376,6 +2382,8 @@ async function renderLibrary() {
     };
     grid.appendChild(card);
   }
+  window.__msLibraryReady = true;
+  window.dispatchEvent(new Event('ms:library-ready'));
 }
 async function openFromLibrary(id) {
   const e = await library.get(id);
@@ -2418,4 +2426,4 @@ review.initReview({
 loadSamples();
 show('viewUpload');
 // for automated tests
-window.__ms = { S, audio, practice, library, renderLibrary, paywall, openScore: (xml, meta) => { S.name = 'test.musicxml'; openScore(xml, meta || [], null, null); }, redraw };
+window.__ms = { S, audio, practice, library, renderLibrary, paywall, startUpload, openScore: (xml, meta) => { S.name = 'test.musicxml'; openScore(xml, meta || [], null, null); }, redraw };
