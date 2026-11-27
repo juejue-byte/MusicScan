@@ -258,15 +258,16 @@ def transcribe_checked(im: Image.Image, detector: str = "28m") -> tuple[dict, Im
     a = len(r["measures"])
     st = r.get("stats") or {}
     pr = plausibility(r) if a > 0 else 0.0
+    no_staves_at_all = (a == 0 and int(st.get("staves", 0)) == 0 and not st.get("ink_staves"))
     already_clean = (
         a > 0
         and not any(m.get("doubled") for m in r.get("measures", []))
         and (
             pr >= 1.999
-            or (pr >= 1.96 and float(st.get("mean_conf", 0.0)) >= 0.96 and float(st.get("low_frac", 1.0)) < 0.02)
+            or (pr >= 1.75 and float(st.get("mean_conf", 0.0)) >= 0.94 and float(st.get("low_frac", 1.0)) < 0.08)
         )
     )
-    if already_clean:
+    if already_clean or no_staves_at_all:
         r["layout_check"] = {"bars": [a, a], "used": "original", "skipped": True}
         return r, im
     sim = sharpen(im)
@@ -707,16 +708,16 @@ def second_opinion(r: dict, im: Image.Image) -> dict:
 
 
 def should_skip_second_opinion(r: dict) -> bool:
-    """Skip the extra 2m second-opinion pass (~35-45% GPU time) when the primary 28m reading is already
-    unambiguously high-confidence, every measure is clean, and original vs sharpened layout checks agree.
+    """Skip the extra 2m second-opinion pass (~2.5s GPU time) when the primary 28m reading is already
+    high-confidence with no red/doubled bars and consistent layout checks.
     Set MUSICSCAN_SKIP_SECOND_OPINION_CONF=0 (or >1.0) to force second_opinion on every page."""
-    raw = os.environ.get("MUSICSCAN_SKIP_SECOND_OPINION_CONF", "0.985").strip().lower()
+    raw = os.environ.get("MUSICSCAN_SKIP_SECOND_OPINION_CONF", "0.94").strip().lower()
     if raw in ("0", "off", "false", "no"):
         return False
     try:
         min_conf = float(raw)
     except ValueError:
-        min_conf = 0.985
+        min_conf = 0.94
     if min_conf > 1.0:
         return False
     st = r.get("stats") or {}
@@ -726,9 +727,9 @@ def should_skip_second_opinion(r: dict) -> bool:
         return False
     if float(st.get("mean_conf", 0.0)) < min_conf:
         return False
-    if int(st.get("low", 1)) > 0 or float(st.get("low_frac", 1.0)) >= 0.01:
+    if float(st.get("low_frac", 1.0)) > 0.08:
         return False
-    if any(m.get("doubled") or m.get("level") != "ok" for m in r.get("measures", [])):
+    if any(m.get("doubled") or m.get("level") == "bad" for m in r.get("measures", [])):
         return False
     lc = r.get("layout_check") or {}
     bars = lc.get("bars")

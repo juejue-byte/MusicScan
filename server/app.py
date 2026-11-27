@@ -18,6 +18,7 @@ from typing import Callable
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
@@ -33,11 +34,13 @@ WORK = Path(os.environ.get("MUSICSCAN_WORK", ROOT / "work"))
 WORK.mkdir(parents=True, exist_ok=True)
 JOBS: dict[str, dict] = {}
 app = FastAPI(title="MusicScan")
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # Optional remote OMR backend (set by deploy/modal_app.py to route OMR onto the GPU worker while the CPU web
 # container handles static assets, auth, billing, polling, and cached samples).
 _OMR_TRANSCRIBE: Callable[..., dict] | None = None
 _OMR_RESCAN: Callable[..., dict] | None = None
+_OMR_WARMUP: Callable[[], bool] | None = None
 _REMOTE_DEVICE: str | None = None
 
 
@@ -45,10 +48,12 @@ def set_omr_backend(
     transcribe_fn: Callable[..., dict] | None,
     rescan_fn: Callable[..., dict] | None,
     device_label: str | None = None,
+    warmup_fn: Callable[[], bool] | None = None,
 ) -> None:
-    global _OMR_TRANSCRIBE, _OMR_RESCAN, _REMOTE_DEVICE
+    global _OMR_TRANSCRIBE, _OMR_RESCAN, _OMR_WARMUP, _REMOTE_DEVICE
     _OMR_TRANSCRIBE = transcribe_fn
     _OMR_RESCAN = rescan_fn
+    _OMR_WARMUP = warmup_fn
     _REMOTE_DEVICE = device_label
 
 
@@ -125,7 +130,6 @@ def _serve_cached_sample(job_id: str, sid: str, sample_dir: Path) -> None:
     full_result["seconds"] = 0.0
     (d / "result.full.json").write_text(json.dumps(full_result))
     j["cached_sample"] = sid
-    j["_full_result"] = full_result
     j["result"] = _preview_result(full_result, d) if j.get("allowance", {}).get("access") == "preview" else full_result
     j["status"] = "done"
     _save_job(j)
@@ -178,6 +182,8 @@ async def access_check(request: Request, call_next):
         resp.set_cookie(KEY_COOKIE, ACCESS_KEY, max_age=400 * 86400, httponly=True, secure=https, samesite="lax")
     if path.startswith("/api/"):
         resp.headers.setdefault("Cache-Control", "no-store")
+    elif resp.status_code == 200 and path.startswith("/js/"):
+        resp.headers.setdefault("Cache-Control", "no-cache")
     elif resp.status_code == 200 and (path.startswith(CACHEABLE_PREFIXES) or path.endswith(CACHEABLE_EXTS)):
         resp.headers.setdefault("Cache-Control", "public, max-age=3600")
     return resp
@@ -197,6 +203,13 @@ def health(request: Request):
             "device": device,
             "split_gpu": _OMR_TRANSCRIBE is not None,
             "cached_samples": len(_sample_cache())}
+
+
+@app.post("/api/warmup")
+def warmup_gpu():
+    """Non-blocking GPU container pre-warm triggered as soon as the user opens the camera or photo picker."""
+    warming = bool(_OMR_WARMUP()) if _OMR_WARMUP is not None else False
+    return {"ok": True, "warming": warming, "split_gpu": _OMR_TRANSCRIBE is not None}
 
 
 @app.get("/api/config")
@@ -302,17 +315,20 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
         im.save(d / "original.jpg", quality=90)
         pre = preprocess.preprocess(im, flatten=opts.get("flatten"), strip_pen=opts.get("strip_pen", True),
                                     lock_page=opts.get("lock_page", True), quad=opts.get("quad"))
-        pre["image"].save(d / "page.full.png")
-        pre["image"].save(d / "page.png")
         j["status"] = "Reading the music"
         det = opts.get("detector", "28m")
-        if _OMR_TRANSCRIBE is not None:
-            r = _OMR_TRANSCRIBE(pre["image"], detector=det, allow_second_opinion=(det == "28m"))
-        else:
-            r, read_im = omr.transcribe_checked(pre["image"], detector=det)
+
+        def _save_page(img: Image.Image) -> None:
+            img.save(d / "page.full.png", format="PNG", compress_level=1)
+            shutil.copyfile(d / "page.full.png", d / "page.png")
+
+        def _transcribe(img):
+            if _OMR_TRANSCRIBE is not None:
+                return _OMR_TRANSCRIBE(img, detector=det, allow_second_opinion=(det == "28m"))
+            res, read_im = omr.transcribe_checked(img, detector=det)
             if det == "28m":
-                if omr.should_skip_second_opinion(r):
-                    r["second_opinion"] = {
+                if omr.should_skip_second_opinion(res):
+                    res["second_opinion"] = {
                         "aligned": True,
                         "skipped": True,
                         "reason": "high_confidence",
@@ -322,7 +338,44 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
                     }
                 else:
                     j["status"] = "Double-checking"
-                    omr.second_opinion(r, read_im)
+                    omr.second_opinion(res, read_im)
+            return res
+
+        # If a photo is unmistakably sideways (landscape capture with vertical staff lines), rotate 90° CW
+        # BEFORE calling GPU OMR so we don't burn a full pass on sideways staves.
+        orig_pre_im = pre["image"]
+        if preprocess.strongly_sideways(orig_pre_im):
+            rot_cw = orig_pre_im.transpose(Image.Transpose.ROTATE_270)
+            r_cw = _transcribe(rot_cw)
+            if (r_cw.get("stats") or {}).get("measures"):
+                pre["image"] = rot_cw
+                pre["steps"].append("auto-rotate-90cw")
+                r = r_cw
+            else:
+                rot_ccw = orig_pre_im.transpose(Image.Transpose.ROTATE_90)
+                r_ccw = _transcribe(rot_ccw)
+                if (r_ccw.get("stats") or {}).get("measures"):
+                    pre["image"] = rot_ccw
+                    pre["steps"].append("auto-rotate-90ccw")
+                    r = r_ccw
+                else:
+                    r = _transcribe(orig_pre_im)
+        else:
+            r = _transcribe(orig_pre_im)
+            # Safety net for mildly sideways photos: if primary OMR found 0 measures and gradients look
+            # sideways, retry rotated 90° CW then CCW.
+            if not (r.get("stats") or {}).get("measures") and preprocess.looks_sideways(orig_pre_im):
+                for label, transpose in (("auto-rotate-90cw", Image.Transpose.ROTATE_270),
+                                         ("auto-rotate-90ccw", Image.Transpose.ROTATE_90)):
+                    j["status"] = "Checking page orientation"
+                    rot_im = orig_pre_im.transpose(transpose)
+                    r_rot = _transcribe(rot_im)
+                    if (r_rot.get("stats") or {}).get("measures"):
+                        pre["image"] = rot_im
+                        pre["steps"].append(label)
+                        r = r_rot
+                        break
+        _save_page(pre["image"])
         ctx, notes = page_context(r["xml"], opts.get("context"))
         _clean(r, context=ctx)
         if notes and r["measures"]:
@@ -344,7 +397,6 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
                        "second_opinion": r.get("second_opinion"), "layout_check": r.get("layout_check"),
                        "pdf_page": opts.get("page", 0) if opts.get("pdf") else None}
         (d / "result.full.json").write_text(json.dumps(full_result))
-        j["_full_result"] = full_result
         j["result"] = _preview_result(full_result, d) if j.get("allowance", {}).get("access") == "preview" else full_result
         j["status"] = "done"
     except Exception as e:
@@ -523,7 +575,8 @@ def _job(jid, request: Request | None = None):
 
 @app.get("/api/jobs/{jid}")
 def get_job(jid: str, request: Request):
-    return _job(jid, request)
+    j = _job(jid, request)
+    return {k: v for k, v in j.items() if not k.startswith("_")}
 
 
 @app.get("/api/jobs/{jid}/{name}")

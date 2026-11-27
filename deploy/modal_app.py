@@ -21,7 +21,7 @@ import modal
 ROOT = Path(__file__).resolve().parents[1]
 COPISTERIA_COMMIT = "2be4a9d88c15fd6b36fe7c97e0fa816f08804570"  # copisteria 1.3.4, same pin as scripts/setup.sh
 GPU = os.environ.get("MUSICSCAN_GPU", "T4")  # T4 is the cheapest; "L4" is ~1.4x the price and a bit faster
-GPU_SCALEDOWN = int(os.environ.get("MUSICSCAN_GPU_SCALEDOWN", "75"))
+GPU_SCALEDOWN = int(os.environ.get("MUSICSCAN_GPU_SCALEDOWN", "180"))
 IGNORE = ["**/__pycache__", "**/*.pyc", "**/.DS_Store"]
 
 # Lightweight CPU image for static files, preprocessing, auth, billing, and job orchestration.
@@ -105,19 +105,32 @@ class OMRWorker:
 
     @modal.enter(snap=False)
     def attach_gpu(self):
-        """After restoring from the memory snapshot, bind CUDA and preload the primary 28m detector."""
+        """After restoring from the memory snapshot, bind CUDA, preload 28m + 2m detectors, and warm CUDA kernels."""
         import sys
         sys.path.insert(0, "/app")
+        from PIL import Image
         from musicscan import omr
         omr._DEV.clear()
         dev = omr.pick_device()
         try:
             from copisteria.detect import Detector
             from copisteria.paths import DETECTORS
-            Detector(DETECTORS["28m"][0])
+            dummy = Image.new("L", (128, 128), 255)
+            for name in ("28m", "2m"):
+                os.environ["COPISTERIA_DETECTOR"] = name
+                det = Detector(DETECTORS[name][0])
+                arr, sc = det.prepare(dummy, 256)
+                det.run_array(arr, sc)
+            os.environ["COPISTERIA_DETECTOR"] = "28m"
         except Exception as exc:
             print(f"OMRWorker detector warmup skipped: {exc}")
-        print(f"OMRWorker GPU ready on {dev}")
+        print(f"OMRWorker GPU ready on {dev} (28m + 2m hot)")
+
+    @modal.method()
+    def warmup(self) -> dict:
+        """No-op ping used to wake & restore the GPU container before the user finishes capturing a page."""
+        from musicscan import omr
+        return {"ok": True, "device": omr.pick_device()}
 
     @modal.method()
     def transcribe_page(self, png_bytes: bytes, detector: str = "28m", allow_second_opinion: bool = True) -> dict:
@@ -180,9 +193,33 @@ def web():
             allow_second_opinion=allow_second_opinion,
         )
 
+    import threading
+    import time
+
+    warm_lock = threading.Lock()
+    last_warm = [0.0]
+
     def remote_rescan(img, detector: str = "28m") -> dict:
         return worker.rescan_crop.remote(_encode_png(img), detector=detector)
 
-    srv.set_omr_backend(remote_transcribe, remote_rescan, device_label=f"modal-{GPU.lower()}")
+    def remote_warmup() -> bool:
+        now = time.monotonic()
+        with warm_lock:
+            if now - last_warm[0] < 20.0:
+                return False
+            last_warm[0] = now
+        try:
+            worker.warmup.spawn()
+            return True
+        except Exception as exc:
+            print(f"OMRWorker warmup spawn failed: {exc}")
+            return False
+
+    srv.set_omr_backend(
+        remote_transcribe,
+        remote_rescan,
+        device_label=f"modal-{GPU.lower()}",
+        warmup_fn=remote_warmup,
+    )
     print(f"MusicScan CPU web ready (delegating OMR to {GPU} OMRWorker, scaledown={GPU_SCALEDOWN}s)")
     return srv.app
