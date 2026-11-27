@@ -8,8 +8,8 @@ from server import billing, usage
 
 def transaction(user_id=None, **changes):
     values = {
-        "bundleId": "com.example.musicscan",
-        "productId": "com.musicscan.pro.yearly",
+        "bundleId": "com.allenjue.musicscan",
+        "productId": "com.allenjue.musicscan.pro.yearly",
         "appAccountToken": user_id or str(uuid4()),
         "originalTransactionId": "original-123",
         "transactionId": "transaction-456",
@@ -29,7 +29,7 @@ def test_verified_transaction_normalizes_to_existing_entitlement_fields(monkeypa
     tx = billing._normalize_transaction(transaction(uid), uid)
 
     assert tx["active"] is True
-    assert tx["product_id"] == "com.musicscan.pro.yearly"
+    assert tx["product_id"] == "com.allenjue.musicscan.pro.yearly"
     assert tx["is_trial"] is True
     assert tx["period_start"].startswith("2027-")
     assert tx["period_end"].startswith("2030-")
@@ -37,7 +37,7 @@ def test_verified_transaction_normalizes_to_existing_entitlement_fields(monkeypa
 
 @pytest.mark.parametrize("changes", [
     {"bundleId": "other.bundle"},
-    {"productId": "com.musicscan.pro.fake"},
+    {"productId": "com.allenjue.musicscan.pro.fake"},
     {"appAccountToken": str(uuid4())},
 ])
 def test_rejects_wrong_app_product_or_user(changes):
@@ -82,7 +82,7 @@ def test_notifications_use_signed_transaction_and_account_token(monkeypatch):
     uid = str(uuid4())
     tx = transaction(uid)
     notice = SimpleNamespace(
-        data=SimpleNamespace(bundleId="com.example.musicscan", signedTransactionInfo="nested-jws",
+        data=SimpleNamespace(bundleId="com.allenjue.musicscan", signedTransactionInfo="nested-jws",
                              signedRenewalInfo=None, environment=Environment.SANDBOX),
         rawNotificationType="DID_RENEW", signedDate=1_800_000_020_000,
     )
@@ -104,7 +104,7 @@ def test_notification_account_token_can_come_from_verified_renewal_info(monkeypa
     tx = transaction(None, appAccountToken=None)
     renewal = SimpleNamespace(gracePeriodExpiresDate=None, appAccountToken=uid)
     notice = SimpleNamespace(
-        data=SimpleNamespace(bundleId="com.example.musicscan", signedTransactionInfo="nested-jws",
+        data=SimpleNamespace(bundleId="com.allenjue.musicscan", signedTransactionInfo="nested-jws",
                              signedRenewalInfo="renewal-jws", environment=Environment.SANDBOX),
         rawNotificationType="DID_RENEW", signedDate=1_800_000_020_000,
     )

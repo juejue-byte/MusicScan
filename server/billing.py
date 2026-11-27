@@ -19,13 +19,13 @@ from appstoreserverlibrary.signed_data_verifier import SignedDataVerifier, Verif
 ROOT = Path(__file__).resolve().parents[1]
 ROOT_CERT = ROOT / "server" / "certs" / "AppleRootCA-G3.cer"
 PRODUCT_IDS = {
-    "com.musicscan.pro.monthly",
-    "com.musicscan.pro.yearly",
+    "com.allenjue.musicscan.pro.monthly",
+    "com.allenjue.musicscan.pro.yearly",
 }
 
 
 def _bundle_id() -> str:
-    return os.environ.get("APPLE_BUNDLE_ID", "com.example.musicscan")
+    return os.environ.get("APPLE_BUNDLE_ID", "com.allenjue.musicscan")
 
 
 def _ms_time(value: int | None) -> str | None:
