@@ -159,12 +159,113 @@ def transcribe(im: Image.Image, detector: str = "28m") -> dict:
     out = analyse(rd)
     xml = add_system_breaks(xml, [s["measures"][0] for s in out["systems"][1:] if s["measures"]])
     xml = add_bar_signs(xml, out.get("bar_signs", []))
+    xml = merge_slivers(out, xml)
     out["xml"] = restore_bar_rests(fix_pickup(xml))
     out["seconds"] = round(time.time() - t0, 1)
     out["detector"] = detector
     out["device"] = pick_device()
     out["size"] = [im.width, im.height]
     return out
+
+
+def merge_slivers(out: dict, xml: str) -> str:
+    """A bar with no notes or rests in any part that is much narrower than the other bars of its row is not a bar:
+    it is the space between a start-repeat sign and the clef, or the gap inside a double bar line read as two bar
+    lines. It shifts every later bar by one. Fold it into the bar after it (or before it, at the end of a row):
+    its clef, key, time and bar lines move there. Updates out["measures"] and out["systems"] to match."""
+    from lxml import etree
+    meas = out.get("measures") or []
+    try:
+        root = etree.fromstring(xml.encode())
+    except etree.XMLSyntaxError:
+        return xml
+    parts = root.findall("part")
+    if not parts or any(len(p.findall("measure")) != len(meas) for p in parts):
+        return xml
+    width = lambda m: (m["bbox"][2] - m["bbox"][0]) if m.get("bbox") else 0  # noqa: E731
+    drop = []
+    for i, m in enumerate(meas):
+        row = [width(x) for x in meas if x["system"] == m["system"] and x is not m]
+        if not row or width(m) >= 0.4 * float(np.median(row)):
+            continue
+        if any(p.findall("measure")[i].find("note") is not None for p in parts):
+            continue
+        same_next = i + 1 < len(meas) and meas[i + 1]["system"] == m["system"]
+        same_prev = i > 0 and meas[i - 1]["system"] == m["system"]
+        if same_next or same_prev:
+            drop.append((i, i + 1 if same_next else i - 1))
+    if not drop:
+        return xml
+    for p in parts:
+        ms = p.findall("measure")
+        for i, j in drop:
+            src, dst = ms[i], ms[j]
+            keep = [el for el in src if el.tag not in ("note", "backup", "forward")]
+            if j > i:                        # leading attributes, print and left bar lines go to the start
+                for k, el in enumerate(keep):
+                    if el.tag == "barline" and el.get("location", "right") == "right":
+                        el.set("location", "left")
+                    dst.insert(k, el)
+                if src.get("implicit"):
+                    dst.set("implicit", src.get("implicit"))
+            else:
+                for el in keep:
+                    if el.tag == "barline" and el.get("location") == "left":
+                        el.set("location", "right")
+                    dst.append(el)
+            p.remove(src)
+        for k, m in enumerate(p.findall("measure"), 1):
+            m.set("number", str(k))
+    gone = {i for i, _ in drop}
+    keep_meta = [m for i, m in enumerate(meas) if i not in gone]
+    new_index = {m["index"]: k for k, m in enumerate(keep_meta)}
+    for k, m in enumerate(keep_meta):
+        m["index"] = k
+    out["measures"] = keep_meta
+    for sy in out.get("systems", []):
+        sy["measures"] = [new_index[i] for i in sy["measures"] if i in new_index]
+    out["merged_slivers"] = sorted(gone)
+    if isinstance(out.get("stats"), dict) and "measures" in out["stats"]:
+        out["stats"]["measures"] = len(keep_meta)
+    head = xml[: xml.find("<score-partwise")] if "<score-partwise" in xml else ""
+    return head + etree.tostring(root, encoding="unicode")
+
+
+def sharpen(im: Image.Image) -> Image.Image:
+    from PIL import ImageFilter
+    return im.filter(ImageFilter.UnsharpMask(radius=2, percent=200, threshold=2))
+
+
+def plausibility(r: dict) -> float:
+    """How believable a reading's layout is, from 0 to 2: rows of a page hold similar numbers of bars (the last row
+    may be short), plus the share of bars whose voices add up to the time signature. A reading that split or merged
+    rows scores low on both."""
+    per = [len(sy["measures"]) for sy in r.get("systems", [])]
+    rows = per[:-1] if len(per) >= 3 else per
+    even = min(rows) / max(rows) if rows and max(rows) else 0.0
+    ok = bars_add_up(r["xml"]) or []
+    return even + (sum(ok) / len(ok) if ok else 0.0)
+
+
+def transcribe_checked(im: Image.Image, detector: str = "28m") -> tuple[dict, Image.Image]:
+    """Read the page, and read it again sharpened. On a slightly soft phone photo the reader can lose which staves
+    belong to one row (a piano page then splits into twice the rows, or bars vanish) while every symbol is still
+    found. Sharpening usually restores that but can also break a page that was read right, so when the two
+    readings find a different number of bars, the one whose layout is more believable (plausibility) is kept.
+    On Sheetly's 31 simulated phone photos this raised strict F1 from 60% to 83% (bench/REPORT.md). Returns the
+    reading and the image it came from, for the second opinion."""
+    r = transcribe(im, detector=detector)
+    sim = sharpen(im)
+    s = transcribe(sim, detector=detector)
+    a, b = len(r["measures"]), len(s["measures"])
+    secs = round(r["seconds"] + s["seconds"], 1)
+    if a != b and plausibility(s) > plausibility(r):
+        s["layout_check"] = {"bars": [a, b], "used": "sharpened"}
+        s["seconds"] = secs
+        return s, sim
+    r["layout_check"] = {"bars": [a, b], "used": "original"}
+    r["seconds"] = secs
+    return r, im
 
 
 def restore_bar_rests(xml: str) -> str:

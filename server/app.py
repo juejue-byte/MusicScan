@@ -197,10 +197,10 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
         pre["image"].save(d / "page.full.png")
         pre["image"].save(d / "page.png")
         j["status"] = "Reading the music"
-        r = omr.transcribe(pre["image"], detector=opts.get("detector", "28m"))
+        r, read_im = omr.transcribe_checked(pre["image"], detector=opts.get("detector", "28m"))
         if opts.get("detector", "28m") == "28m":
             j["status"] = "Double-checking"
-            omr.second_opinion(r, pre["image"])
+            omr.second_opinion(r, read_im)
         ctx, notes = page_context(r["xml"], opts.get("context"))
         _clean(r, context=ctx)
         if notes and r["measures"]:
@@ -209,10 +209,17 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
             if m0["level"] == "ok":
                 m0["level"] = "check"
         q = assess(pre, r)
+        lc = r.get("layout_check") or {}
+        if lc.get("bars") and lc["bars"][0] != lc["bars"][1]:
+            # the two reads split the page into a different number of bars: the rows were hard to tell apart
+            q["reasons"].append(f"The rows were hard to tell apart in this photo (one reading found {lc['bars'][0]} "
+                                f"bars, another {lc['bars'][1]}). Check that each row has the right number of bars.")
+            if q["level"] == "good":
+                q["level"] = "check"
         full_result = {"xml": r["xml"], "measures": r["measures"], "systems": r["systems"], "stats": r["stats"],
                        "quality": q, "steps": pre["steps"], "quad": pre["quad"], "seconds": r["seconds"],
                        "page_size": list(pre["image"].size), "original_size": list(im.size),
-                       "second_opinion": r.get("second_opinion"),
+                       "second_opinion": r.get("second_opinion"), "layout_check": r.get("layout_check"),
                        "pdf_page": opts.get("page", 0) if opts.get("pdf") else None}
         (d / "result.full.json").write_text(json.dumps(full_result))
         j["_full_result"] = full_result

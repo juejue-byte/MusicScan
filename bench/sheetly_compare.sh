@@ -14,4 +14,6 @@ python -c 'import cv2, numpy' 2>/dev/null || pip install opencv-python-headless 
 export MUSICSCAN_DEVICE="${MUSICSCAN_DEVICE:-auto}" PYTORCH_ENABLE_MPS_FALLBACK=1
 if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then img="$1"; shift; set -- --images "$img" "$@"; fi
 python bench/sheetly_run.py ../omr-benchmark bench/sheetly_out "$@"
-echo "Their published figures (page one only): python ../omr-benchmark/score.py ../omr-benchmark"
+echo
+echo "Sheetly's published strict F1 (page one only, their images): clean31 97.37%, photo31 97.34%."
+echo "Compare with the page-one column above. Other engines on the same page one: Audiveris 88.43% / 50.43%, oemer 38.45% / 9.81%."

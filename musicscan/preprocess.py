@@ -33,9 +33,22 @@ def _hugs_frame(q: np.ndarray, shape, tol: float = 0.01) -> bool:
     return any(sides[i] & sides[(i + 1) % 4] for i in range(4))
 
 
+def _paper_mask(small: np.ndarray) -> np.ndarray:
+    """Bright, nearly colourless pixels: paper. A wood table, a carpet or a hand is darker or clearly coloured,
+    even where it is as bright as the page (pale wood grain), which Otsu on brightness alone can't tell apart. A
+    shadow darkens paper but leaves it colourless, so the brightness bar is low."""
+    hsv = cv2.cvtColor(small, cv2.COLOR_RGB2HSV)
+    s, v = hsv[..., 1].astype(np.float32), hsv[..., 2].astype(np.float32)
+    lit = v >= np.percentile(v, 95) * 0.35          # loose, so a shadowed part of the page still counts
+    m = ((s < 40) & lit).astype(np.uint8) * 255
+    m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((25, 25), np.uint8))   # print and staff lines inside the page
+    return cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((9, 9), np.uint8))
+
+
 def find_page(rgb: np.ndarray) -> np.ndarray | None:
     """The page's four corners (tl, tr, br, bl) in image pixels, or None when the page already fills the frame
-    or no clear quadrilateral is found."""
+    or no clear quadrilateral is found. Outlines come from brightness (Otsu), edges and paper colour (bright and
+    colourless, which pale wood grain is not); outlines that follow the photo's own frame are dropped."""
     h, w = rgb.shape[:2]
     k = 900 / max(h, w)
     small = cv2.resize(rgb, (round(w * k), round(h * k)), interpolation=cv2.INTER_AREA)
@@ -46,7 +59,7 @@ def find_page(rgb: np.ndarray) -> np.ndarray | None:
     _, th = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     th = cv2.morphologyEx(th, cv2.MORPH_CLOSE, np.ones((25, 25), np.uint8))
     edges = cv2.dilate(cv2.Canny(gray, 40, 120), np.ones((5, 5), np.uint8))
-    for mask in (th, edges):
+    for mask in (th, edges, _paper_mask(small)):
         cs, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         for c in sorted(cs, key=cv2.contourArea, reverse=True)[:3]:
             a = cv2.contourArea(c)

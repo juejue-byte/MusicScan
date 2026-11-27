@@ -104,9 +104,9 @@ def read_page(png: bytes, fast: bool = False):
     from musicscan import omr, preprocess
     from server.app import _clean
     pre = preprocess.preprocess(Image.open(io.BytesIO(png)).convert("RGB"))
-    r = omr.transcribe(pre["image"], detector="2m" if fast else "28m")
+    r, im = omr.transcribe_checked(pre["image"], detector="2m" if fast else "28m")
     if not fast:
-        omr.second_opinion(r, pre["image"])
+        omr.second_opinion(r, im)
     _clean(r)
     return r["xml"], [m["level"] for m in r["measures"]]
 
@@ -177,7 +177,13 @@ def main():
                     pages = [(photo_sim.degrade_png(png, "moderate", photo_sim.stable_seed(slug, i)), n)
                              for i, (png, n) in enumerate(pages, 1)]
             if a.max_pages:
-                pages = pages[:a.max_pages]
+                # at least the bars of their page one, so the page-one column compares like with like (our engraving
+                # can put fewer bars on a page than theirs)
+                p1, keep, bars = piece["pages"][0]["measures"], 0, 0
+                while keep < len(pages) and (keep < a.max_pages or bars < p1):
+                    bars += pages[keep][1]
+                    keep += 1
+                pages = pages[:keep]
             events, fixed, offset, bars_scanned, marked, nbars, skipped, mismatched = [], [], 0, 0, 0, 0, 0, 0
             gt_events = S.note_events(gt_xml)
             for pi, (png, n) in enumerate(pages, 1):
