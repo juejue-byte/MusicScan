@@ -555,11 +555,19 @@ private final class ManualScannerModel: NSObject {
 
     func rotatePage(id: UUID) {
         guard let idx = pages.firstIndex(where: { $0.id == id }) else { return }
-        pages[idx].originalImage = pages[idx].originalImage.rotatedClockwise90()
-        if let cropped = pages[idx].croppedImage {
-            pages[idx].croppedImage = cropped.rotatedClockwise90()
-        }
+        let original = pages[idx].originalImage
+        let cropped = pages[idx].croppedImage
         UISelectionFeedbackGenerator().selectionChanged()
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let rotatedOriginal = original.rotatedClockwise90()
+            let rotatedCropped = cropped?.rotatedClockwise90()
+            await MainActor.run {
+                guard let self,
+                      let currentIdx = self.pages.firstIndex(where: { $0.id == id }) else { return }
+                self.pages[currentIdx].originalImage = rotatedOriginal
+                self.pages[currentIdx].croppedImage = rotatedCropped
+            }
+        }
     }
 
     func togglePageCrop(id: UUID) {

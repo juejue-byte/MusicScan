@@ -126,7 +126,7 @@ final class AuthManager {
     func bootstrapConfig(from serverURL: URL) async {
         guard let configURL = AppConfig.endpoint(base: serverURL, path: "api/config") else { return }
         var request = URLRequest(url: configURL)
-        request.timeoutInterval = 20
+        request.timeoutInterval = 6
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200,
@@ -212,11 +212,21 @@ final class AuthManager {
     // MARK: - WKWebView Cookie Injection
 
     /// Writes `musicscan_session` into the web view's cookie store before loading so editor `fetch('api/...')` calls are authenticated.
+    /// Bounded to 5 seconds so a slow auth network never blocks initial `WKWebView` load indefinitely.
     func prepareWebView(_ store: WKHTTPCookieStore, for serverURL: URL) async {
         cookieStore = store
         cookieServerURL = serverURL
-        await start()
-        _ = await accessToken()
+        let authPrep = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.start()
+            _ = await self.accessToken()
+        }
+        let timeout = Task {
+            try? await Task.sleep(for: .seconds(5))
+            authPrep.cancel()
+        }
+        _ = await authPrep.value
+        timeout.cancel()
         await applySessionCookie()
     }
 
@@ -842,6 +852,7 @@ private final class AppleSignInCoordinator: NSObject, ASAuthorizationControllerD
 // MARK: - Keychain Storage
 
 private enum AuthKeychain {
+    private static let queue = DispatchQueue(label: "com.musicscan.keychain", qos: .utility)
     private static let baseQuery: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: "com.musicscan.auth",
@@ -860,11 +871,14 @@ private enum AuthKeychain {
     }
 
     static func save(_ session: AuthSession?) {
-        SecItemDelete(baseQuery as CFDictionary)
-        guard let session, let data = try? JSONEncoder().encode(session) else { return }
-        var query = baseQuery
-        query[kSecValueData as String] = data
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(query as CFDictionary, nil)
+        let encoded = session.flatMap { try? JSONEncoder().encode($0) }
+        queue.async {
+            SecItemDelete(baseQuery as CFDictionary)
+            guard let data = encoded else { return }
+            var query = baseQuery
+            query[kSecValueData as String] = data
+            query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            SecItemAdd(query as CFDictionary, nil)
+        }
     }
 }

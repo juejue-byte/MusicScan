@@ -214,15 +214,25 @@ struct EditorWebView: UIViewRepresentable {
         private var scanRequestID = 0
         private var preferPhotoLibraryForNextScan = false
         private let selectionFeedback = UISelectionFeedbackGenerator()
+        private var loadTask: Task<Void, Never>?
+        private var loadWatchdogTask: Task<Void, Never>?
+        private static let audioSessionQueue = DispatchQueue(
+            label: "com.musicscan.audioSession",
+            qos: .userInitiated
+        )
 
         init(_ parent: EditorWebView) {
             self.parent = parent
         }
 
         private func ensurePlaybackAudioSessionActive() {
-            let audio = AVAudioSession.sharedInstance()
-            try? audio.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-            try? audio.setActive(true)
+            Self.audioSessionQueue.async {
+                let audio = AVAudioSession.sharedInstance()
+                if audio.category != .playback || !audio.categoryOptions.contains(.mixWithOthers) {
+                    try? audio.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+                }
+                try? audio.setActive(true)
+            }
         }
 
         func load(_ url: URL, token: Int) {
@@ -234,7 +244,16 @@ struct EditorWebView: UIViewRepresentable {
             BillingManager.shared.updateServerURL(url)
             let cookieStore = webView.configuration.websiteDataStore.httpCookieStore
 
-            Task { @MainActor in
+            loadTask?.cancel()
+            loadWatchdogTask?.cancel()
+            loadWatchdogTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(25))
+                guard !Task.isCancelled, let self, !self.isWebReady else { return }
+                self.webView?.stopLoading()
+                self.parent.onLoadError("Connection timed out while reaching the score server. Tap Try Again or check Server Settings.")
+            }
+
+            loadTask = Task { @MainActor [weak self, weak webView] in
                 // Skip redundant /api/config round-trip on default server when Supabase is already configured,
                 // avoiding extra startup latency and unnecessary Modal wake-up traffic.
                 let defaultHost = URL(string: AppConfig.fallbackServerURL)?.host?.lowercased()
@@ -242,10 +261,11 @@ struct EditorWebView: UIViewRepresentable {
                     await AuthManager.shared.bootstrapConfig(from: url)
                 }
                 await AuthManager.shared.prepareWebView(cookieStore, for: url)
+                guard !Task.isCancelled, let self, let webView, self.loadedURL == url, self.loadedToken == token else { return }
                 let request = URLRequest(
                     url: url,
                     cachePolicy: .useProtocolCachePolicy,
-                    timeoutInterval: 90
+                    timeoutInterval: 30
                 )
                 webView.load(request)
             }
@@ -363,6 +383,8 @@ struct EditorWebView: UIViewRepresentable {
         // MARK: - WKNavigationDelegate
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            loadWatchdogTask?.cancel()
+            loadWatchdogTask = nil
             isWebReady = true
             parent.onLoaded()
             webView.becomeFirstResponder()
@@ -377,11 +399,15 @@ struct EditorWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             if (error as NSError).code == NSURLErrorCancelled { return }
+            loadWatchdogTask?.cancel()
+            loadWatchdogTask = nil
             parent.onLoadError(error.localizedDescription)
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             if (error as NSError).code == NSURLErrorCancelled { return }
+            loadWatchdogTask?.cancel()
+            loadWatchdogTask = nil
             parent.onLoadError(error.localizedDescription)
         }
 
@@ -926,36 +952,50 @@ struct EditorWebView: UIViewRepresentable {
         // MARK: - Share Sheet Export (MuseScore / MusicXML / MIDI)
 
         private func presentShareSheet(requestID: Int, name: String, base64: String) {
-            guard let data = Data(base64Encoded: base64), let webView else {
+            guard webView != nil, !base64.isEmpty else {
                 reply(requestID, ["error": "Nothing to share."])
                 return
             }
             let safeName = (name as NSString).lastPathComponent.replacingOccurrences(of: "/", with: "-")
             let fileURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent(safeName.isEmpty ? "score.musicxml" : safeName)
-            do {
-                try data.write(to: fileURL, options: .atomic)
-            } catch {
-                reply(requestID, ["error": error.localizedDescription])
-                return
-            }
 
-            let activity = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
-            activity.completionWithItemsHandler = { [weak self] _, completed, _, _ in
-                Task { @MainActor in
-                    self?.reply(requestID, ["completed": completed])
+            Task.detached(priority: .userInitiated) { [weak self] in
+                guard let data = Data(base64Encoded: base64) else {
+                    await MainActor.run {
+                        self?.reply(requestID, ["error": "Nothing to share."])
+                    }
+                    return
+                }
+                do {
+                    try data.write(to: fileURL, options: .atomic)
+                } catch {
+                    let message = error.localizedDescription
+                    await MainActor.run {
+                        self?.reply(requestID, ["error": message])
+                    }
+                    return
+                }
+                await MainActor.run {
+                    guard let self, let webView = self.webView else { return }
+                    let activity = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+                    activity.completionWithItemsHandler = { [weak self] _, completed, _, _ in
+                        Task { @MainActor in
+                            self?.reply(requestID, ["completed": completed])
+                        }
+                    }
+                    if let popover = activity.popoverPresentationController {
+                        popover.sourceView = webView
+                        popover.sourceRect = CGRect(
+                            x: webView.bounds.maxX - 80,
+                            y: webView.safeAreaInsets.top + 24,
+                            width: 1,
+                            height: 1
+                        )
+                    }
+                    self.presenterViewController()?.present(activity, animated: true)
                 }
             }
-            if let popover = activity.popoverPresentationController {
-                popover.sourceView = webView
-                popover.sourceRect = CGRect(
-                    x: webView.bounds.maxX - 80,
-                    y: webView.safeAreaInsets.top + 24,
-                    width: 1,
-                    height: 1
-                )
-            }
-            presenterViewController()?.present(activity, animated: true)
         }
     }
 }
@@ -3019,7 +3059,7 @@ private enum NativeWebPolishScript {
         ensureAdaptiveEditorControls();
         ensurePageNavigator();
         syncPageWithPlaybackCursor();
-        const isHidden = (el) => !el || el.classList.contains('hidden') || el.hidden || getComputedStyle(el).display === 'none';
+        const isHidden = (el) => !el || el.classList.contains('hidden') || el.hidden || el.style.display === 'none';
         const upload = document.getElementById('viewUpload');
         const progress = document.getElementById('viewProgress');
         const editor = document.getElementById('viewEditor');
