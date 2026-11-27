@@ -206,50 +206,82 @@ async function startUpload(file) {
               continue;
             }
             setStep('done'); clearInterval(tick); $('#progressBar').style.width = '100%';
-            openResult(slot.result);
+            try { openResult(slot.result); } catch (e) { console.error(e); show('viewUpload'); toast('Could not open score: ' + e.message, 5000); }
             return;
           }
-          opened = true;
-          setStep('done'); clearInterval(tick); $('#progressBar').style.width = '100%';
-          S.job = slot.id;
-          S.name = slot.file.name || S.name;
-          openResult(slot.result);
-          editorSession = scoreSession;
-          updateBatchUI();
+          try {
+            S.job = slot.id;
+            S.name = slot.file.name || S.name;
+            openResult(slot.result);
+            opened = true;
+            setStep('done'); clearInterval(tick); $('#progressBar').style.width = '100%';
+            editorSession = scoreSession;
+            updateBatchUI();
+          } catch (e) {
+            console.error('Failed to open page ' + (slot.idx + 1), e);
+            if (nextFlushIdx === slots.length) {
+              clearInterval(tick);
+              show('viewUpload');
+              toast('Could not open score: ' + (e.message || e), 5000);
+            } else {
+              toast(`Could not open page ${slot.idx + 1} — continuing…`, 3500);
+            }
+          }
         } else if (editorSession === scoreSession && S.score) {
-          appendPage(slot.id, slot.result, slot.file.name);
+          try {
+            appendPage(slot.id, slot.result, slot.file.name);
+          } catch (e) {
+            console.error('Failed to append page ' + (slot.idx + 1), e);
+            toast(`Could not add page ${slot.idx + 1}: ${e.message || e}`, 4000);
+          }
         }
       }
     };
+
+    const runSlot = async (slot, onPosted = null) => {
+      if (opened && editorSession !== scoreSession) {
+        slot.done = true;
+        return;
+      }
+      const fd = new FormData();
+      fd.append('file', slot.file, slot.file.name || `page-${slot.idx + 1}.jpg`);
+      fd.append('detector', detector);
+      try {
+        const { id, result } = await readPage(fd, (status) => {
+          if (!opened) {
+            setStep(/Clean/.test(status) ? 'clean' : /Read|Double|Orient/i.test(status) ? 'read' : 'upload');
+            lastStatus = `Reading ${total} pages in parallel (${status.toLowerCase()})`;
+          }
+        }, 'api/jobs', onPosted);
+        slot.id = id;
+        slot.result = result;
+      } catch (err) {
+        slot.error = err.message || 'Transcription failed';
+      } finally {
+        slot.done = true;
+        completed++;
+        flushInOrder();
+        updateBatchUI();
+      }
+    };
+
+    // Give Page 1 a brief head start so it claims the already-warm GPU container first
+    // and opens the editor in ~5s while Pages 2..N finish in parallel right behind it.
+    let firstPostedResolve;
+    const firstPosted = new Promise((res) => { firstPostedResolve = res; });
+    cursor = 1;
+    const firstTask = runSlot(slots[0], () => firstPostedResolve());
+    await Promise.race([firstPosted, new Promise((res) => setTimeout(res, 1200))]);
+    await new Promise((res) => setTimeout(res, 350));
 
     const runWorker = async () => {
       while (cursor < slots.length) {
         const slot = slots[cursor++];
-        if (opened && editorSession !== scoreSession) return;
-        const fd = new FormData();
-        fd.append('file', slot.file, slot.file.name || `page-${slot.idx + 1}.jpg`);
-        fd.append('detector', detector);
-        try {
-          const { id, result } = await readPage(fd, (status) => {
-            if (!opened) {
-              setStep(/Clean/.test(status) ? 'clean' : /Read|Double|Orient/i.test(status) ? 'read' : 'upload');
-              lastStatus = `Reading ${total} pages in parallel (${status.toLowerCase()})`;
-            }
-          });
-          slot.id = id;
-          slot.result = result;
-        } catch (err) {
-          slot.error = err.message || 'Transcription failed';
-        } finally {
-          slot.done = true;
-          completed++;
-          flushInOrder();
-          updateBatchUI();
-        }
+        await runSlot(slot);
       }
     };
 
-    const workers = Array.from({ length: Math.min(4, total) }, () => runWorker());
+    const workers = [firstTask, ...Array.from({ length: Math.min(3, Math.max(0, total - 1)) }, () => runWorker())];
     await Promise.all(workers);
     clearInterval(tick);
     if (opened && editorSession === scoreSession) {
@@ -295,13 +327,33 @@ async function startUpload(file) {
   }
 }
 // upload one page (fd: the job form) and wait for its reading; onStatus gets the server's progress text
-async function readPage(fd, onStatus, path = 'api/jobs') {
+async function readPage(fd, onStatus, path = 'api/jobs', onPosted = null) {
   const r = await api(path, { method: 'POST', body: fd });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Upload failed');
   const { id, pages } = await r.json();
+  onPosted?.(id);
+  let failures = 0;
+  const startedAt = Date.now();
   for (;;) {
     await new Promise((res) => setTimeout(res, 350));
-    const j = await (await api('api/jobs/' + id)).json();
+    if (Date.now() - startedAt > 180000) throw new Error('Reading timed out — please try again');
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 15000);
+    let j;
+    try {
+      const pr = await api('api/jobs/' + id, { signal: ac.signal });
+      if (!pr.ok) {
+        if (pr.status >= 500 && failures < 5) { failures++; continue; }
+        throw new Error((await pr.json().catch(() => ({}))).detail || `Server error (${pr.status})`);
+      }
+      j = await pr.json();
+      failures = 0;
+    } catch (err) {
+      if (failures < 5) { failures++; continue; }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
     if (j.status === 'done') return { id, result: j.result, pages: pages || j.pages || 1 };
     if (j.status === 'error') throw new Error(j.error || 'Transcription failed');
     onStatus?.(j.status);

@@ -18,6 +18,7 @@ from typing import Callable
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
@@ -33,6 +34,7 @@ WORK = Path(os.environ.get("MUSICSCAN_WORK", ROOT / "work"))
 WORK.mkdir(parents=True, exist_ok=True)
 JOBS: dict[str, dict] = {}
 app = FastAPI(title="MusicScan")
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # Optional remote OMR backend (set by deploy/modal_app.py to route OMR onto the GPU worker while the CPU web
 # container handles static assets, auth, billing, polling, and cached samples).
@@ -128,7 +130,6 @@ def _serve_cached_sample(job_id: str, sid: str, sample_dir: Path) -> None:
     full_result["seconds"] = 0.0
     (d / "result.full.json").write_text(json.dumps(full_result))
     j["cached_sample"] = sid
-    j["_full_result"] = full_result
     j["result"] = _preview_result(full_result, d) if j.get("allowance", {}).get("access") == "preview" else full_result
     j["status"] = "done"
     _save_job(j)
@@ -181,6 +182,8 @@ async def access_check(request: Request, call_next):
         resp.set_cookie(KEY_COOKIE, ACCESS_KEY, max_age=400 * 86400, httponly=True, secure=https, samesite="lax")
     if path.startswith("/api/"):
         resp.headers.setdefault("Cache-Control", "no-store")
+    elif resp.status_code == 200 and path.startswith("/js/"):
+        resp.headers.setdefault("Cache-Control", "no-cache")
     elif resp.status_code == 200 and (path.startswith(CACHEABLE_PREFIXES) or path.endswith(CACHEABLE_EXTS)):
         resp.headers.setdefault("Cache-Control", "public, max-age=3600")
     return resp
@@ -394,7 +397,6 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
                        "second_opinion": r.get("second_opinion"), "layout_check": r.get("layout_check"),
                        "pdf_page": opts.get("page", 0) if opts.get("pdf") else None}
         (d / "result.full.json").write_text(json.dumps(full_result))
-        j["_full_result"] = full_result
         j["result"] = _preview_result(full_result, d) if j.get("allowance", {}).get("access") == "preview" else full_result
         j["status"] = "done"
     except Exception as e:
@@ -573,7 +575,8 @@ def _job(jid, request: Request | None = None):
 
 @app.get("/api/jobs/{jid}")
 def get_job(jid: str, request: Request):
-    return _job(jid, request)
+    j = _job(jid, request)
+    return {k: v for k, v in j.items() if not k.startswith("_")}
 
 
 @app.get("/api/jobs/{jid}/{name}")
