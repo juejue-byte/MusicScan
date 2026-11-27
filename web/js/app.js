@@ -146,6 +146,7 @@ async function startUpload(file) {
   const thumb = $('#progressThumb');
   if (file.type.startsWith('image/') && !/heic|heif/i.test(file.type + lower)) { thumb.src = URL.createObjectURL(file); thumb.classList.remove('hidden'); } else thumb.classList.add('hidden');
   setStep('upload');
+  $('#progressText').textContent = 'Tuning up…';
   const fast = $('#optFast').checked;
   const fd = new FormData();
   fd.append('file', file, S.name);
