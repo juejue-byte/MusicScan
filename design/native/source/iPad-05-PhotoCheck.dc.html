@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Photo check</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Nunito:wght@700;800;900&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0F56A3}a:hover{color:#0E2238}
+.d{font-family:Nunito,ui-rounded,system-ui,sans-serif}
+.btn{display:flex;align-items:center;justify-content:center;gap:10px;height:54px;border-radius:99px;font:600 17px Inter,system-ui,sans-serif;border:1px solid transparent;text-decoration:none;cursor:pointer}
+.chk{display:flex;align-items:center;gap:12px;font-size:16px;padding:12px 0;border-bottom:1px solid #D6E4F2}
+.chk:last-child{border-bottom:0}
+.chk small{display:block;color:#4E647C;font-size:13.5px;margin-top:2px}
+</style>
+</helmet>
+<div style="position:relative;width:1194px;height:834px;background:#0B1B2C;font-family:Inter,system-ui,sans-serif;color:#0E2238;overflow:hidden">
+<img src="/_blob/cf046e2af4a0577e882eb8817e46ed1e" alt="" aria-hidden="true" style="position:absolute;inset:-40px;width:1274px;height:914px;object-fit:cover;filter:blur(30px) brightness(.45)">
+<div style="position:absolute;left:96px;top:36px;width:560px;height:762px;display:grid;place-items:center">
+<img src="/_blob/cf046e2af4a0577e882eb8817e46ed1e" alt="The photo you just took: the lower half of the page is in shadow" style="max-width:100%;max-height:100%;border-radius:10px;box-shadow:0 24px 60px rgba(0,0,0,.45)">
+</div>
+<a href="iPad-04-Scan.dc.html" aria-label="Back to camera" style="position:absolute;left:24px;top:28px;width:52px;height:52px;border-radius:99px;display:grid;place-items:center;color:#FFFFFF;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a>
+<section aria-label="Photo check" style="position:absolute;right:28px;top:28px;bottom:28px;width:420px;box-sizing:border-box;padding:30px 28px 24px;border-radius:28px;background:#FFFFFF;box-shadow:0 30px 80px rgba(0,0,0,.35);display:flex;flex-direction:column">
+<span style="width:56px;height:56px;border-radius:18px;background:#FDE8E6;display:grid;place-items:center"><svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l9.5 17h-19z" fill="#C2362B"/><path d="M12 10v4.5M12 17.4v.2" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round"/></svg></span>
+<h1 class="d" style="margin:18px 0 6px;font-size:30px;line-height:1.1;font-weight:900">This photo may read badly</h1>
+<p style="margin:0;font-size:16px;line-height:1.5;color:#4E647C">A shadow covers the bottom half, so notes there could come out wrong. A quick retake will save you fixing them later.</p>
+<div style="margin-top:20px;display:flex;flex-direction:column">
+<div class="chk"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" style="flex:none"><path d="M12 3.5l9.5 17h-19z" fill="#C2362B"/></svg><div><b>Shadow on the page</b><small>Tilt the iPad so your shadow falls off the paper, or turn on a lamp.</small></div></div>
+<div class="chk"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1D7A4E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M5 12l4 4 10-10"/></svg><div><b>Sharp</b><small>Notes are crisp enough to read</small></div></div>
+<div class="chk"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1D7A4E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M5 12l4 4 10-10"/></svg><div><b>Whole page in view</b><small>All four corners found</small></div></div>
+</div>
+<div style="margin-top:auto;display:flex;flex-direction:column;gap:10px">
+<a class="btn" href="iPad-04-Scan.dc.html" style="background:#1769C2;color:#FFFFFF;box-shadow:0 8px 22px rgba(23,105,194,.3)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 0114-5.3L20 9M20 4v5h-5M20 12a8 8 0 01-14 5.3L4 15M4 20v-5h5"/></svg>Retake</a>
+<a class="btn" href="iPad-06-Editor.dc.html" style="background:#EAF4FE;color:#0F56A3">Use this photo anyway</a>
+<a href="iPad-05-PhotoCheck.dc.html" style="align-self:center;font-size:15px;font-weight:600;text-decoration:none;padding:8px 12px">Adjust edges</a>
+</div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1194,"height":834}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+{"v":3,"createdOnFiles":{"v":1,"at":"2026-11-27T00:40:00Z"},"title":"MusicScan native iOS","launch":{"view":"canvas"},"pages":[],
+"boards":{
+"Main.dc.html":{"x":0,"y":0,"w":1440,"h":900,"title":"App map","is_interactive":true},
+"iPad-01-Welcome.dc.html":{"x":0,"y":1400,"w":1194,"h":834,"title":"iPad 1 · Welcome","is_interactive":true,"radius":24},
+"iPad-02-SignIn.dc.html":{"x":1274,"y":1400,"w":1194,"h":834,"title":"iPad 2 · Sign in","is_interactive":true,"radius":24},
+"iPad-03-Library.dc.html":{"x":2548,"y":1400,"w":1194,"h":834,"title":"iPad 3 · Library (Open)","is_interactive":true,"radius":24},
+"iPad-04-Scan.dc.html":{"x":3822,"y":1400,"w":1194,"h":834,"title":"iPad 4 · Scan (just the camera)","is_interactive":true,"radius":24},
+"iPad-05-PhotoCheck.dc.html":{"x":0,"y":2394,"w":1194,"h":834,"title":"iPad 5 · Photo check / retake","is_interactive":true,"radius":24},
+"iPad-06-Editor.dc.html":{"x":1274,"y":2394,"w":1194,"h":834,"title":"iPad 6 · Edit","is_interactive":true,"radius":24},
+"iPad-07-FixIt.dc.html":{"x":2548,"y":2394,"w":1194,"h":834,"title":"iPad 7 · Fix it","is_interactive":true,"radius":24},
+"iPad-08-Practice.dc.html":{"x":3822,"y":2394,"w":1194,"h":834,"title":"iPad 8 · Practice","is_interactive":true,"radius":24},
+"iPad-09-Export.dc.html":{"x":0,"y":3388,"w":1194,"h":834,"title":"iPad 9 · Export / share","is_interactive":true,"radius":24},
+"iPad-10-Paywall.dc.html":{"x":1274,"y":3388,"w":1194,"h":834,"title":"iPad 10 · Paywall (half-page preview)","is_interactive":true,"radius":24},
+"iPad-11-Settings.dc.html":{"x":2548,"y":3388,"w":1194,"h":834,"title":"iPad 11 · Settings and account","is_interactive":true,"radius":24},
+"iPhone-1-Library.dc.html":{"x":0,"y":4700,"w":390,"h":844,"title":"iPhone · Library","is_interactive":true,"radius":48},
+"iPhone-2-Scan.dc.html":{"x":470,"y":4700,"w":390,"h":844,"title":"iPhone · Scan","is_interactive":true,"radius":48},
+"iPhone-3-Editor.dc.html":{"x":940,"y":4700,"w":390,"h":844,"title":"iPhone · Edit","is_interactive":true,"radius":48},
+"iPhone-4-Practice.dc.html":{"x":1410,"y":4700,"w":390,"h":844,"title":"iPhone · Practice","is_interactive":true,"radius":48},
+"iPhone-5-Paywall.dc.html":{"x":1880,"y":4700,"w":390,"h":844,"title":"iPhone · Paywall","is_interactive":true,"radius":48}
+},
+"order":["Main.dc.html","iPad-01-Welcome.dc.html","iPad-02-SignIn.dc.html","iPad-03-Library.dc.html","iPad-04-Scan.dc.html","iPad-05-PhotoCheck.dc.html","iPad-06-Editor.dc.html","iPad-07-FixIt.dc.html","iPad-08-Practice.dc.html","iPad-09-Export.dc.html","iPad-10-Paywall.dc.html","iPad-11-Settings.dc.html","iPhone-1-Library.dc.html","iPhone-2-Scan.dc.html","iPhone-3-Editor.dc.html","iPhone-4-Practice.dc.html","iPhone-5-Paywall.dc.html"],
+"notes":{
+"t0":{"x":0,"y":-300,"text":"MusicScan · native iPad and iPhone","kind":"title1","maxW":1440},
+"a0":{"x":1520,"y":0,"w":440,"text":"My calls, easy to change:\n• One task per screen. Library is home; Scan is a full-screen camera; Edit, Fix it, Practice, Export are each their own place.\n• iOS 26 style: floating glass toolbars over the music, sheets for side tasks, SF Symbols in the app (drawn here as stand-ins).\n• Sky palette kept: Sky 25 ground, Blue 600 primary, Marigold only for Pro, navy only for the practice bar and camera.\n• Music shown is Mozart K. 545 engraved with Verovio from our bench file, and the 'photo' is that page run through bench/degrade.py.\n• Prices: 1 free page, then half-page preview; $99.99/yr (default) or $15.99/mo, no trial, no weekly. The 30-page cap is only in fine print.\nComment on any screen to change it.","size":"m","fill":"blue"},
+"t1":{"x":0,"y":1150,"text":"iPad landscape (primary)","kind":"title1","maxW":5016},
+"t2":{"x":0,"y":4450,"text":"iPhone (secondary)","kind":"title1","maxW":2270}
+},
+"designSystems":[]}

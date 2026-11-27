@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Edit</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Nunito:wght@700;800;900&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0F56A3}a:hover{color:#0E2238}
+.d{font-family:Nunito,ui-rounded,system-ui,sans-serif}
+.glass{background:rgba(255,255,255,.82);backdrop-filter:blur(20px) saturate(1.6);-webkit-backdrop-filter:blur(20px) saturate(1.6);border:1px solid rgba(255,255,255,.95);box-shadow:0 1px 2px rgba(14,34,56,.06),0 10px 30px rgba(23,105,194,.14)}
+.ib{width:46px;height:46px;border-radius:99px;display:grid;place-items:center;color:#1769C2;text-decoration:none;border:0;background:transparent;cursor:pointer;padding:0;font:600 22px Inter,system-ui,sans-serif}
+.tool{width:50px;height:50px;border-radius:14px;display:grid;place-items:center;color:#0E2238;border:0;background:transparent;cursor:pointer;padding:0;font:500 26px 'Times New Roman',serif}
+.tool.on{background:#D8EAFC;color:#0F56A3}
+.sep{width:1px;height:30px;background:#C9DDF1;margin:0 6px}
+.seg{height:40px;padding:0 16px;border-radius:99px;border:0;background:transparent;font:600 15px Inter,system-ui,sans-serif;color:#4E647C;cursor:pointer}
+.seg.on{background:#FFFFFF;color:#0E2238;box-shadow:0 1px 3px rgba(14,34,56,.15)}
+</style>
+</head>
+<body>
+<div style="position:relative;width:1194px;height:834px;background:#F5FAFF;font-family:Inter,system-ui,sans-serif;color:#0E2238;overflow:hidden">
+<div style="position:absolute;left:20px;right:20px;top:18px;display:flex;align-items:center;gap:12px;z-index:2">
+<a class="glass" href="iPad-03-Library.html" style="display:flex;align-items:center;gap:4px;height:48px;padding:0 18px 0 10px;border-radius:99px;text-decoration:none;color:#1769C2;font-size:16px;font-weight:600"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>Library</a>
+<button style="margin:0 auto;display:flex;flex-direction:column;align-items:center;border:0;background:transparent;cursor:pointer;color:#0E2238;font-family:Inter,system-ui,sans-serif" aria-label="Rename or choose page">
+<span class="d" style="font-size:20px;font-weight:900;display:flex;align-items:center;gap:6px">Sonata facile<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4E647C" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>
+<span style="font-size:13px;color:#4E647C">Mozart · Page 1 · Piano</span>
+</button>
+<div class="glass" style="display:flex;align-items:center;height:48px;padding:0 4px;border-radius:99px">
+<button class="ib" aria-label="Undo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></svg></button>
+<button class="ib" aria-label="Redo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 000 11H13"/></svg></button>
+<span class="sep"></span>
+<button class="ib" aria-label="Show photo beside the score"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-9 8"/></svg></button>
+<a class="ib" href="iPad-09-Export.html" aria-label="Share and export"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M8 7l4-4 4 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/></svg></a>
+</div>
+<a href="iPad-08-Practice.html" aria-label="Play" style="width:52px;height:52px;border-radius:99px;background:#1769C2;display:grid;place-items:center;box-shadow:0 8px 22px rgba(23,105,194,.35)"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="#FFFFFF"/></svg></a>
+</div>
+<div style="position:absolute;left:40px;top:92px;width:1114px;height:476px;box-sizing:border-box;padding:56px 17px 0;border-radius:20px;background:#FFFFFF;border:1px solid #D6E4F2;box-shadow:0 1px 2px rgba(14,34,56,.06),0 8px 28px rgba(23,105,194,.10)">
+<a href="iPad-07-FixIt.html" style="position:absolute;right:18px;top:14px;display:flex;align-items:center;gap:8px;height:36px;padding:0 14px 0 10px;border-radius:99px;background:#FFF1D6;color:#8A5300;font-size:14px;font-weight:700;text-decoration:none"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l9.5 17h-19z" fill="#C2362B"/></svg>2 bars to check · Fix it<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
+<div style="position:absolute;left:24px;top:20px;font-size:13px;color:#4E647C;display:flex;gap:16px"><span>♩ = 120</span><span>C major · 4/4</span></div>
+<div style="position:relative;width:1080px;height:386px">
+<div style="position:absolute;left:445px;top:15px;width:187px;height:140px;border-radius:8px;background:#FFF1D6;border:1.5px dashed #E39B1B"></div>
+<div style="position:absolute;left:10px;top:222px;width:257px;height:140px;border-radius:8px;background:#FDE8E6;border:1.5px solid #E7A39C"></div>
+<div style="position:absolute;left:250px;top:27px;width:195px;height:129px;border-radius:8px;background:rgba(216,234,252,.7);border:2px solid #1769C2"></div>
+<img src="../assets/score_ipad.svg" alt="Mozart, Sonata facile, bars 1 to 8, as read from the photo" style="position:relative;width:1080px;height:386px;display:block">
+<span style="position:absolute;left:612px;top:2px;width:24px;height:24px;border-radius:99px;background:#FFFFFF;display:grid;place-items:center;box-shadow:0 1px 4px rgba(14,34,56,.2)"><svg width="14" height="14" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.5" fill="#E39B1B"/></svg></span>
+<span style="position:absolute;left:247px;top:209px;width:24px;height:24px;border-radius:99px;background:#FFFFFF;display:grid;place-items:center;box-shadow:0 1px 4px rgba(14,34,56,.2)"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l9.5 17h-19z" fill="#C2362B"/></svg></span>
+</div>
+</div>
+<div style="position:absolute;left:40px;right:40px;top:588px;display:flex;align-items:center;gap:14px">
+<a href="iPad-04-Scan.html" style="display:flex;align-items:center;gap:10px;height:52px;padding:0 20px;border-radius:16px;border:1.5px dashed #9CC4EC;color:#1769C2;font-size:15px;font-weight:600;text-decoration:none;background:#FFFFFF"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Scan page 2</a>
+<span style="font-size:14px;color:#4E647C;display:flex;align-items:center;gap:8px"><span style="padding:5px 11px;border-radius:99px;background:#D8EAFC;color:#0F56A3;font-weight:600">Bar 2 selected</span>Pick a length to change it, or tap one note. Pencil writes straight onto the staff.</span>
+</div>
+<div class="glass" role="toolbar" aria-label="Note palette" style="position:absolute;left:50%;bottom:22px;transform:translateX(-50%);display:flex;align-items:center;gap:2px;height:68px;padding:0 10px;border-radius:24px">
+<div style="display:flex;padding:4px;border-radius:99px;background:#EAF4FE;margin-right:8px"><button class="seg on">Notes</button><button class="seg">Marks</button><button class="seg">Ink</button></div>
+<button class="tool" aria-label="Whole note"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="13" rx="5.6" ry="3.8" fill="none" stroke="currentColor" stroke-width="2.4"/></svg></button>
+<button class="tool" aria-label="Half note"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="9.6" cy="17.5" rx="4.3" ry="3.1" transform="rotate(-22 9.6 17.5)" fill="none" stroke="currentColor" stroke-width="2"/><path d="M13.6 16.5V3" stroke="currentColor" stroke-width="1.8"/></svg></button>
+<button class="tool on" aria-label="Quarter note" aria-pressed="true"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="9.6" cy="17.5" rx="4.3" ry="3.1" transform="rotate(-22 9.6 17.5)" fill="currentColor"/><path d="M13.6 16.5V3" stroke="currentColor" stroke-width="1.8"/></svg></button>
+<button class="tool" aria-label="Eighth note"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="8.6" cy="17.5" rx="4.3" ry="3.1" transform="rotate(-22 8.6 17.5)" fill="currentColor"/><path d="M12.6 16.5V3c0 3.5 6 4.5 5 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+<button class="tool" aria-label="Sixteenth note"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="8.6" cy="17.5" rx="4.3" ry="3.1" transform="rotate(-22 8.6 17.5)" fill="currentColor"/><path d="M12.6 16.5V3c0 3 5.5 3.5 5 8M12.6 7.5c0 3 5.5 3.5 5 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+<button class="tool" aria-label="Dot"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="14" r="2.6" fill="currentColor"/></svg></button>
+<span class="sep"></span>
+<button class="tool" aria-label="Make it a rest"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 2.5l4.6 5.2-3.3 3.6 4.1 4.7c-2.6-1-4.6.2-2.6 3.8-3.6-2.2-3.8-5-.8-5.6L8.6 9.2l3.2-3.5z" fill="currentColor"/></svg></button>
+<span class="sep"></span>
+<button class="tool" aria-label="Flat">♭</button>
+<button class="tool" aria-label="Natural">♮</button>
+<button class="tool" aria-label="Sharp">♯</button>
+<span class="sep"></span>
+<button class="tool" aria-label="Tie"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 11c3 5 13 5 16 0"/></svg></button>
+<button class="tool" aria-label="Bar and rhythm tools"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="6" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18" cy="12" r="1.8"/></svg></button>
+</div>
+</div>
+</body>
+</html>
