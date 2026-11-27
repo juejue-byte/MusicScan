@@ -2,85 +2,35 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleDevelopmentRegion</key>
-	<string>$(DEVELOPMENT_LANGUAGE)</string>
-	<key>CFBundleDisplayName</key>
-	<string>MusicScan</string>
-	<key>CFBundleExecutable</key>
-	<string>$(EXECUTABLE_NAME)</string>
-	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
-	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>MusicScan sign-in</string>
+			<string>com.allenjue.musicscan</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>musicscan</string>
 			</array>
 		</dict>
 	</array>
-	<key>CFBundleVersion</key>
-	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>LSRequiresIPhoneOS</key>
-	<true/>
 	<key>MusicScanServerURL</key>
-	<string>$(MUSICSCAN_SERVER_URL)</string>
-	<key>MusicScanAccessKey</key>
-	<string>$(MUSICSCAN_ACCESS_KEY)</string>
-	<key>SupabaseURL</key>
-	<string>$(SUPABASE_URL)</string>
-	<key>SupabasePublishableKey</key>
-	<string>$(SUPABASE_PUBLISHABLE_KEY)</string>
-	<key>NSCameraUsageDescription</key>
-	<string>MusicScan uses the camera to photograph sheet music and turn it into an editable score.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>MusicScan connects to the MusicScan server running on your computer to read the music.</string>
+	<string>https://juejue-byte--musicscan.us-east.modal.run</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<!-- Development: the server runs over plain http on your Wi-Fi. Use https before shipping. -->
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>UIApplicationSceneManifest</key>
-	<dict>
-		<key>UIApplicationSupportsMultipleScenes</key>
-		<false/>
-	</dict>
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
-	<key>UILaunchScreen</key>
-	<dict>
-		<key>UIColorName</key>
-		<string>LaunchBackground</string>
-	</dict>
-	<key>UIStatusBarStyle</key>
-	<string>UIStatusBarStyleDarkContent</string>
-	<key>UIViewControllerBasedStatusBarAppearance</key>
-	<false/>
-	<key>UISupportedInterfaceOrientations</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>MusicScan saves your scanned sheet music pages to Photos when Save to Photos is enabled.</string>
+	<key>SupabasePublishableKey</key>
+	<string>sb_publishable_NSgNUem98tSERXluFmypuQ_kQr81wXB</string>
+	<key>SupabaseURL</key>
+	<string>https://fliegieshsoywgrjyltw.supabase.co</string>
+	<key>SuperwallAPIKey</key>
+	<string>pk_1ug3-PLLth7b4OuIFujdy</string>
+	<key>SuperwallUnlockPlacement</key>
+	<string>unlock_page</string>
 </dict>
 </plist>

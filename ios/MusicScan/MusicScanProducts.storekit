@@ -1,0 +1,142 @@
+{
+  "appPolicies" : {
+    "eula" : "",
+    "policies" : [
+      {
+        "locale" : "en_US",
+        "policyText" : "",
+        "policyURL" : ""
+      }
+    ]
+  },
+  "identifier" : "F1A9C2D0",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Load Products"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Purchase"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Verification"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Store Sync"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Subscription Status"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Transaction"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Manage Subscriptions Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Refund Request Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Offer Code Redeem Sheet"
+      }
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "9D4E8A12",
+      "localizations" : [
+
+      ],
+      "name" : "MusicScan Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "99.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "A1B2C3D4",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Unlock full pages, editing, playback, markup, and MuseScore export — up to 30 pages a month.",
+              "displayName" : "MusicScan Pro Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.allenjue.musicscan.pro.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "MusicScan Pro Yearly",
+          "subscriptionGroupID" : "9D4E8A12",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "15.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "E5F6A7B8",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Unlock full pages, editing, playback, markup, and MuseScore export — up to 30 pages a month.",
+              "displayName" : "MusicScan Pro Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.allenjue.musicscan.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "MusicScan Pro Monthly",
+          "subscriptionGroupID" : "9D4E8A12",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}
