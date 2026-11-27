@@ -2280,6 +2280,10 @@ function wire() {
 }
 
 async function loadSamples() {
+  if (!new URLSearchParams(location.search).has('demo')) {
+    loadResume();
+    return;
+  }
   try {
     const names = await (await api('api/samples')).json();
     if (isDemo()) document.body.classList.add('demo');

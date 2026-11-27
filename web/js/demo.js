@@ -7,8 +7,11 @@ let index = null;
 
 async function detect() {
   if (mode) return mode;
+  const host = location.hostname || '';
   if (new URLSearchParams(location.search).has('demo')) mode = 'demo';
-  else {
+  else if (window.webkit?.messageHandlers?.musicscan || host.endsWith('.modal.run') || host === 'localhost' || host === '127.0.0.1') {
+    mode = 'server';
+  } else {
     try {
       const r = await fetch('api/samples');
       mode = r.ok && (r.headers.get('content-type') || '').includes('json') ? 'server' : 'demo';

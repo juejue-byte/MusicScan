@@ -677,33 +677,47 @@ body.editing .doc-title:hover { background: var(--hover); color: var(--ink); }
 /* Hide sample cards on the live start screen for now (demo mode keeps them visible) */
 body:not(.demo) #samples { display: none !important; }
 
-/* Compact single-row bottom tips toolbar instead of 4 separate tip boxes */
-.tips.tips-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 8px;
-  margin-top: 18px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: var(--sky-50);
-  border: 1px solid var(--line);
+/* Simple flat checklist tips (no nested boxes/pills) */
+.tips.tips-list {
+  display: block;
+  margin: 28px auto 0;
+  max-width: 440px;
+  padding: 0 4px;
+  background: none;
+  border: 0;
 }
-.tips-label {
-  font-size: 12px;
+.tips-heading {
+  font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--muted);
-  margin-right: 2px;
+  margin-bottom: 10px;
 }
-.tip-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  font-size: 12px;
+.tips-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tips-items li {
+  position: relative;
+  padding-left: 20px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.tips-items li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-weight: 700;
+  color: var(--accent);
+}
+.tips-items li strong {
   font-weight: 600;
   color: var(--ink);
-  white-space: nowrap;
 }
