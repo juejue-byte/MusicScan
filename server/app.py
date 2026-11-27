@@ -306,13 +306,14 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
         pre["image"].save(d / "page.png")
         j["status"] = "Reading the music"
         det = opts.get("detector", "28m")
-        if _OMR_TRANSCRIBE is not None:
-            r = _OMR_TRANSCRIBE(pre["image"], detector=det, allow_second_opinion=(det == "28m"))
-        else:
-            r, read_im = omr.transcribe_checked(pre["image"], detector=det)
+
+        def _transcribe(img):
+            if _OMR_TRANSCRIBE is not None:
+                return _OMR_TRANSCRIBE(img, detector=det, allow_second_opinion=(det == "28m"))
+            res, read_im = omr.transcribe_checked(img, detector=det)
             if det == "28m":
-                if omr.should_skip_second_opinion(r):
-                    r["second_opinion"] = {
+                if omr.should_skip_second_opinion(res):
+                    res["second_opinion"] = {
                         "aligned": True,
                         "skipped": True,
                         "reason": "high_confidence",
@@ -322,7 +323,25 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
                     }
                 else:
                     j["status"] = "Double-checking"
-                    omr.second_opinion(r, read_im)
+                    omr.second_opinion(res, read_im)
+            return res
+
+        r = _transcribe(pre["image"])
+        # Safety net for sideways photos (e.g. from Photos library or tilted iPad): if primary OMR
+        # found 0 measures and line gradients indicate vertical staves, retry rotated 90° CW then CCW.
+        if not (r.get("stats") or {}).get("measures") and preprocess.looks_sideways(pre["image"]):
+            for label, transpose in (("auto-rotate-90cw", Image.Transpose.ROTATE_270),
+                                     ("auto-rotate-90ccw", Image.Transpose.ROTATE_90)):
+                j["status"] = "Checking page orientation"
+                rot_im = pre["image"].transpose(transpose)
+                r_rot = _transcribe(rot_im)
+                if (r_rot.get("stats") or {}).get("measures"):
+                    pre["image"] = rot_im
+                    pre["steps"].append(label)
+                    rot_im.save(d / "page.full.png")
+                    rot_im.save(d / "page.png")
+                    r = r_rot
+                    break
         ctx, notes = page_context(r["xml"], opts.get("context"))
         _clean(r, context=ctx)
         if notes and r["measures"]:

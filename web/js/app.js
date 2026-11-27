@@ -148,12 +148,121 @@ async function startUpload(file) {
   setStep('upload');
   $('#progressText').textContent = 'Tuning up…';
   const fast = $('#optFast').checked;
-  const fd = new FormData();
-  fd.append('file', file, S.name);
-  fd.append('detector', fast ? '2m' : '28m');
+  const detector = fast ? '2m' : '28m';
+  const extras = Array.isArray(file.more) ? file.more : [];
+  const canBatchParallel = extras.length > 0 && (!paywall.enabled() || paywall.isPro());
   const t0 = Date.now();
   const expected = fast ? 6 : 18;
   $('#progressBar').style.width = '6%';
+
+  if (canBatchParallel) {
+    // Batch send & process all scanned pages in parallel (up to 4 concurrent GPU jobs),
+    // opening the first readable page right away and stitching remaining pages in exact order.
+    const allFiles = [file, ...extras];
+    const total = allFiles.length;
+    const slots = allFiles.map((f, idx) => ({ file: f, idx, done: false, id: null, result: null, error: null }));
+    let completed = 0;
+    let opened = false;
+    let editorSession = null;
+    let nextFlushIdx = 0;
+    let cursor = 0;
+    let lastStatus = `Reading ${total} pages in parallel`;
+
+    const updateBatchUI = () => {
+      const elapsed = Math.round((Date.now() - t0) / 1000);
+      if (!opened) {
+        const timeFrac = 1 - Math.exp((-elapsed / expected) * 1.35);
+        const doneFrac = completed / total;
+        const p = Math.min(96, 6 + 90 * Math.max(timeFrac * 0.78, doneFrac * 0.92));
+        $('#progressBar').style.width = p.toFixed(1) + '%';
+        $('#progressText').textContent = completed > 0
+          ? `Reading ${total} pages in parallel (${completed}/${total} ready)… ${elapsed} s`
+          : `${lastStatus}… ${elapsed} s`;
+      } else if (completed < total && editorSession === scoreSession) {
+        setReading(`Reading ${total - completed} more ${total - completed === 1 ? 'page' : 'pages'} in parallel (${completed}/${total} ready)…`);
+      }
+    };
+
+    const tick = setInterval(updateBatchUI, 240);
+    updateBatchUI();
+
+    const flushInOrder = () => {
+      while (nextFlushIdx < slots.length && slots[nextFlushIdx].done) {
+        const slot = slots[nextFlushIdx++];
+        if (slot.error) {
+          if (opened) {
+            if (editorSession === scoreSession) toast(`Could not read page ${slot.idx + 1}: ${slot.error}`, 4500);
+          } else if (nextFlushIdx === slots.length) {
+            clearInterval(tick);
+            show('viewUpload');
+            toast('Sorry, that did not work: ' + slot.error, 5000);
+          }
+          continue;
+        }
+        if (!opened) {
+          if (!slot.result?.stats?.measures) {
+            if (nextFlushIdx < slots.length) {
+              toast(`No music found on page ${slot.idx + 1} — continuing…`, 3000);
+              continue;
+            }
+            setStep('done'); clearInterval(tick); $('#progressBar').style.width = '100%';
+            openResult(slot.result);
+            return;
+          }
+          opened = true;
+          setStep('done'); clearInterval(tick); $('#progressBar').style.width = '100%';
+          S.job = slot.id;
+          S.name = slot.file.name || S.name;
+          openResult(slot.result);
+          editorSession = scoreSession;
+          updateBatchUI();
+        } else if (editorSession === scoreSession && S.score) {
+          appendPage(slot.id, slot.result, slot.file.name);
+        }
+      }
+    };
+
+    const runWorker = async () => {
+      while (cursor < slots.length) {
+        const slot = slots[cursor++];
+        if (opened && editorSession !== scoreSession) return;
+        const fd = new FormData();
+        fd.append('file', slot.file, slot.file.name || `page-${slot.idx + 1}.jpg`);
+        fd.append('detector', detector);
+        try {
+          const { id, result } = await readPage(fd, (status) => {
+            if (!opened) {
+              setStep(/Clean/.test(status) ? 'clean' : /Read|Double|Orient/i.test(status) ? 'read' : 'upload');
+              lastStatus = `Reading ${total} pages in parallel (${status.toLowerCase()})`;
+            }
+          });
+          slot.id = id;
+          slot.result = result;
+        } catch (err) {
+          slot.error = err.message || 'Transcription failed';
+        } finally {
+          slot.done = true;
+          completed++;
+          flushInOrder();
+          updateBatchUI();
+        }
+      }
+    };
+
+    const workers = Array.from({ length: Math.min(4, total) }, () => runWorker());
+    await Promise.all(workers);
+    clearInterval(tick);
+    if (opened && editorSession === scoreSession) {
+      setReading(null);
+      const addedCount = slots.filter((s) => s.result?.stats?.measures).length;
+      if (addedCount > 1) toast(`All ${addedCount} pages ready!`, 2600);
+    }
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append('file', file, S.name);
+  fd.append('detector', detector);
   const tick = setInterval(() => {
     const elapsed = (Date.now() - t0) / 1000;
     const p = Math.min(96, 6 + 90 * (1 - Math.exp((-elapsed / expected) * 1.45)));
@@ -161,12 +270,11 @@ async function startUpload(file) {
   }, 240);
   try {
     const { id, result, pages } = await readPage(fd, (status) => {
-      setStep(/Clean/.test(status) ? 'clean' : /Read|Double/.test(status) ? 'read' : 'upload');
+      setStep(/Clean/.test(status) ? 'clean' : /Read|Double|Orient/i.test(status) ? 'read' : 'upload');
       $('#progressText').textContent = `${status}… ${Math.round((Date.now() - t0) / 1000)} s`;
     });
     S.job = id;
     setStep('done'); clearInterval(tick); $('#progressBar').style.width = '100%';
-    const extras = Array.isArray(file.more) ? file.more : [];
     if (!result.stats?.measures && extras.length > 0) {
       const next = extras[0];
       next.more = extras.slice(1);
@@ -174,9 +282,9 @@ async function startUpload(file) {
       return startUpload(next);
     }
     openResult(result);
-    // a PDF with more pages: the rest are read one after another and added to the end as they finish
+    // a PDF with more pages: read remaining pages in parallel and append in order
     if (pages > 1 && result.stats?.measures) addPages(file, { from: 1, total: pages });
-    // multi-page camera scan / photo selection: read and append each remaining page in order
+    // multi-page camera scan / photo selection when paywall preview requires per-page check
     if (extras.length && result.stats?.measures) {
       for (const m of extras) addPages(m);
     }
@@ -1921,6 +2029,66 @@ async function readMorePages(file, { from = 0, total = null }, session) {
   if (session !== scoreSession || !S.score) return;
   const isPdf = /\.pdf$/i.test(file.name || '') || file.type === 'application/pdf';
   let n = total ?? 1;
+  const detector = $('#optFast').checked ? '2m' : '28m';
+
+  // Parallel batch reading for multi-page PDFs when allowed (up to 3 concurrent GPU jobs)
+  if (isPdf && total && total > from + 1 && (!paywall.enabled() || paywall.isPro())) {
+    const pageIndices = [];
+    for (let k = from; k < n; k++) pageIndices.push(k);
+    const slots = pageIndices.map((k) => ({ k, done: false, id: null, result: null, error: null }));
+    const ctxJson = JSON.stringify(S.score.endContext());
+    let doneCount = 0;
+    let nextFlush = 0;
+    let cursor = 0;
+
+    const flush = () => {
+      while (nextFlush < slots.length && slots[nextFlush].done) {
+        const s = slots[nextFlush++];
+        if (session !== scoreSession || !S.score) return;
+        if (s.error) {
+          toast(`Could not read page ${s.k + 1}: ${s.error}`, 4000);
+        } else {
+          appendPage(s.id, s.result, `${file.name} p${s.k + 1}`);
+        }
+      }
+    };
+
+    const updateBanner = () => {
+      if (session !== scoreSession) return;
+      const left = slots.length - doneCount;
+      if (left > 0) setReading(`Reading ${left} more PDF ${left === 1 ? 'page' : 'pages'} in parallel (${from + doneCount}/${n} ready)…`);
+    };
+    updateBanner();
+
+    const worker = async () => {
+      while (cursor < slots.length) {
+        if (session !== scoreSession) return;
+        const slot = slots[cursor++];
+        const fd = new FormData();
+        fd.append('file', file, file.name || 'page.pdf');
+        fd.append('detector', detector);
+        fd.append('page', String(slot.k));
+        fd.append('context', ctxJson);
+        try {
+          const { id, result } = await readPage(fd);
+          slot.id = id;
+          slot.result = result;
+        } catch (e) {
+          slot.error = e.message || 'Transcription failed';
+        } finally {
+          slot.done = true;
+          doneCount++;
+          flush();
+          updateBanner();
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(3, slots.length) }, () => worker()));
+    setReading(null);
+    return;
+  }
+
   for (let k = from; k < n; k++) {
     if (!(await paywall.allowPage())) break;
     if (session !== scoreSession) return;
@@ -1928,7 +2096,7 @@ async function readMorePages(file, { from = 0, total = null }, session) {
     setReading(`Reading ${label}…`);
     const fd = new FormData();
     fd.append('file', file, file.name || 'page.jpg');
-    fd.append('detector', $('#optFast').checked ? '2m' : '28m');
+    fd.append('detector', detector);
     if (isPdf) fd.append('page', String(k));
     // key, time, clefs and the part layout in force at the end of the score so far carry onto the new page
     fd.append('context', JSON.stringify(S.score.endContext()));
