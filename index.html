@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MusicScan — Scan it. Fix it. Play it.</title>
+  <meta name="description" content="Turn sheet music photos and PDFs into editable, playable scores on iPhone and iPad. Guided Fix It review, Apple Pencil markup, sampled playback, and MusicXML / MIDI export.">
+  <meta name="theme-color" content="#F4F9FF">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%231769C2'/%3E%3Cpath d='M16 24v-6a2 2 0 0 1 2-2h6M40 16h6a2 2 0 0 1 2 2v6M48 40v6a2 2 0 0 1-2 2h-6M24 48h-6a2 2 0 0 1-2-2v-6' fill='none' stroke='%23FFFFFF' stroke-width='3.2' stroke-linecap='round' opacity='0.88'/%3E%3Cpath d='M28 40V24l13-3v15' fill='none' stroke='%23FFFFFF' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cellipse cx='25' cy='40.5' rx='4.4' ry='3.2' transform='rotate(-18 25 40.5)' fill='%23FFFFFF'/%3E%3Cellipse cx='38' cy='36.5' rx='4.4' ry='3.2' transform='rotate(-18 38 36.5)' fill='%23FFFFFF'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      --bg: #F4F9FF;
+      --bg-wash: #E7F2FF;
+      --surface: #FFFFFF;
+      --surface-soft: #F8FBFF;
+      --ink: #0E2238;
+      --ink-2: #3F5772;
+      --ink-3: #6C84A0;
+      --sky: #1769C2;
+      --sky-deep: #0F4F98;
+      --sky-soft: #E8F2FF;
+      --sky-line: rgba(23, 105, 194, 0.14);
+      --sky-line-strong: rgba(23, 105, 194, 0.28);
+      --gold: #C98508;
+      --gold-bg: #FFF7E0;
+      --gold-border: rgba(201, 133, 8, 0.34);
+      --mint: #168259;
+      --mint-bg: #E7F7F0;
+      --coral: #C9463D;
+      --radius-lg: 22px;
+      --radius-md: 16px;
+      --radius-sm: 11px;
+      --shadow-card: 0 1px 2px rgba(14, 34, 56, 0.04), 0 14px 36px -14px rgba(17, 68, 128, 0.14);
+      --shadow-lift: 0 2px 6px rgba(14, 34, 56, 0.05), 0 22px 48px -16px rgba(17, 68, 128, 0.22);
+      --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", system-ui, sans-serif;
+      --font-serif: "New York", "Iowan Old Style", Georgia, "Times New Roman", serif;
+      --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: var(--font-sans);
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 640px at 82% -8%, rgba(86, 166, 255, 0.20), transparent 62%),
+        radial-gradient(900px 560px at 8% 12%, rgba(23, 105, 194, 0.10), transparent 60%),
+        linear-gradient(180deg, #F7FBFF 0%, var(--bg) 50%, #EEF6FF 100%);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      line-height: 1.55;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Archival fine paper stipple texture (mirrors iOS SkyTextureLibrary) */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.032;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+    }
+
+    /* Ordered halftone dither band across the top header/hero sky */
+    .dither-backdrop {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 540px;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.42;
+      -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.35) 55%, transparent 100%);
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.35) 55%, transparent 100%);
+    }
+    .dither-backdrop canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      image-rendering: pixelated;
+    }
+
+    .wrap {
+      position: relative;
+      z-index: 1;
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Top navigation */
+    header.nav {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      backdrop-filter: blur(18px) saturate(140%);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+      background: rgba(244, 249, 255, 0.78);
+      border-bottom: 1px solid var(--sky-line);
+    }
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 68px;
+      gap: 20px;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 11px;
+      text-decoration: none;
+      color: var(--ink);
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: -0.02em;
+    }
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: linear-gradient(145deg, #2583E6, var(--sky-deep));
+      display: grid;
+      place-items: center;
+      box-shadow: 0 6px 14px -6px rgba(15, 79, 152, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+      flex-shrink: 0;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+    }
+    .nav-links a {
+      text-decoration: none;
+      color: var(--ink-2);
+      font-size: 14.5px;
+      font-weight: 500;
+      transition: color 0.16s ease;
+    }
+    .nav-links a:hover { color: var(--sky); }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-family: inherit;
+      font-weight: 600;
+      font-size: 15px;
+      line-height: 1;
+      padding: 13px 20px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      text-decoration: none;
+      cursor: pointer;
+      transition: transform 0.14s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+      white-space: nowrap;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary {
+      background: linear-gradient(180deg, #217CE0 0%, var(--sky) 100%);
+      color: #FFFFFF;
+      box-shadow: 0 8px 20px -8px rgba(23, 105, 194, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+    }
+    .btn-primary:hover {
+      background: linear-gradient(180deg, #2785EC 0%, var(--sky-deep) 100%);
+      box-shadow: 0 12px 26px -8px rgba(15, 79, 152, 0.68);
+      transform: translateY(-1px);
+    }
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.88);
+      color: var(--ink);
+      border-color: var(--sky-line-strong);
+      box-shadow: 0 2px 8px rgba(14, 34, 56, 0.05);
+    }
+    .btn-secondary:hover {
+      background: #FFFFFF;
+      border-color: var(--sky);
+      color: var(--sky-deep);
+    }
+    .btn-gold {
+      background: linear-gradient(180deg, #F6BC3B 0%, #DF9612 100%);
+      color: #1F1502;
+      box-shadow: 0 8px 20px -8px rgba(201, 133, 8, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+    }
+    .btn-gold:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 28px -10px rgba(201, 133, 8, 0.72);
+    }
+    .nav-cta { padding: 10px 16px; font-size: 13.5px; }
+
+    /* Hero */
+    .hero {
+      padding: 64px 0 56px;
+      position: relative;
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+      gap: 44px;
+      align-items: center;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 13px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.86);
+      border: 1px solid var(--sky-line-strong);
+      color: var(--sky-deep);
+      font-size: 12.5px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      margin-bottom: 18px;
+      box-shadow: 0 2px 10px -4px rgba(23, 105, 194, 0.22);
+    }
+    .eyebrow-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--sky);
+      box-shadow: 0 0 0 3px rgba(23, 105, 194, 0.18);
+    }
+    h1 {
+      margin: 0 0 18px;
+      font-size: clamp(38px, 5vw, 56px);
+      line-height: 1.05;
+      letter-spacing: -0.035em;
+      font-weight: 760;
+      color: var(--ink);
+    }
+    .accent-serif {
+      font-family: var(--font-serif);
+      font-style: italic;
+      font-weight: 500;
+      color: var(--sky);
+      letter-spacing: -0.015em;
+    }
+    .hero-sub {
+      margin: 0 0 28px;
+      font-size: 17.5px;
+      line-height: 1.6;
+      color: var(--ink-2);
+      max-width: 530px;
+    }
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .hero-note {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13.5px;
+      color: var(--ink-3);
+    }
+    .hero-note strong { color: var(--ink-2); font-weight: 600; }
+
+    /* Engraved score showcase card */
+    .showcase {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--sky-line-strong);
+      border-radius: var(--radius-lg);
+      padding: 22px;
+      box-shadow: var(--shadow-lift);
+      overflow: hidden;
+    }
+    .showcase::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--sky), #5AA8FF, var(--gold));
+    }
+    .showcase-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .score-title {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .score-title strong {
+      font-family: var(--font-serif);
+      font-size: 17px;
+      color: var(--ink);
+      letter-spacing: -0.01em;
+    }
+    .score-title span {
+      font-size: 12px;
+      color: var(--ink-3);
+      font-family: var(--font-mono);
+    }
+    .badge-fix {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 11px;
+      border-radius: 999px;
+      background: var(--mint-bg);
+      color: var(--mint);
+      border: 1px solid rgba(22, 130, 89, 0.22);
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .staff-frame {
+      background: linear-gradient(180deg, #FCFDFE 0%, #F7FBFF 100%);
+      border: 1px solid var(--sky-line);
+      border-radius: 14px;
+      padding: 18px 16px 14px;
+      position: relative;
+      margin-bottom: 16px;
+    }
+    .staff-svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .bar-highlight-tag {
+      position: absolute;
+      top: 10px;
+      right: 14px;
+      background: var(--gold-bg);
+      color: #8A5800;
+      border: 1px solid var(--gold-border);
+      font-size: 11px;
+      font-weight: 650;
+      padding: 3px 9px;
+      border-radius: 999px;
+    }
+    .player-strip {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: var(--surface-soft);
+      border: 1px solid var(--sky-line);
+      border-radius: 13px;
+      padding: 10px 13px;
+      margin-bottom: 14px;
+    }
+    .player-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .play-dot {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--sky);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+      box-shadow: 0 5px 12px -4px rgba(23, 105, 194, 0.65);
+    }
+    .player-meta strong {
+      display: block;
+      font-size: 13px;
+      color: var(--ink);
+    }
+    .player-meta span {
+      font-size: 11.5px;
+      color: var(--ink-3);
+      font-family: var(--font-mono);
+    }
+    .eq {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 16px;
+    }
+    .eq i {
+      width: 3px;
+      border-radius: 2px;
+      background: var(--sky);
+      display: block;
+      animation: eqPulse 1.4s ease-in-out infinite;
+    }
+    .eq i:nth-child(1) { height: 7px; animation-delay: 0s; }
+    .eq i:nth-child(2) { height: 14px; animation-delay: 0.22s; }
+    .eq i:nth-child(3) { height: 10px; animation-delay: 0.44s; }
+    .eq i:nth-child(4) { height: 16px; animation-delay: 0.66s; }
+    @keyframes eqPulse {
+      0%, 100% { transform: scaleY(0.45); opacity: 0.6; }
+      50% { transform: scaleY(1); opacity: 1; }
+    }
+    .export-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .chip-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .chip {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--ink-2);
+      background: var(--sky-soft);
+      border: 1px solid var(--sky-line);
+      padding: 5px 10px;
+      border-radius: 999px;
+    }
+    .conf-text {
+      font-size: 11.5px;
+      color: var(--ink-3);
+      font-family: var(--font-mono);
+    }
+
+    /* Engraved staff divider */
+    .staff-divider {
+      height: 28px;
+      margin: 18px 0 12px;
+      background: repeating-linear-gradient(
+        180deg,
+        transparent 0px,
+        transparent 5px,
+        rgba(23, 105, 194, 0.12) 5px,
+        rgba(23, 105, 194, 0.12) 6px
+      );
+      -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+      mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+    }
+
+    /* Sections */
+    section.block {
+      padding: 64px 0;
+    }
+    .section-head {
+      max-width: 640px;
+      margin-bottom: 36px;
+    }
+    .section-kicker {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.11em;
+      color: var(--sky);
+      margin-bottom: 10px;
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: clamp(28px, 3.4vw, 38px);
+      line-height: 1.12;
+      letter-spacing: -0.03em;
+      font-weight: 740;
+      color: var(--ink);
+    }
+    .section-head p {
+      margin: 0;
+      font-size: 16.5px;
+      color: var(--ink-2);
+    }
+
+    /* Feature cards */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid var(--sky-line);
+      border-radius: var(--radius-md);
+      padding: 24px;
+      box-shadow: var(--shadow-card);
+      transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      border-color: var(--sky-line-strong);
+      box-shadow: var(--shadow-lift);
+    }
+    .icon-badge {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      background: var(--sky-soft);
+      border: 1px solid var(--sky-line);
+      color: var(--sky);
+      display: grid;
+      place-items: center;
+      margin-bottom: 16px;
+    }
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 17.5px;
+      letter-spacing: -0.015em;
+      color: var(--ink);
+    }
+    .card p {
+      margin: 0;
+      font-size: 14.5px;
+      line-height: 1.58;
+      color: var(--ink-2);
+    }
+
+    /* Workflow steps */
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .step-card {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 251, 255, 0.94));
+      border: 1px solid var(--sky-line);
+      border-radius: var(--radius-md);
+      padding: 24px;
+      position: relative;
+      box-shadow: var(--shadow-card);
+    }
+    .step-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      background: var(--sky);
+      color: #FFFFFF;
+      font-weight: 700;
+      font-size: 13.5px;
+      margin-bottom: 14px;
+      font-family: var(--font-mono);
+    }
+    .step-card h3 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      letter-spacing: -0.015em;
+    }
+    .step-card p {
+      margin: 0;
+      font-size: 14.5px;
+      color: var(--ink-2);
+    }
+
+    /* Membership / Pricing */
+    .membership-shell {
+      position: relative;
+      background: linear-gradient(160deg, #0D2746 0%, #123B6D 52%, #1759A5 100%);
+      color: #F4F9FF;
+      border-radius: 28px;
+      padding: 48px 36px 40px;
+      overflow: hidden;
+      box-shadow: 0 28px 64px -22px rgba(10, 35, 68, 0.45);
+      border: 1px solid rgba(132, 193, 255, 0.24);
+    }
+    .membership-shell::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background-image: radial-gradient(rgba(255, 255, 255, 0.14) 1px, transparent 1px);
+      background-size: 10px 10px;
+      opacity: 0.22;
+      -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 72%);
+      mask-image: linear-gradient(180deg, #000 0%, transparent 72%);
+    }
+    .membership-head {
+      position: relative;
+      z-index: 1;
+      max-width: 650px;
+      margin-bottom: 34px;
+    }
+    .membership-head .section-kicker { color: #8CC5FF; }
+    .membership-head h2 { color: #FFFFFF; }
+    .membership-head p { color: rgba(235, 245, 255, 0.84); font-size: 16.5px; margin: 0; }
+
+    .plans-grid {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      align-items: stretch;
+    }
+    .plan {
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 20px;
+      padding: 26px 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .plan.featured {
+      background: #FFFFFF;
+      color: var(--ink);
+      border: 2px solid #F6B93B;
+      box-shadow: 0 22px 44px -18px rgba(4, 18, 38, 0.55);
+      transform: translateY(-4px);
+    }
+    .plan-top { display: flex; flex-direction: column; gap: 10px; }
+    .plan-tag-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .plan-name {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .plan-pill {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.16);
+      color: #DDF0FF;
+    }
+    .plan.featured .plan-pill {
+      background: var(--gold-bg);
+      color: #966000;
+      border: 1px solid var(--gold-border);
+    }
+    .plan-price {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .plan-price strong {
+      font-size: 36px;
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+    .plan-price span {
+      font-size: 14px;
+      opacity: 0.78;
+    }
+    .plan-sub {
+      font-size: 13.5px;
+      opacity: 0.84;
+      margin: 0;
+    }
+    .plan.featured .plan-sub { color: var(--ink-2); opacity: 1; }
+    .plan-list {
+      list-style: none;
+      padding: 0;
+      margin: 8px 0 0;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      font-size: 14px;
+    }
+    .plan-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+    }
+    .plan-list li::before {
+      content: "✓";
+      font-weight: 800;
+      color: #7ED9B0;
+      flex-shrink: 0;
+    }
+    .plan.featured .plan-list li::before { color: var(--mint); }
+    .plan-foot .btn { width: 100%; }
+    .plan-ghost-btn {
+      background: rgba(255, 255, 255, 0.14);
+      color: #FFFFFF;
+      border-color: rgba(255, 255, 255, 0.28);
+    }
+    .plan-ghost-btn:hover {
+      background: rgba(255, 255, 255, 0.24);
+    }
+    .billing-legal {
+      position: relative;
+      z-index: 1;
+      margin-top: 26px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(255, 255, 255, 0.16);
+      font-size: 12.5px;
+      line-height: 1.6;
+      color: rgba(226, 240, 255, 0.78);
+    }
+    .billing-legal a {
+      color: #FFFFFF;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--sky-line);
+      padding: 36px 0 48px;
+      margin-top: 32px;
+      color: var(--ink-3);
+      font-size: 13.5px;
+    }
+    .footer-inner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    .footer-links a {
+      color: var(--ink-2);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .footer-links a:hover { color: var(--sky); }
+
+    @media (max-width: 960px) {
+      .hero-grid, .features-grid, .steps-grid, .plans-grid {
+        grid-template-columns: 1fr;
+      }
+      .plan.featured { transform: none; }
+      .nav-links { display: none; }
+      .hero { padding: 40px 0 36px; }
+      .membership-shell { padding: 34px 22px 28px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="dither-backdrop" aria-hidden="true">
+    <canvas id="bayerSky"></canvas>
+  </div>
+
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="#">
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <path d="M4 9V6a2 2 0 0 1 2-2h3M15 4h3a2 2 0 0 1 2 2v3M20 15v3a2 2 0 0 1-2 2h-3M9 20H6a2 2 0 0 1-2-2v-3" stroke="#fff" stroke-width="1.9" stroke-linecap="round" opacity="0.88"/>
+            <path d="M10.5 16V8.5l6-1.5v6.8" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <ellipse cx="9.2" cy="16.2" rx="2.1" ry="1.5" transform="rotate(-18 9.2 16.2)" fill="#fff"/>
+            <ellipse cx="15.2" cy="14.1" rx="2.1" ry="1.5" transform="rotate(-18 15.2 14.1)" fill="#fff"/>
+          </svg>
+        </span>
+        MusicScan
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#features">Features</a>
+        <a href="#workflow">How It Works</a>
+        <a href="#membership">Pro Membership</a>
+        <a href="privacy.html">Privacy</a>
+      </nav>
+      <a class="btn btn-primary nav-cta" href="#membership">Get Pro</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="wrap hero-grid">
+        <div>
+          <div class="eyebrow">
+            <span class="eyebrow-dot" aria-hidden="true"></span>
+            iPhone &amp; iPad · Optical Music Recognition
+          </div>
+          <h1>Scan it. Fix it.<br><span class="accent-serif">Play it.</span></h1>
+          <p class="hero-sub">
+            Turn printed sheet music and PDFs into clean, editable, playable scores in seconds.
+            MusicScan removes shadows and pencil marks, guides you straight to any uncertain bar,
+            and exports ready-to-engrave MusicXML and MIDI.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#membership">View MusicScan Pro</a>
+            <a class="btn btn-secondary" href="#features">Explore Features</a>
+          </div>
+          <div class="hero-note">
+            <span><strong>1st full page free</strong> — every editing, playback, and export tool included.</span>
+          </div>
+        </div>
+
+        <div class="showcase" aria-label="MusicScan score engraving and playback preview">
+          <div class="showcase-top">
+            <div class="score-title">
+              <strong>Sonata in C Major, K. 545</strong>
+              <span>12 bars · Grand Staff · 4/4</span>
+            </div>
+            <span class="badge-fix">● 99.8% Read Confidence</span>
+          </div>
+
+          <div class="staff-frame">
+            <span class="bar-highlight-tag">Fix It · Bar 4 verified</span>
+            <svg class="staff-svg" viewBox="0 0 440 164" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Engraved grand staff notation preview">
+              <!-- Highlighted measure box -->
+              <rect x="304" y="16" width="122" height="132" rx="8" fill="rgba(246, 185, 59, 0.13)" stroke="rgba(201, 133, 8, 0.45)" stroke-dasharray="4 3"/>
+              <!-- Brace & left barline -->
+              <line x1="18" y1="26" x2="18" y2="138" stroke="#0E2238" stroke-width="2"/>
+              <path d="M14 26 C6 54, 12 72, 6 82 C12 92, 6 110, 14 138" stroke="#0E2238" stroke-width="2" fill="none"/>
+              <!-- Treble staff lines -->
+              <g stroke="#294563" stroke-width="1" opacity="0.65">
+                <line x1="18" y1="26" x2="426" y2="26"/>
+                <line x1="18" y1="36" x2="426" y2="36"/>
+                <line x1="18" y1="46" x2="426" y2="46"/>
+                <line x1="18" y1="56" x2="426" y2="56"/>
+                <line x1="18" y1="66" x2="426" y2="66"/>
+              </g>
+              <!-- Bass staff lines -->
+              <g stroke="#294563" stroke-width="1" opacity="0.65">
+                <line x1="18" y1="98" x2="426" y2="98"/>
+                <line x1="18" y1="108" x2="426" y2="108"/>
+                <line x1="18" y1="118" x2="426" y2="118"/>
+                <line x1="18" y1="128" x2="426" y2="128"/>
+                <line x1="18" y1="138" x2="426" y2="138"/>
+              </g>
+              <!-- Measure barlines -->
+              <g stroke="#0E2238" stroke-width="1.2" opacity="0.72">
+                <line x1="168" y1="26" x2="168" y2="138"/>
+                <line x1="304" y1="26" x2="304" y2="138"/>
+                <line x1="422" y1="26" x2="422" y2="138"/>
+                <line x1="426" y1="26" x2="426" y2="138" stroke-width="2.5"/>
+              </g>
+              <!-- Clef & Time signature glyphs -->
+              <text x="24" y="61" fill="#0E2238" font-family="Georgia, serif" font-size="38">𝄞</text>
+              <text x="26" y="131" fill="#0E2238" font-family="Georgia, serif" font-size="32">𝄢</text>
+              <text x="53" y="45" fill="#0E2238" font-family="Georgia, serif" font-weight="700" font-size="16">4</text>
+              <text x="53" y="63" fill="#0E2238" font-family="Georgia, serif" font-weight="700" font-size="16">4</text>
+              <text x="53" y="117" fill="#0E2238" font-family="Georgia, serif" font-weight="700" font-size="16">4</text>
+              <text x="53" y="135" fill="#0E2238" font-family="Georgia, serif" font-weight="700" font-size="16">4</text>
+
+              <!-- Treble melody notes -->
+              <!-- Bar 1: C5 half, E5 quarter, G5 quarter -->
+              <ellipse cx="86" cy="51" rx="6" ry="4.4" transform="rotate(-18 86 51)" stroke="#0E2238" stroke-width="2" fill="#fff"/>
+              <line x1="80.5" y1="52" x2="80.5" y2="82" stroke="#0E2238" stroke-width="1.5"/>
+              <ellipse cx="122" cy="41" rx="5.5" ry="4.2" transform="rotate(-18 122 41)" fill="#0E2238"/>
+              <line x1="117" y1="42" x2="117" y2="73" stroke="#0E2238" stroke-width="1.5"/>
+              <ellipse cx="148" cy="31" rx="5.5" ry="4.2" transform="rotate(-18 148 31)" fill="#0E2238"/>
+              <line x1="143" y1="32" x2="143" y2="63" stroke="#0E2238" stroke-width="1.5"/>
+
+              <!-- Bar 2: B4 dotted quarter + beamed C5-D5-C5 -->
+              <ellipse cx="188" cy="46" rx="5.5" ry="4.2" transform="rotate(-18 188 46)" fill="#0E2238"/>
+              <circle cx="198" cy="46" r="1.9" fill="#0E2238"/>
+              <line x1="183" y1="47" x2="183" y2="78" stroke="#0E2238" stroke-width="1.5"/>
+              <ellipse cx="222" cy="41" rx="5.2" ry="3.9" transform="rotate(-18 222 41)" fill="#1769C2"/>
+              <ellipse cx="246" cy="36" rx="5.2" ry="3.9" transform="rotate(-18 246 36)" fill="#1769C2"/>
+              <ellipse cx="270" cy="41" rx="5.2" ry="3.9" transform="rotate(-18 270 41)" fill="#1769C2"/>
+              <line x1="217" y1="42" x2="217" y2="72" stroke="#1769C2" stroke-width="1.5"/>
+              <line x1="241" y1="37" x2="241" y2="70" stroke="#1769C2" stroke-width="1.5"/>
+              <line x1="265" y1="42" x2="265" y2="72" stroke="#1769C2" stroke-width="1.5"/>
+              <path d="M217 72 L265 72" stroke="#1769C2" stroke-width="4"/>
+
+              <!-- Bar 3 (highlighted): A5-G5-F5-E5 beamed + cadence -->
+              <ellipse cx="322" cy="31" rx="5.2" ry="3.9" transform="rotate(-18 322 31)" fill="#0E2238"/>
+              <ellipse cx="346" cy="36" rx="5.2" ry="3.9" transform="rotate(-18 346 36)" fill="#0E2238"/>
+              <ellipse cx="370" cy="41" rx="5.2" ry="3.9" transform="rotate(-18 370 41)" fill="#0E2238"/>
+              <ellipse cx="396" cy="46" rx="5.8" ry="4.3" transform="rotate(-18 396 46)" stroke="#0E2238" stroke-width="2" fill="#fff"/>
+              <line x1="317" y1="32" x2="317" y2="66" stroke="#0E2238" stroke-width="1.5"/>
+              <line x1="341" y1="37" x2="341" y2="69" stroke="#0E2238" stroke-width="1.5"/>
+              <line x1="365" y1="42" x2="365" y2="72" stroke="#0E2238" stroke-width="1.5"/>
+              <path d="M317 66 L365 72" stroke="#0E2238" stroke-width="3.8"/>
+              <line x1="391" y1="47" x2="391" y2="78" stroke="#0E2238" stroke-width="1.5"/>
+
+              <!-- Bass Alberti accompaniment -->
+              <g fill="#0E2238" stroke="#0E2238">
+                <ellipse cx="86" cy="123" rx="4.8" ry="3.6" transform="rotate(-18 86 123)"/>
+                <ellipse cx="106" cy="108" rx="4.8" ry="3.6" transform="rotate(-18 106 108)"/>
+                <ellipse cx="126" cy="113" rx="4.8" ry="3.6" transform="rotate(-18 126 113)"/>
+                <ellipse cx="146" cy="108" rx="4.8" ry="3.6" transform="rotate(-18 146 108)"/>
+                <line x1="90.5" y1="122" x2="90.5" y2="92" stroke-width="1.4"/>
+                <line x1="110.5" y1="107" x2="110.5" y2="92" stroke-width="1.4"/>
+                <line x1="130.5" y1="112" x2="130.5" y2="92" stroke-width="1.4"/>
+                <line x1="150.5" y1="107" x2="150.5" y2="92" stroke-width="1.4"/>
+                <line x1="90" y1="92" x2="151" y2="92" stroke-width="3.4"/>
+
+                <ellipse cx="188" cy="128" rx="4.8" ry="3.6" transform="rotate(-18 188 128)"/>
+                <ellipse cx="212" cy="108" rx="4.8" ry="3.6" transform="rotate(-18 212 108)"/>
+                <ellipse cx="236" cy="118" rx="4.8" ry="3.6" transform="rotate(-18 236 118)"/>
+                <ellipse cx="260" cy="108" rx="4.8" ry="3.6" transform="rotate(-18 260 108)"/>
+                <line x1="192.5" y1="127" x2="192.5" y2="94" stroke-width="1.4"/>
+                <line x1="216.5" y1="107" x2="216.5" y2="94" stroke-width="1.4"/>
+                <line x1="240.5" y1="117" x2="240.5" y2="94" stroke-width="1.4"/>
+                <line x1="264.5" y1="107" x2="264.5" y2="94" stroke-width="1.4"/>
+                <line x1="192" y1="94" x2="265" y2="94" stroke-width="3.4"/>
+
+                <ellipse cx="322" cy="123" rx="5.4" ry="4" transform="rotate(-18 322 123)"/>
+                <line x1="327" y1="122" x2="327" y2="92" stroke-width="1.4"/>
+                <ellipse cx="362" cy="113" rx="5.4" ry="4" transform="rotate(-18 362 113)"/>
+                <line x1="367" y1="112" x2="367" y2="86" stroke-width="1.4"/>
+                <ellipse cx="396" cy="123" rx="5.6" ry="4.2" transform="rotate(-18 396 123)" fill="#fff" stroke-width="2"/>
+                <line x1="401" y1="122" x2="401" y2="92" stroke-width="1.4"/>
+              </g>
+            </svg>
+          </div>
+
+          <div class="player-strip">
+            <div class="player-left">
+              <div class="play-dot" aria-hidden="true">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.8l9.2 5.2-9.2 5.2V2.8z"/></svg>
+              </div>
+              <div class="player-meta">
+                <strong>Acoustic Grand Piano</strong>
+                <span>116 BPM · Loop Bars 1–4 · Metronome On</span>
+              </div>
+            </div>
+            <div class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+          </div>
+
+          <div class="export-row">
+            <div class="chip-group">
+              <span class="chip">MusicXML</span>
+              <span class="chip">MIDI</span>
+              <span class="chip">Apple Pencil Ink</span>
+            </div>
+            <span class="conf-text">MuseScore · Dorico · Sibelius</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="wrap"><div class="staff-divider" aria-hidden="true"></div></div>
+
+    <section id="features" class="block">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="section-kicker">Built for Real Musicians</div>
+          <h2>Everything from messy paper to clean, playable notation.</h2>
+          <p>Designed for pianists, choral singers, instrumentalists, and arrangers who want reliable scans without fighting a desktop workflow.</p>
+        </div>
+
+        <div class="features-grid">
+          <article class="card">
+            <div class="icon-badge" aria-hidden="true">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5a2 2 0 0 1 2-2h2M16 3h2a2 2 0 0 1 2 2v2M20 17v2a2 2 0 0 1-2 2h-2M8 21H6a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+            </div>
+            <h3>Smart Photo &amp; PDF Capture</h3>
+            <p>Automatic page-edge flattening, uneven shadow correction, and pen-mark stripping turn desk photos and multi-page PDFs into crisp engraving inputs.</p>
+          </article>
+
+          <article class="card">
+            <div class="icon-badge" aria-hidden="true">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            </div>
+            <h3>Guided "Fix It" Bar Review</h3>
+            <p>Don't proofread every measure by hand. MusicScan highlights only uncertain bars alongside the original photo crop, with one-tap row rescanning.</p>
+          </article>
+
+          <article class="card">
+            <div class="icon-badge" aria-hidden="true">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+            <h3>Live Touch Notation Editor</h3>
+            <p>Tap notes and rests to edit pitches, durations, accidentals, chords, ties, key signatures, and time signatures—all with rhythmic sanity checks.</p>
+          </article>
+
+          <article class="card">
+            <div class="icon-badge" aria-hidden="true">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/></svg>
+            </div>
+            <h3>Apple Pencil Markup on iPad</h3>
+            <p>Write fingerings, bowings, breath marks, and rehearsal notes directly over your engraved score with native, pressure-responsive ink.</p>
+          </article>
+
+          <article class="card">
+            <div class="icon-badge" aria-hidden="true">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </div>
+            <h3>Sampled Practice Playback</h3>
+            <p>Listen with realistic sampled piano, choir, strings, and woodwinds. Slow down passages, loop tricky measures, mute parts, and practice with a metronome.</p>
+          </article>
+
+          <article class="card">
+            <div class="icon-badge" aria-hidden="true">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <h3>Clean MusicXML &amp; MIDI Export</h3>
+            <p>Export structurally valid MusicXML and standard MIDI straight to MuseScore, Dorico, Sibelius, Finale, Logic Pro, or your favorite score reader.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="workflow" class="block">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="section-kicker">Three Simple Steps</div>
+          <h2>From music stand to playable score in under a minute.</h2>
+        </div>
+
+        <div class="steps-grid">
+          <div class="step-card">
+            <span class="step-num">01</span>
+            <h3>Snap a Page or Pick a PDF</h3>
+            <p>Hold your iPhone or iPad over any printed score—even with shadows, curled edges, or rehearsal markings—or import multi-page PDF sheets.</p>
+          </div>
+          <div class="step-card">
+            <span class="step-num">02</span>
+            <h3>Step Through Fix It</h3>
+            <p>Inspect only the bars flagged for review right beneath the original photo strip. Accept a second reading, rescan a row, or nudge a note with one tap.</p>
+          </div>
+          <div class="step-card">
+            <span class="step-num">03</span>
+            <h3>Practice, Mark Up &amp; Export</h3>
+            <p>Loop difficult passages at half tempo with sampled instruments, jot fingerings with Apple Pencil, and share clean MusicXML or MIDI anywhere.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="membership" class="block">
+      <div class="wrap">
+        <div class="membership-shell">
+          <div class="membership-head">
+            <div class="section-kicker">MusicScan Pro Membership</div>
+            <h2>Try your first full page free. Go Pro when you're ready.</h2>
+            <p>Every new user gets a complete first page scan with zero feature locks. Upgrade in the iOS app via Apple In-App Purchase for full multi-page scores and up to 30 pages every month.</p>
+          </div>
+
+          <div class="plans-grid">
+            <div class="plan">
+              <div class="plan-top">
+                <div class="plan-tag-row">
+                  <span class="plan-name">Starter</span>
+                  <span class="plan-pill">Free</span>
+                </div>
+                <div class="plan-price">
+                  <strong>$0</strong>
+                  <span>to get started</span>
+                </div>
+                <p class="plan-sub">Experience the complete MusicScan workflow on your own sheet music first.</p>
+                <ul class="plan-list">
+                  <li>1st full page completely free</li>
+                  <li>All editing, Fix It &amp; playback tools</li>
+                  <li>Full MusicXML &amp; MIDI export on free page</li>
+                  <li>Half-page previews on extra scans</li>
+                </ul>
+              </div>
+              <div class="plan-foot">
+                <a class="btn plan-ghost-btn" href="#features">Included in App</a>
+              </div>
+            </div>
+
+            <div class="plan featured">
+              <div class="plan-top">
+                <div class="plan-tag-row">
+                  <span class="plan-name">Pro Yearly</span>
+                  <span class="plan-pill">Best Value · Save 48%</span>
+                </div>
+                <div class="plan-price">
+                  <strong>$99.99</strong>
+                  <span>/ year ($8.33/mo)</span>
+                </div>
+                <p class="plan-sub">Save 48% over monthly billing. Ideal for regular practice, lessons, and ensemble prep.</p>
+                <ul class="plan-list">
+                  <li>Up to 30 full scanned pages / month</li>
+                  <li>Multi-page scores &amp; full PDF import</li>
+                  <li>Guided Fix It &amp; row rescanning</li>
+                  <li>Sampled playback, loops &amp; Apple Pencil ink</li>
+                  <li>Unlimited MusicXML &amp; MIDI exports</li>
+                </ul>
+              </div>
+              <div class="plan-foot">
+                <a class="btn btn-gold" href="#billing-note">Choose Pro Yearly in App</a>
+              </div>
+            </div>
+
+            <div class="plan">
+              <div class="plan-top">
+                <div class="plan-tag-row">
+                  <span class="plan-name">Pro Monthly</span>
+                  <span class="plan-pill">Flexible</span>
+                </div>
+                <div class="plan-price">
+                  <strong>$15.99</strong>
+                  <span>/ month</span>
+                </div>
+                <p class="plan-sub">All MusicScan Pro features with month-to-month flexibility for recital or audition season.</p>
+                <ul class="plan-list">
+                  <li>Up to 30 full scanned pages / month</li>
+                  <li>Multi-page scores &amp; full PDF import</li>
+                  <li>Guided Fix It &amp; row rescanning</li>
+                  <li>Sampled playback &amp; MusicXML / MIDI export</li>
+                  <li>Cancel anytime in Apple Subscriptions</li>
+                </ul>
+              </div>
+              <div class="plan-foot">
+                <a class="btn plan-ghost-btn" href="#billing-note">Subscribe in iOS App</a>
+              </div>
+            </div>
+          </div>
+
+          <p id="billing-note" class="billing-legal">
+            MusicScan Pro subscriptions are purchased inside the MusicScan iPhone &amp; iPad app through the Apple App Store.
+            Your first full scanned page is free—no trial signup required. When you upgrade to Pro, payment is charged to your Apple Account at confirmation of purchase.
+            Subscriptions automatically renew unless canceled at least 24 hours before the end of the current period, and can be managed
+            or canceled anytime in your Apple Account Settings. See our <a href="privacy.html">Privacy Policy</a> and Apple's
+            <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/" target="_blank" rel="noopener">Standard Terms of Use (EULA)</a>.
+          </p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap footer-inner">
+      <div>© 2026 MusicScan · Optical Music Recognition for iPhone &amp; iPad</div>
+      <div class="footer-links">
+        <a href="#features">Features</a>
+        <a href="#membership">Pro Membership</a>
+        <a href="privacy.html">Privacy Policy</a>
+        <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/" target="_blank" rel="noopener">Terms of Use</a>
+        <a href="https://github.com/juejue-byte/MusicScan" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Subtle 4x4 Bayer ordered-dither sky wash matching the iOS app's SkyDitheredCanvas aesthetic
+    (function renderBayerWash() {
+      const canvas = document.getElementById('bayerSky');
+      if (!canvas) return;
+      const w = 180, h = 76;
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const img = ctx.createImageData(w, h);
+      const bayer = [
+        [ 0,  8,  2, 10],
+        [12,  4, 14,  6],
+        [ 3, 11,  1,  9],
+        [15,  7, 13,  5]
+      ];
+      for (let y = 0; y < h; y++) {
+        const ny = y / (h - 1);
+        for (let x = 0; x < w; x++) {
+          const nx = x / (w - 1);
+          const radial = Math.max(0, 1 - Math.hypot((nx - 0.78) * 1.15, ny * 1.45));
+          const intensity = Math.max(0, (1 - ny) * 0.42 + radial * 0.34);
+          const threshold = (bayer[y & 3][x & 3] + 0.5) / 16;
+          const idx = (y * w + x) * 4;
+          if (intensity > threshold) {
+            img.data[idx] = 23;
+            img.data[idx + 1] = 105;
+            img.data[idx + 2] = 194;
+            img.data[idx + 3] = Math.round(38 * (1 - ny * 0.7));
+          } else {
+            img.data[idx + 3] = 0;
+          }
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+    })();
+  </script>
+</body>
+</html>

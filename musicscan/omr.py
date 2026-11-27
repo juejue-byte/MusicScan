@@ -692,6 +692,35 @@ def second_opinion(r: dict, im: Image.Image) -> dict:
     return r
 
 
+def should_skip_second_opinion(r: dict) -> bool:
+    """Skip the extra 2m second-opinion pass (~35-45% GPU time) when the primary 28m reading is already
+    unambiguously high-confidence, every measure is clean, and original vs sharpened layout checks agree.
+    Set MUSICSCAN_SKIP_SECOND_OPINION_CONF=0 (or >1.0) to force second_opinion on every page."""
+    raw = os.environ.get("MUSICSCAN_SKIP_SECOND_OPINION_CONF", "0.985").strip().lower()
+    if raw in ("0", "off", "false", "no"):
+        return False
+    try:
+        min_conf = float(raw)
+    except ValueError:
+        min_conf = 0.985
+    if min_conf > 1.0:
+        return False
+    st = r.get("stats") or {}
+    if st.get("measures", 0) <= 0 or st.get("symbols", 0) < 10:
+        return False
+    if float(st.get("mean_conf", 0.0)) < min_conf:
+        return False
+    if int(st.get("low", 1)) > 0 or float(st.get("low_frac", 1.0)) >= 0.01:
+        return False
+    if any(m.get("doubled") or m.get("level") != "ok" for m in r.get("measures", [])):
+        return False
+    lc = r.get("layout_check") or {}
+    bars = lc.get("bars")
+    if bars and len(bars) == 2 and bars[0] != bars[1]:
+        return False
+    return True
+
+
 def doubled_staff(boxes: list) -> bool:
     """Two staff boxes of one bar that cover mostly the same height: a single staff the reader traced twice (seen on
     a shadowed, slightly bowed photo of a one-staff part, where the staff-line finder lost the right half of a row).

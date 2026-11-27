@@ -1,6 +1,7 @@
 """MusicScan MVP server.  Run:  uvicorn server.app:app --port 8000  (from the musicscan folder)."""
 from __future__ import annotations
 
+import copy
 import hashlib
 import hmac
 import io
@@ -13,6 +14,7 @@ import time
 import traceback
 import uuid
 from pathlib import Path
+from typing import Callable
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -32,6 +34,103 @@ WORK.mkdir(parents=True, exist_ok=True)
 JOBS: dict[str, dict] = {}
 app = FastAPI(title="MusicScan")
 
+# Optional remote OMR backend (set by deploy/modal_app.py to route OMR onto the GPU worker while the CPU web
+# container handles static assets, auth, billing, polling, and cached samples).
+_OMR_TRANSCRIBE: Callable[..., dict] | None = None
+_OMR_RESCAN: Callable[..., dict] | None = None
+_REMOTE_DEVICE: str | None = None
+
+
+def set_omr_backend(
+    transcribe_fn: Callable[..., dict] | None,
+    rescan_fn: Callable[..., dict] | None,
+    device_label: str | None = None,
+) -> None:
+    global _OMR_TRANSCRIBE, _OMR_RESCAN, _REMOTE_DEVICE
+    _OMR_TRANSCRIBE = transcribe_fn
+    _OMR_RESCAN = rescan_fn
+    _REMOTE_DEVICE = device_label
+
+
+# Pre-cached built-in sample scans: match uploaded bytes by SHA-256 against web/samples/* and serve precomputed
+# readings from web/demo/sample*/ with zero GPU usage and <100ms latency.
+_SAMPLE_CACHE: dict[str, tuple[str, Path]] | None = None
+_SAMPLE_LOCK = threading.Lock()
+
+
+def _sample_cache() -> dict[str, tuple[str, Path]]:
+    global _SAMPLE_CACHE
+    if _SAMPLE_CACHE is not None:
+        return _SAMPLE_CACHE
+    with _SAMPLE_LOCK:
+        if _SAMPLE_CACHE is not None:
+            return _SAMPLE_CACHE
+        mapping: dict[str, tuple[str, Path]] = {}
+        demo_dir = ROOT / "web" / "demo"
+        index_path = demo_dir / "index.json"
+        if index_path.exists():
+            try:
+                idx = json.loads(index_path.read_text())
+                for fname, sid in (idx.get("samples") or {}).items():
+                    sdir = demo_dir / sid
+                    if not (sdir / "job.json").exists():
+                        continue
+                    for candidate in (ROOT / "web" / "samples" / fname, sdir / "original.jpg"):
+                        if candidate.exists():
+                            digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+                            mapping[digest] = (sid, sdir)
+            except Exception:
+                traceback.print_exc()
+        _SAMPLE_CACHE = mapping
+        return _SAMPLE_CACHE
+
+
+def _cached_sample_for(data: bytes, opts: dict) -> tuple[str, Path] | None:
+    if os.environ.get("MUSICSCAN_DISABLE_SAMPLE_CACHE", "0") == "1":
+        return None
+    if (
+        opts.get("detector", "28m") != "28m"
+        or opts.get("flatten") is not None
+        or not opts.get("strip_pen", True)
+        or opts.get("page", 0) != 0
+        or opts.get("pdf")
+        or opts.get("context") is not None
+        or opts.get("quad") is not None
+    ):
+        return None
+    digest = hashlib.sha256(data).hexdigest()
+    return _sample_cache().get(digest)
+
+
+def _serve_cached_sample(job_id: str, sid: str, sample_dir: Path) -> None:
+    """Materialize a precomputed sample scan into WORK / job_id with $0 GPU usage while preserving full server-side
+    preview masking, unlock flow, and file endpoints."""
+    j = JOBS[job_id]
+    d = WORK / job_id
+    src_orig = sample_dir / "original.jpg"
+    if src_orig.exists():
+        shutil.copyfile(src_orig, d / "original.jpg")
+    src_page_png = sample_dir / "page.png"
+    src_page_jpg = sample_dir / "page.jpg"
+    if src_page_png.exists():
+        shutil.copyfile(src_page_png, d / "page.full.png")
+        shutil.copyfile(src_page_png, d / "page.png")
+    elif src_page_jpg.exists():
+        with Image.open(src_page_jpg) as im:
+            im.save(d / "page.full.png", format="PNG", compress_level=1)
+            shutil.copyfile(d / "page.full.png", d / "page.png")
+    demo_job = json.loads((sample_dir / "job.json").read_text())
+    full_result = copy.deepcopy(demo_job["result"])
+    full_result["cached_sample"] = sid
+    full_result["seconds"] = 0.0
+    (d / "result.full.json").write_text(json.dumps(full_result))
+    j["cached_sample"] = sid
+    j["_full_result"] = full_result
+    j["result"] = _preview_result(full_result, d) if j.get("allowance", {}).get("access") == "preview" else full_result
+    j["status"] = "done"
+    _save_job(j)
+
+
 # Who may use the API on a server on the public internet (deploy/modal_app.py):
 #  - signed-in users: a Supabase access token (server/auth.py, on when SUPABASE_URL is set), the launch setup;
 #  - a shared access key (MUSICSCAN_ACCESS_KEY) while testing: open the app once as  https://host/?key=KEY  and a
@@ -40,6 +139,8 @@ app = FastAPI(title="MusicScan")
 ACCESS_KEY = os.environ.get("MUSICSCAN_ACCESS_KEY", "").strip().strip('"').strip("'")
 OPEN_API = ("/api/health", "/api/samples", "/api/config", "/api/billing/notifications")
 KEY_COOKIE = "musicscan_key"
+CACHEABLE_PREFIXES = ("/js/", "/samples/", "/fonts/", "/demo/", "/vendor/")
+CACHEABLE_EXTS = (".css", ".js", ".jpg", ".jpeg", ".png", ".svg", ".woff2", ".woff", ".ico")
 
 
 def _given_key(request: Request) -> str:
@@ -75,6 +176,10 @@ async def access_check(request: Request, call_next):
     if _key_ok(request) and request.cookies.get(KEY_COOKIE) != ACCESS_KEY:
         https = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
         resp.set_cookie(KEY_COOKIE, ACCESS_KEY, max_age=400 * 86400, httponly=True, secure=https, samesite="lax")
+    if path.startswith("/api/"):
+        resp.headers.setdefault("Cache-Control", "no-store")
+    elif resp.status_code == 200 and (path.startswith(CACHEABLE_PREFIXES) or path.endswith(CACHEABLE_EXTS)):
+        resp.headers.setdefault("Cache-Control", "public, max-age=3600")
     return resp
 
 
@@ -82,13 +187,16 @@ async def access_check(request: Request, call_next):
 def health(request: Request):
     """Liveness plus whether this request carries the access key (the iOS app's "Test connection" uses it)."""
     user = request.state.user
+    device = _REMOTE_DEVICE if _REMOTE_DEVICE else (omr.pick_device() if omr._DEV else None)
     return {"ok": True, "app": "musicscan", "authorized": _authorized(request), "key_required": bool(ACCESS_KEY),
             "sign_in": auth.enabled(), "user": user["id"] if user else None,
             "key_sent": bool(_given_key(request)),  # a key arrived (query, header or cookie), right or wrong
             # compare with scripts/sync_modal_secret.sh's local fingerprint to see which side differs
             "key_fingerprint": _fingerprint(ACCESS_KEY), "key_length": len(ACCESS_KEY),
             "sent_fingerprint": _fingerprint(_given_key(request)),
-            "device": omr.pick_device() if omr._DEV else None}
+            "device": device,
+            "split_gpu": _OMR_TRANSCRIBE is not None,
+            "cached_samples": len(_sample_cache())}
 
 
 @app.get("/api/config")
@@ -197,10 +305,24 @@ def _run(job_id: str, data: bytes, name: str, opts: dict):
         pre["image"].save(d / "page.full.png")
         pre["image"].save(d / "page.png")
         j["status"] = "Reading the music"
-        r, read_im = omr.transcribe_checked(pre["image"], detector=opts.get("detector", "28m"))
-        if opts.get("detector", "28m") == "28m":
-            j["status"] = "Double-checking"
-            omr.second_opinion(r, read_im)
+        det = opts.get("detector", "28m")
+        if _OMR_TRANSCRIBE is not None:
+            r = _OMR_TRANSCRIBE(pre["image"], detector=det, allow_second_opinion=(det == "28m"))
+        else:
+            r, read_im = omr.transcribe_checked(pre["image"], detector=det)
+            if det == "28m":
+                if omr.should_skip_second_opinion(r):
+                    r["second_opinion"] = {
+                        "aligned": True,
+                        "skipped": True,
+                        "reason": "high_confidence",
+                        "bars": 0,
+                        "filled": [],
+                        "seconds": 0.0,
+                    }
+                else:
+                    j["status"] = "Double-checking"
+                    omr.second_opinion(r, read_im)
         ctx, notes = page_context(r["xml"], opts.get("context"))
         _clean(r, context=ctx)
         if notes and r["measures"]:
@@ -319,6 +441,11 @@ async def create_job(request: Request, file: UploadFile = File(...), detector: s
     opts = {"detector": detector if detector in ("28m", "2m") else "28m",
             "flatten": None if flatten == "auto" else flatten == "on", "strip_pen": strip_pen,
             "page": page if n_pdf else 0, "pdf": bool(n_pdf), "context": ctx}
+    cached = _cached_sample_for(data, opts)
+    if cached is not None:
+        sid, sample_dir = cached
+        _serve_cached_sample(jid, sid, sample_dir)
+        return {"id": jid, "pages": 1, "page": 0, "allowance": allowance, "cached": True}
     threading.Thread(target=_run, args=(jid, data, file.filename or "", opts), daemon=True).start()
     return {"id": jid, "pages": n_pdf or 1, "page": page if n_pdf else 0, "allowance": allowance}
 
@@ -495,6 +622,17 @@ async def rescan(jid: str, request: Request, measures: str = Form(...), attempt:
         raise HTTPException(400, "No measures selected")
     target = [m["index"] for m in meas if m["system"] in systems]
     way, label = RESCAN_WAYS[attempt % len(RESCAN_WAYS)]
+    # Serve precomputed single-system rescan for built-in cached samples with $0 GPU usage.
+    cached_sid = j.get("cached_sample")
+    if file is None and cached_sid and len(systems) == 1:
+        cached_rescan = ROOT / "web" / "demo" / cached_sid / f"rescan_{systems[0]}_{attempt % len(RESCAN_WAYS)}.json"
+        if cached_rescan.exists():
+            out = json.loads(cached_rescan.read_text())
+            out["target"] = target
+            out["attempt"] = attempt
+            out["cached_sample"] = cached_sid
+            out["seconds"] = 0.0
+            return out
     if file is not None:
         im = imageio.load_image(await file.read(), file.filename or "")
         pre = preprocess.preprocess(im)
@@ -524,7 +662,7 @@ async def rescan(jid: str, request: Request, measures: str = Form(...), attempt:
         canvas = Image.new("L", (crop.width + 120, crop.height + 160), 255)
         canvas.paste(crop, (60, 80))
         crop, det = _variant(canvas, way)
-    r = omr.transcribe(crop, detector=det)
+    r = _OMR_RESCAN(crop, detector=det) if _OMR_RESCAN is not None else omr.transcribe(crop, detector=det)
     ctx = None
     if context:
         try:
