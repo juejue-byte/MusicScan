@@ -419,13 +419,11 @@ struct MusicScanLogoView: View {
     }
 }
 
-/// Branded launch splash overlay displayed when first opening the app while connecting to the MusicScan server.
+/// Branded launch splash overlay displayed when opening the app while connecting to the MusicScan server.
 struct ServerLaunchSplashView: View {
     let hostLabel: String
-    var onSkipToWorkspace: (() -> Void)? = nil
 
     @State private var pulse = false
-    @State private var showSkipHint = false
 
     var body: some View {
         ZStack {
@@ -480,31 +478,12 @@ struct ServerLaunchSplashView: View {
                 }
                 .padding(.top, 6)
 
-                if showSkipHint, let onSkipToWorkspace {
-                    Button(action: onSkipToWorkspace) {
-                        Text("Continue while connecting in background →")
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(SkyTheme.blue700)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(SkyTheme.sky50, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .transition(.opacity)
-                }
-
                 Spacer()
             }
             .padding(24)
         }
         .onAppear {
             pulse = true
-        }
-        .task {
-            try? await Task.sleep(for: .seconds(2.2))
-            withAnimation(.easeOut(duration: 0.25)) {
-                showSkipHint = true
-            }
         }
     }
 }

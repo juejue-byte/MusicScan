@@ -15,7 +15,6 @@ struct ContentView: View {
     @State private var selectedTab: AppTab = .scan
     @State private var isLoading = true
     @State private var loadError: String?
-    @State private var dismissedInitialLoadingSplash = false
     @State private var showWelcomeOverlay = false
     @State private var showSettings = false
     @State private var showQuickGuide = false
@@ -38,7 +37,6 @@ struct ContentView: View {
             && isLoading
             && loadError == nil
             && serverURL != nil
-            && !dismissedInitialLoadingSplash
     }
 
     private var shouldShowReviewSkeleton: Bool {
@@ -248,13 +246,9 @@ struct ContentView: View {
                 }
 
                 if shouldShowInitialConnectingSplash {
-                    ServerLaunchSplashView(hostLabel: hostLabel) {
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            dismissedInitialLoadingSplash = true
-                        }
-                    }
-                    .transition(.opacity)
-                    .zIndex(18)
+                    ServerLaunchSplashView(hostLabel: hostLabel)
+                        .transition(.opacity)
+                        .zIndex(18)
                 }
 
                 if isShowingWelcome {

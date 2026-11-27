@@ -2008,26 +2008,21 @@ private enum NativeWebPolishScript {
           from { opacity: 0; transform: translateY(4px); }
           to { opacity: 1; transform: translateY(0); }
         }
-        /* Multi-Page Score Navigator Bar & GoodNotes 4-Square Thumbnail Sheet */
+        /* GoodNotes 4-Square Page Bar & Thumbnail Sheet */
         #msPageNav {
           display: flex;
           align-items: center;
-          gap: 6px;
+          justify-content: space-between;
+          gap: 8px;
           margin: 4px 10px 6px;
-          padding: 6px 10px;
+          padding: 5px 10px;
           border-radius: 14px;
           background: rgba(234, 244, 254, 0.92);
           border: 1px solid #D6E4F2;
           backdrop-filter: saturate(180%) blur(14px);
           -webkit-backdrop-filter: saturate(180%) blur(14px);
-          overflow-x: auto;
-          -webkit-overflow-scrolling: touch;
-          scrollbar-width: none;
           user-select: none;
           -webkit-user-select: none;
-        }
-        #msPageNav::-webkit-scrollbar {
-          display: none;
         }
         #msPageNav.hidden {
           display: none !important;
@@ -2035,17 +2030,17 @@ private enum NativeWebPolishScript {
         #msPageNav .ms-pn-grid-btn {
           flex: none;
           height: 32px;
-          padding: 0 10px;
+          padding: 0 12px;
           border-radius: 10px;
           border: 1px solid #B9D9F7;
           background: #FFFFFF;
           color: #0F56A3;
           font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 12px;
+          font-size: 12.5px;
           font-weight: 800;
           display: inline-flex;
           align-items: center;
-          gap: 5px;
+          gap: 6px;
           cursor: pointer;
           box-shadow: 0 1px 3px rgba(14, 34, 56, 0.05);
           transition: transform 0.12s ease, background 0.14s ease;
@@ -2058,6 +2053,29 @@ private enum NativeWebPolishScript {
           width: 14px;
           height: 14px;
           fill: currentColor;
+        }
+        #msPageNav .ms-pn-status {
+          flex: 1 1 auto;
+          text-align: center;
+          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
+          font-size: 12.5px;
+          font-weight: 700;
+          color: #0E2238;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          cursor: pointer;
+        }
+        #msPageNav .ms-pn-status .ms-pn-sub {
+          font-weight: 600;
+          color: #4E647C;
+          font-variant-numeric: tabular-nums;
+        }
+        #msPageNav .ms-pn-arrows {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          flex: none;
         }
         #msPageNav .ms-pn-step {
           flex: none;
@@ -2078,78 +2096,6 @@ private enum NativeWebPolishScript {
         #msPageNav .ms-pn-step:disabled {
           opacity: 0.38;
           cursor: default;
-        }
-        #msPageNav .ms-pn-chips {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          flex: 1 1 auto;
-          overflow-x: auto;
-          scrollbar-width: none;
-        }
-        #msPageNav .ms-pn-chips::-webkit-scrollbar {
-          display: none;
-        }
-        #msPageNav .ms-pn-chip {
-          flex: none;
-          height: 32px;
-          padding: 0 11px;
-          border-radius: 10px;
-          border: 1px solid #D6E4F2;
-          background: #FFFFFF;
-          color: #0E2238;
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 12.5px;
-          font-weight: 700;
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-          cursor: pointer;
-          white-space: nowrap;
-          transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
-        }
-        #msPageNav .ms-pn-chip .ms-pn-bars {
-          font-weight: 500;
-          font-size: 11px;
-          opacity: 0.72;
-          font-variant-numeric: tabular-nums;
-        }
-        #msPageNav .ms-pn-chip.on {
-          background: #1769C2;
-          border-color: #1769C2;
-          color: #FFFFFF;
-          box-shadow: 0 3px 10px rgba(23, 105, 194, 0.22);
-        }
-        #msPageNav .ms-pn-chip.on .ms-pn-bars {
-          opacity: 0.90;
-        }
-        #msPageNav .ms-pn-chip.playing-page:not(.on) {
-          border-color: #1769C2;
-          box-shadow: inset 0 0 0 1px #1769C2;
-        }
-        #msPageNav .ms-pn-chip .ms-pn-flag {
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-          background: #C2362B;
-          flex: none;
-        }
-        #msPageNav .ms-pn-chip.on .ms-pn-flag {
-          background: #F6B93B;
-        }
-        #msPageNav .ms-pn-add {
-          flex: none;
-          height: 32px;
-          padding: 0 10px;
-          border-radius: 10px;
-          border: 1px dashed #B9D9F7;
-          background: rgba(255, 255, 255, 0.75);
-          color: #0F56A3;
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 12.5px;
-          font-weight: 700;
-          cursor: pointer;
-          white-space: nowrap;
         }
         /* Intuitive "Go to Playing Bar" Floating Pill when user scrolls away during playback */
         #msFollowPlayBtn {
@@ -2292,20 +2238,23 @@ private enum NativeWebPolishScript {
         }
         #msGoodNotesSheet .ms-gn-thumb {
           width: 100%;
-          height: 150px;
+          height: 176px;
           border-radius: 10px;
-          background: #F2EEE4;
-          border: 1px solid rgba(14, 34, 56, 0.08);
+          background: #FFFFFF;
+          border: 1px solid rgba(14, 34, 56, 0.10);
           overflow: hidden;
           display: flex;
           align-items: center;
           justify-content: center;
           position: relative;
+          padding: 4px;
+          box-sizing: border-box;
         }
         #msGoodNotesSheet .ms-gn-thumb img {
           width: 100%;
           height: 100%;
-          object-fit: cover;
+          object-fit: contain;
+          border-radius: 6px;
         }
         #msGoodNotesSheet .ms-gn-badge {
           position: absolute;
@@ -2681,7 +2630,8 @@ private enum NativeWebPolishScript {
           const meta = ms?.S?.meta || [];
           return ranges.map((r, idx) => {
             const flagged = meta.slice(r.lo, r.hi + 1).some((m) => m && m.level === 'bad');
-            const thumbUrl = r.id ? `api/jobs/${r.id}/page.png` : '';
+            const origUrl = r.id ? `api/jobs/${r.id}/original.jpg` : '';
+            const pagePngUrl = r.id ? `api/jobs/${r.id}/page.png` : '';
             return {
               index: idx,
               id: r.id,
@@ -2691,7 +2641,8 @@ private enum NativeWebPolishScript {
               bars: `${r.lo + 1}\u2013${r.hi + 1}`,
               flagged,
               active: idx === activePageIndex,
-              thumbUrl,
+              thumbUrl: origUrl || pagePngUrl,
+              fallbackThumbUrl: pagePngUrl,
               tabBtn: tabBtns[idx] || null
             };
           });
@@ -2827,19 +2778,20 @@ private enum NativeWebPolishScript {
       function syncPageNavigatorActiveState() {
         const nav = document.getElementById('msPageNav');
         if (!nav || nav.classList.contains('hidden')) return;
-        const chips = [...nav.querySelectorAll('.ms-pn-chip')];
-        chips.forEach((chip, i) => {
-          chip.classList.toggle('on', i === activePageIndex);
-          chip.classList.toggle('playing-page', document.body.classList.contains('playing') && i === playingPageIndex);
-        });
+        const pages = getPageDescriptors();
+        const cur = pages[activePageIndex];
+        const statusEl = nav.querySelector('.ms-pn-status');
+        if (statusEl && cur) {
+          const barsPart = cur.bars ? ` <span class="ms-pn-sub">· Bars ${cur.bars}</span>` : '';
+          const playPart = (document.body.classList.contains('playing') && playingPageIndex >= 0 && playingPageIndex !== activePageIndex)
+            ? ` <span class="ms-pn-sub">(▶ P.${playingPageIndex + 1})</span>`
+            : '';
+          statusEl.innerHTML = `Page ${activePageIndex + 1} of ${pages.length}${barsPart}${playPart}`;
+        }
         const prevBtn = nav.querySelector('[data-pn="prev"]');
         const nextBtn = nav.querySelector('[data-pn="next"]');
         if (prevBtn) prevBtn.disabled = activePageIndex <= 0;
-        if (nextBtn) nextBtn.disabled = activePageIndex >= chips.length - 1;
-        const activeChip = nav.querySelector('.ms-pn-chip.on');
-        if (activeChip && typeof activeChip.scrollIntoView === 'function') {
-          activeChip.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
-        }
+        if (nextBtn) nextBtn.disabled = activePageIndex >= Math.max(0, pages.length - 1);
       }
 
       // GoodNotes-style 4-square visual Page Overview & Manager Sheet
@@ -2875,7 +2827,7 @@ private enum NativeWebPolishScript {
                 ${pages.map((p, i) => `
                   <div class="ms-gn-tile${i === activePageIndex ? ' on' : ''}" data-gn-idx="${i}">
                     <div class="ms-gn-thumb">
-                      ${p.thumbUrl ? `<img src="${p.thumbUrl}" alt="Page ${i + 1}" loading="lazy">` : '<span>♪</span>'}
+                      ${p.thumbUrl ? `<img src="${p.thumbUrl}" data-fallback="${p.fallbackThumbUrl || ''}" alt="Page ${i + 1}" loading="lazy">` : '<span>♪</span>'}
                       <span class="ms-gn-badge">${i + 1}</span>
                       ${isPlaying && i === playingPageIndex ? '<span class="ms-gn-playing-pill">▶ Playing</span>' : ''}
                     </div>
@@ -2890,6 +2842,15 @@ private enum NativeWebPolishScript {
               </div>
             </div>
           `;
+
+          sheet.querySelectorAll('.ms-gn-thumb img').forEach((img) => {
+            img.addEventListener('error', () => {
+              const fb = img.getAttribute('data-fallback');
+              if (fb && img.getAttribute('src') !== fb) {
+                img.setAttribute('src', fb);
+              }
+            }, { once: true });
+          });
 
           sheet.querySelector('[data-gn="close"]')?.addEventListener('click', () => {
             sheet.classList.add('hidden');
@@ -2989,23 +2950,21 @@ private enum NativeWebPolishScript {
           nav.innerHTML = `
             <button type="button" class="ms-pn-grid-btn" data-pn="grid" title="Open 4-square page overview">
               ${FOUR_SQUARE_SVG}
-              <span>Pages</span>
+              <span>Pages (${pages.length})</span>
             </button>
-            <button type="button" class="ms-pn-step" data-pn="prev" aria-label="Previous page">‹</button>
-            <div class="ms-pn-chips">
-              ${pages.map((p, i) => `
-                <button type="button" class="ms-pn-chip${i === activePageIndex ? ' on' : ''}" data-pn-idx="${i}">
-                  <span>${p.label}</span>
-                  ${p.bars ? `<span class="ms-pn-bars">(${p.bars})</span>` : ''}
-                  ${p.flagged ? '<span class="ms-pn-flag" title="Contains flagged bars"></span>' : ''}
-                </button>
-              `).join('')}
+            <div class="ms-pn-status" data-pn="status" title="Tap to open 4-square page grid"></div>
+            <div class="ms-pn-arrows">
+              <button type="button" class="ms-pn-step" data-pn="prev" aria-label="Previous page">‹</button>
+              <button type="button" class="ms-pn-step" data-pn="next" aria-label="Next page">›</button>
             </div>
-            <button type="button" class="ms-pn-step" data-pn="next" aria-label="Next page">›</button>
-            <button type="button" class="ms-pn-add" data-pn="manage" title="Add or reorder pages">+</button>
           `;
 
           nav.querySelector('[data-pn="grid"]')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openGoodNotesPageSheet();
+          });
+          nav.querySelector('[data-pn="status"]')?.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
             openGoodNotesPageSheet();
@@ -3019,20 +2978,6 @@ private enum NativeWebPolishScript {
             e.preventDefault();
             e.stopPropagation();
             jumpToPageIndex(activePageIndex + 1, true);
-          });
-          nav.querySelector('[data-pn="manage"]')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            postNative({ id: 0, cmd: 'haptic', kind: 'light' });
-            document.getElementById('btnPages')?.click();
-          });
-          nav.querySelectorAll('[data-pn-idx]').forEach((chip) => {
-            chip.addEventListener('click', (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              const idx = parseInt(chip.getAttribute('data-pn-idx') || '0', 10);
-              jumpToPageIndex(idx, true);
-            });
           });
         }
         syncPageNavigatorActiveState();
