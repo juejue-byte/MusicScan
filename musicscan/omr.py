@@ -248,18 +248,32 @@ def plausibility(r: dict) -> float:
 
 
 def transcribe_checked(im: Image.Image, detector: str = "28m") -> tuple[dict, Image.Image]:
-    """Read the page, and read it again sharpened. On a slightly soft phone photo the reader can lose which staves
-    belong to one row (a piano page then splits into twice the rows, or bars vanish) while every symbol is still
-    found. Sharpening usually restores that but can also break a page that was read right, so when the two
-    readings find a different number of bars, the one whose layout is more believable (plausibility) is kept.
-    On Sheetly's 31 simulated phone photos this raised strict F1 from 60% to 83% (bench/REPORT.md). Returns the
-    reading and the image it came from, for the second opinion."""
+    """Read the page, and read it again sharpened when layout plausibility leaves room to improve.
+    On a slightly soft phone photo the reader can lose which staves belong to one row (a piano page then splits
+    into twice the rows, or bars vanish) while every symbol is still found. Sharpening usually restores that,
+    so when the two readings find a different number of bars, the one whose layout is more believable
+    (plausibility) is kept. When the first pass already achieves near-perfect plausibility and high confidence,
+    the redundant sharpened pass is skipped to cut GPU latency roughly in half."""
     r = transcribe(im, detector=detector)
+    a = len(r["measures"])
+    st = r.get("stats") or {}
+    pr = plausibility(r) if a > 0 else 0.0
+    already_clean = (
+        a > 0
+        and not any(m.get("doubled") for m in r.get("measures", []))
+        and (
+            pr >= 1.999
+            or (pr >= 1.96 and float(st.get("mean_conf", 0.0)) >= 0.96 and float(st.get("low_frac", 1.0)) < 0.02)
+        )
+    )
+    if already_clean:
+        r["layout_check"] = {"bars": [a, a], "used": "original", "skipped": True}
+        return r, im
     sim = sharpen(im)
     s = transcribe(sim, detector=detector)
-    a, b = len(r["measures"]), len(s["measures"])
+    b = len(s["measures"])
     secs = round(r["seconds"] + s["seconds"], 1)
-    if a != b and plausibility(s) > plausibility(r):
+    if a != b and plausibility(s) > pr:
         s["layout_check"] = {"bars": [a, b], "used": "sharpened"}
         s["seconds"] = secs
         return s, sim
@@ -706,7 +720,9 @@ def should_skip_second_opinion(r: dict) -> bool:
     if min_conf > 1.0:
         return False
     st = r.get("stats") or {}
-    if st.get("measures", 0) <= 0 or st.get("symbols", 0) < 10:
+    if st.get("measures", 0) <= 0:
+        return True  # never waste GPU time running a second opinion when 0 bars were detected
+    if st.get("symbols", 0) < 10:
         return False
     if float(st.get("mean_conf", 0.0)) < min_conf:
         return False

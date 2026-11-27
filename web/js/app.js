@@ -166,9 +166,20 @@ async function startUpload(file) {
     });
     S.job = id;
     setStep('done'); clearInterval(tick); $('#progressBar').style.width = '100%';
+    const extras = Array.isArray(file.more) ? file.more : [];
+    if (!result.stats?.measures && extras.length > 0) {
+      const next = extras[0];
+      next.more = extras.slice(1);
+      toast('No music found on that page — reading the next page…', 3500);
+      return startUpload(next);
+    }
     openResult(result);
     // a PDF with more pages: the rest are read one after another and added to the end as they finish
     if (pages > 1 && result.stats?.measures) addPages(file, { from: 1, total: pages });
+    // multi-page camera scan / photo selection: read and append each remaining page in order
+    if (extras.length && result.stats?.measures) {
+      for (const m of extras) addPages(m);
+    }
   } catch (e) {
     clearInterval(tick);
     show('viewUpload');
@@ -204,9 +215,19 @@ function openResult(res) {
     const card = $('#modalCard');
     $('#modal').classList.remove('hidden');
     card.innerHTML = `<h2>No music found in this photo</h2>
-      <p class="muted">We couldn't find any staff lines. Make sure the page is printed sheet music, fills most of the frame, and is in focus, then try again.</p>
-      <div class="modal-actions"><button class="btn primary" data-m="close">Try another photo</button></div>`;
-    card.onclick = (ev) => { if (ev.target.closest('[data-m]')) closeModal(); };
+      <p class="muted">We couldn't detect any horizontal staff lines. Make sure the page is printed sheet music held upright (not sideways), fills most of the frame, and is in sharp focus, then try again.</p>
+      <div class="modal-actions">${native.isNative ? '<button class="btn ghost" data-m="close">Close</button><button class="btn primary" data-m="rescan">Scan again</button>' : '<button class="btn primary" data-m="close">Try another photo</button>'}</div>`;
+    card.onclick = async (ev) => {
+      const act = ev.target.closest('[data-m]')?.dataset.m;
+      if (!act) return;
+      closeModal();
+      if (act === 'rescan' && native.isNative) {
+        try {
+          const f = await native.scanDocument();
+          if (f) startUpload(f);
+        } catch (err) { toast(err.message); }
+      }
+    };
     return;
   }
   S.result = res;
@@ -2177,8 +2198,6 @@ function wire() {
         const f = await native.scanDocument();
         if (!f) return;
         await startUpload(f);
-        // the other pages of a multi-page scan are read after the first and added in order
-        if (S.score && f.more?.length) for (const m of f.more) addPages(m);
       } catch (err) { toast(err.message); }
     });
     const srv = document.createElement('button');

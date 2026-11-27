@@ -131,7 +131,7 @@ class OMRWorker:
                 r["second_opinion"] = {
                     "aligned": True,
                     "skipped": True,
-                    "reason": "high_confidence",
+                    "reason": "no_measures" if not (r.get("stats") or {}).get("measures") else "high_confidence",
                     "bars": 0,
                     "filled": [],
                     "seconds": 0.0,
