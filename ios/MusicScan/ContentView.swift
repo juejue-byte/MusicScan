@@ -147,6 +147,16 @@ struct ContentView: View {
                                 .zIndex(4)
                         }
 
+                        // Native Optical Music Reading Progress UI (stage == .reading)
+                        if selectedTab == .review
+                            && bridge.stage == .reading
+                            && !bridge.isModalOpen
+                            && loadError == nil {
+                            NativeReadingProgressView(bridge: bridge, store: scoreStore)
+                                .transition(.opacity)
+                                .zIndex(4.5)
+                        }
+
                         // Tab 2 overlays (Native Score Library / Empty State / Error)
                         if selectedTab == .review {
                             if let loadError {
@@ -374,7 +384,17 @@ struct ContentView: View {
             let rightWidth: CGFloat = min(max(size.width * 0.22, 236), 280)
             return EdgeInsets(top: 52, leading: leftWidth, bottom: 0, trailing: rightWidth)
         } else {
-            let topBarHeight: CGFloat = 44 + (bridge.editorMode == .fix ? 96 : 0)
+            let fixStripHeight: CGFloat
+            if bridge.editorMode == .fix {
+                if bridge.showFullPageInFix {
+                    fixStripHeight = bridge.isFixPhotoExpanded ? 236 : 172
+                } else {
+                    fixStripHeight = bridge.isFixPhotoExpanded ? 164 : 124
+                }
+            } else {
+                fixStripHeight = 0
+            }
+            let topBarHeight: CGFloat = 44 + fixStripHeight
             let bottomDockHeight: CGFloat = (bridge.editorMode == .play ? 62 : 104)
             return EdgeInsets(top: topBarHeight, leading: 0, bottom: bottomDockHeight, trailing: 0)
         }

@@ -106,6 +106,13 @@ final class LocalScoreStore {
 
     private(set) var scores: [LocalScoreMeta] = []
     private(set) var activeScoreID: String?
+    /// Incremented whenever background page images finish downloading or local scan JPEGs are staged,
+    /// so SwiftUI views observing `croppedBarImage` or `pageImage` re-render immediately.
+    var imageCacheRevision: Int = 0
+    /// Holds the most recently normalized on-device scan JPEGs so a newly created score has 0ms access
+    /// to its original photo crops before remote `page_<jobID>.png` finishes downloading.
+    var latestStagedScanJPEGs: [Data] = []
+    var latestPreviewImage: UIImage?
 
     nonisolated static var scoresRootDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -125,6 +132,14 @@ final class LocalScoreStore {
 
     private init() {
         reloadAll()
+    }
+
+    func stageNormalizedScanPages(_ jpegs: [Data]) {
+        latestStagedScanJPEGs = jpegs
+        if let first = jpegs.first, let img = UIImage(data: first) {
+            latestPreviewImage = img
+        }
+        imageCacheRevision &+= 1
     }
 
     func reloadAll() {
@@ -215,6 +230,7 @@ final class LocalScoreStore {
     }
 
     func thumbnailImage(for scoreID: String, jobID: String? = nil) -> UIImage? {
+        _ = imageCacheRevision
         let dir = Self.directory(for: scoreID)
         let thumbURL = dir.appendingPathComponent("thumb.jpg")
         if let img = UIImage(contentsOfFile: thumbURL.path) {
@@ -225,24 +241,46 @@ final class LocalScoreStore {
             if let img = UIImage(contentsOfFile: jobPNG.path) { return img }
             let jobJPG = dir.appendingPathComponent("orig_\(jobID).jpg")
             if let img = UIImage(contentsOfFile: jobJPG.path) { return img }
+            if let demoImg = Self.bundledDemoPageImage(for: jobID) { return demoImg }
         }
         let page1URL = dir.appendingPathComponent("page_1.jpg")
         return UIImage(contentsOfFile: page1URL.path)
     }
 
     func pageImage(for scoreID: String, pageIndex: Int = 0, jobID: String? = nil) -> UIImage? {
+        _ = imageCacheRevision
         let dir = Self.directory(for: scoreID)
         if let jobID, !jobID.isEmpty {
             let jobPNG = dir.appendingPathComponent("page_\(jobID).png")
             if let img = UIImage(contentsOfFile: jobPNG.path) { return img }
             let jobJPG = dir.appendingPathComponent("orig_\(jobID).jpg")
             if let img = UIImage(contentsOfFile: jobJPG.path) { return img }
+            if let demoImg = Self.bundledDemoPageImage(for: jobID) { return demoImg }
         }
         let idx = max(1, pageIndex + 1)
         let pageJPG = dir.appendingPathComponent("page_\(idx).jpg")
         if let img = UIImage(contentsOfFile: pageJPG.path) { return img }
         let page1JPG = dir.appendingPathComponent("page_1.jpg")
-        return UIImage(contentsOfFile: page1JPG.path)
+        if let img = UIImage(contentsOfFile: page1JPG.path) { return img }
+        if pageIndex < latestStagedScanJPEGs.count,
+           let staged = UIImage(data: latestStagedScanJPEGs[pageIndex]) {
+            return staged
+        }
+        return latestPreviewImage
+    }
+
+    nonisolated private static func bundledDemoPageImage(for jobID: String) -> UIImage? {
+        let clean = jobID.replacingOccurrences(of: "demo_", with: "")
+        guard clean.hasPrefix("sample") else { return nil }
+        if let url = Bundle.main.url(forResource: "page", withExtension: "jpg", subdirectory: "web.bundle/demo/\(clean)"),
+           let img = UIImage(contentsOfFile: url.path) {
+            return img
+        }
+        if let url = Bundle.main.url(forResource: "original", withExtension: "jpg", subdirectory: "web.bundle/demo/\(clean)"),
+           let img = UIImage(contentsOfFile: url.path) {
+            return img
+        }
+        return nil
     }
 
     /// Crops the active bar from the stored page image using normalized `NormalizedCropRect` (0...1 coordinates).
@@ -252,12 +290,15 @@ final class LocalScoreStore {
         jobID: String? = nil,
         cropRect: NormalizedCropRect?
     ) -> UIImage? {
+        _ = imageCacheRevision
         guard let fullImage = pageImage(for: scoreID, pageIndex: pageIndex, jobID: jobID),
-              let cgImage = fullImage.cgImage,
-              let cropRect,
+              let cgImage = fullImage.cgImage else {
+            return nil
+        }
+        guard let cropRect,
               cropRect.width > 0.01,
               cropRect.height > 0.01 else {
-            return nil
+            return fullImage
         }
 
         let imgW = CGFloat(cgImage.width)
@@ -269,7 +310,7 @@ final class LocalScoreStore {
         let h = max(8, min(imgH - y0, CGFloat(cropRect.height) * imgH))
 
         let rect = CGRect(x: x0, y: y0, width: w, height: h).integral
-        guard let cropped = cgImage.cropping(to: rect) else { return nil }
+        guard let cropped = cgImage.cropping(to: rect) else { return fullImage }
         return UIImage(cgImage: cropped, scale: fullImage.scale, orientation: fullImage.imageOrientation)
     }
 
@@ -398,7 +439,26 @@ final class LocalScoreStore {
         writeMeta(updatedMeta)
         activeScoreID = id
 
-        // Download & cache page images for offline Fix-It comparison if not yet cached on disk
+        // Immediately seed page_1.jpg / thumb.jpg from staged on-device scan JPEGs if not yet written,
+        // so Fix-It photo comparison has 0ms latency right after a scan completes.
+        if !latestStagedScanJPEGs.isEmpty {
+            let page1URL = dir.appendingPathComponent("page_1.jpg")
+            if !FileManager.default.fileExists(atPath: page1URL.path) {
+                let orderedJobs = ([primaryJobID].compactMap { $0 }) + Array(pagesMap.keys)
+                for (idx, jpegData) in latestStagedScanJPEGs.enumerated() {
+                    let jid = idx < orderedJobs.count ? orderedJobs[idx] : nil
+                    Self.storeLocalScanPageImage(
+                        jpegData: jpegData,
+                        scoreID: id,
+                        pageNumber: idx + 1,
+                        jobID: jid
+                    )
+                }
+                imageCacheRevision &+= 1
+            }
+        }
+
+        // Download & cache deskewed page images for offline Fix-It comparison if not yet cached on disk
         let jobsToCache = Set(([primaryJobID].compactMap { $0 }) + Array(pagesMap.keys))
         if !jobsToCache.isEmpty {
             Task.detached(priority: .utility) {
@@ -509,8 +569,9 @@ final class LocalScoreStore {
         let rawAddress = UserDefaults.standard.string(forKey: AppConfig.serverURLStorageKey) ?? AppConfig.defaultServerAddress
         guard let baseURL = ServerConfig.normalizedURL(from: rawAddress) else { return }
         let bearer = await AuthManager.shared.bearerHeader()
+        var didWriteImage = false
 
-        for (index, jobID) in jobIDs.enumerated() where !jobID.isEmpty {
+        for (index, jobID) in jobIDs.enumerated() where !jobID.isEmpty && !jobID.hasPrefix("sample") && !jobID.hasPrefix("demo_") {
             let pngDest = dir.appendingPathComponent("page_\(jobID).png")
             let origDest = dir.appendingPathComponent("orig_\(jobID).jpg")
             let pageNumDest = dir.appendingPathComponent("page_\(index + 1).jpg")
@@ -531,6 +592,7 @@ final class LocalScoreStore {
                     if index == 0 && !FileManager.default.fileExists(atPath: thumbDest.path) {
                         writeThumbnail(from: data, to: thumbDest)
                     }
+                    didWriteImage = true
                 }
             }
 
@@ -549,7 +611,14 @@ final class LocalScoreStore {
                     if index == 0 && !FileManager.default.fileExists(atPath: thumbDest.path) {
                         writeThumbnail(from: data, to: thumbDest)
                     }
+                    didWriteImage = true
                 }
+            }
+        }
+
+        if didWriteImage {
+            await MainActor.run {
+                LocalScoreStore.shared.imageCacheRevision &+= 1
             }
         }
     }

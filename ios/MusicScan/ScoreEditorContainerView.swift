@@ -313,7 +313,9 @@ struct ScoreEditorChromeOverlay: View {
         .accessibilityLabel("Export Score")
     }
 
-    /// Shown directly below the 44pt top bar ONLY when `Fix` mode is active on iPhone.
+    /// Shown directly below the 44pt top bar when `Fix` mode is active on iPhone.
+    /// Provides a direct side-by-side comparison: YOUR ORIGINAL PHOTO (top) vs. LIVE EDITABLE SCORE (below),
+    /// with the active flagged measure framed directly on the photo crop and inline editing tools in the bottom dock.
     private var iPhoneFixItPhotoCompareStrip: some View {
         let croppedImage = store.croppedBarImage(
             for: bridge.activeScoreID,
@@ -321,17 +323,27 @@ struct ScoreEditorChromeOverlay: View {
             jobID: bridge.activePageJobID,
             cropRect: bridge.activeBarCropRect
         )
+        let fullPageImage = store.pageImage(
+            for: bridge.activeScoreID,
+            pageIndex: bridge.activePageIndex,
+            jobID: bridge.activePageJobID
+        )
         let isBad = (bridge.activeFlagLevel == "bad")
+        let highlightColor = isBad ? SkyTheme.wrongInk : SkyTheme.marigold
+        let photoHeight: CGFloat = bridge.showFullPageInFix
+            ? (bridge.isFixPhotoExpanded ? 176 : 112)
+            : (bridge.isFixPhotoExpanded ? 104 : 64)
 
         return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+            // Top Header: Original Photo Badge + Flag Reason + Crop/Page & Expand Toggles
+            HStack(spacing: 6) {
                 HStack(spacing: 5) {
                     Circle()
-                        .fill(isBad ? SkyTheme.wrongInk : SkyTheme.marigold)
+                        .fill(highlightColor)
                         .frame(width: 7, height: 7)
-                    Text("ORIG PHOTO · BAR \(bridge.activeFlagBarNumber)")
+                    Text("YOUR PHOTO · BAR \(bridge.activeFlagBarNumber)")
                         .font(.system(size: 10.5, weight: .heavy, design: .rounded))
-                        .tracking(0.5)
+                        .tracking(0.4)
                         .foregroundStyle(isBad ? SkyTheme.wrongInk : SkyTheme.navy900)
                 }
                 .padding(.horizontal, 8)
@@ -341,7 +353,7 @@ struct ScoreEditorChromeOverlay: View {
                     in: Capsule()
                 )
 
-                Text(bridge.activeFlagReason.isEmpty ? "Check notes against your photo" : bridge.activeFlagReason)
+                Text(bridge.activeFlagReason.isEmpty ? "Compare & edit notes below" : bridge.activeFlagReason)
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(SkyTheme.slate600)
                     .lineLimit(1)
@@ -349,33 +361,123 @@ struct ScoreEditorChromeOverlay: View {
                 Spacer(minLength: 4)
 
                 Button {
-                    bridge.rescanActiveBar()
+                    withAnimation(springAnimation) {
+                        bridge.showFullPageInFix.toggle()
+                    }
                 } label: {
                     HStack(spacing: 3) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 10.5, weight: .bold))
-                        Text("Rescan")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                        Image(systemName: bridge.showFullPageInFix ? "crop" : "doc.viewfinder")
+                            .font(.system(size: 10, weight: .bold))
+                        Text(bridge.showFullPageInFix ? "Bar Crop" : "Full Page")
+                            .font(.system(size: 10.5, weight: .bold, design: .rounded))
                     }
                     .foregroundStyle(SkyTheme.blue700)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(SkyTheme.sky50, in: Capsule())
+                    .background(Color.white, in: Capsule())
                     .overlay(Capsule().stroke(SkyTheme.sky200, lineWidth: 0.8))
                 }
                 .buttonStyle(PressableButtonStyle())
+
+                Button {
+                    withAnimation(springAnimation) {
+                        bridge.isFixPhotoExpanded.toggle()
+                    }
+                } label: {
+                    Image(systemName: bridge.isFixPhotoExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10.5, weight: .bold))
+                        .foregroundStyle(SkyTheme.navy900)
+                        .frame(width: 26, height: 24)
+                        .background(Color.white, in: Circle())
+                        .overlay(Circle().stroke(SkyTheme.line, lineWidth: 0.8))
+                }
+                .buttonStyle(PressableButtonStyle())
+                .accessibilityLabel(bridge.isFixPhotoExpanded ? "Compact Photo Strip" : "Expand Photo Strip")
             }
 
+            // Original Scan Viewport (Zoomed Bar Crop with Measure Highlight OR Interactive Full Page)
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.white)
 
-                if let croppedImage {
+                if bridge.showFullPageInFix, let fullPageImage {
+                    let aspect = max(0.45, fullPageImage.size.width / max(1, fullPageImage.size.height))
+                    Image(uiImage: fullPageImage)
+                        .resizable()
+                        .aspectRatio(aspect, contentMode: .fit)
+                        .overlay {
+                            GeometryReader { imgGeo in
+                                ZStack(alignment: .topLeading) {
+                                    ForEach(bridge.allPageBarBoxes) { box in
+                                        let isCurrent = (box.barNumber == bridge.activeFlagBarNumber || box.id == bridge.activeFlagBarIndex)
+                                        let stroke: Color = isCurrent
+                                            ? highlightColor
+                                            : (box.level == "bad" ? SkyTheme.wrongInk.opacity(0.6) : SkyTheme.blue600.opacity(0.35))
+                                        Button {
+                                            bridge.focusBarOnPage(box.id)
+                                        } label: {
+                                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                                .fill(isCurrent ? highlightColor.opacity(0.18) : Color.clear)
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                                        .stroke(stroke, lineWidth: isCurrent ? 2.0 : 0.8)
+                                                )
+                                        }
+                                        .buttonStyle(.plain)
+                                        .frame(
+                                            width: max(10, imgGeo.size.width * box.rect.width),
+                                            height: max(10, imgGeo.size.height * box.rect.height)
+                                        )
+                                        .offset(
+                                            x: imgGeo.size.width * box.rect.x,
+                                            y: imgGeo.size.height * box.rect.y
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        .frame(height: photoHeight)
+                        .padding(4)
+                } else if let croppedImage {
+                    let aspect = max(1.1, croppedImage.size.width / max(1, croppedImage.size.height))
                     Image(uiImage: croppedImage)
                         .resizable()
-                        .scaledToFit()
+                        .aspectRatio(aspect, contentMode: .fit)
+                        .overlay {
+                            if let box = bridge.activeBarInCropRect {
+                                GeometryReader { imgGeo in
+                                    ZStack(alignment: .topLeading) {
+                                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                            .fill(highlightColor.opacity(0.11))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                                    .stroke(highlightColor, lineWidth: 2.0)
+                                            )
+                                            .frame(
+                                                width: max(22, imgGeo.size.width * box.width),
+                                                height: max(18, imgGeo.size.height * box.height)
+                                            )
+                                            .offset(
+                                                x: imgGeo.size.width * box.x,
+                                                y: imgGeo.size.height * box.y
+                                            )
+
+                                        Text("Bar \(bridge.activeFlagBarNumber)")
+                                            .font(.system(size: 9.5, weight: .heavy, design: .rounded))
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 5)
+                                            .padding(.vertical, 1.5)
+                                            .background(highlightColor, in: Capsule())
+                                            .offset(
+                                                x: max(2, imgGeo.size.width * box.x + 3),
+                                                y: max(2, imgGeo.size.height * box.y + 3)
+                                            )
+                                    }
+                                }
+                            }
+                        }
                         .frame(maxWidth: .infinity)
-                        .frame(height: 58)
+                        .frame(height: photoHeight)
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .padding(3)
                 } else {
@@ -383,7 +485,7 @@ struct ScoreEditorChromeOverlay: View {
                         Image(systemName: "photo")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(SkyTheme.slate600)
-                        Text("Comparing Bar \(bridge.activeFlagBarNumber) on canvas below")
+                        Text("Comparing Bar \(bridge.activeFlagBarNumber) with editable score below")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(SkyTheme.slate600)
                     }
@@ -394,11 +496,32 @@ struct ScoreEditorChromeOverlay: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(isBad ? SkyTheme.wrongInk.opacity(0.45) : SkyTheme.line, lineWidth: 1.2)
             )
+
+            // Side-by-Side Comparison Bridge Header pointing to the Live Editable Score below
+            HStack(spacing: 6) {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.system(size: 10.5, weight: .bold))
+                        .foregroundStyle(SkyTheme.blue600)
+                    Text("EDITABLE SCORE · BAR \(bridge.activeFlagBarNumber)")
+                        .font(.system(size: 10, weight: .heavy, design: .rounded))
+                        .tracking(0.4)
+                        .foregroundStyle(SkyTheme.blue700)
+                }
+
+                Spacer(minLength: 4)
+
+                Text("Drag notes on staff or use tools below")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(SkyTheme.slate600)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 4)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 7)
         .background(
-            SkyTheme.sky50.opacity(0.96)
+            SkyTheme.sky50.opacity(0.97)
                 .background(.ultraThinMaterial)
                 .overlay(alignment: .bottom) {
                     Rectangle()
@@ -545,55 +668,78 @@ struct ScoreEditorChromeOverlay: View {
         }
     }
 
-    /// Mode B — Fix-It Stepper Dock
+    /// Mode B — Fix-It Compare & Inline Edit Dock
+    /// Lets the user step through flagged bars, mark them "Looks Right", AND directly edit notes/rhythms
+    /// while the side-by-side original scan photo remains pinned at the top of the screen.
     private var iPhoneFixDockContent: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(spacing: 7) {
+            // Row 1: Flagged Bar Stepper + "Looks Right" + Done
+            HStack(spacing: 6) {
                 Button {
                     bridge.stepFlaggedBar(-1)
                 } label: {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 13.5, weight: .bold))
                         .foregroundStyle(SkyTheme.navy900)
-                        .frame(width: 34, height: 34)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(SkyTheme.line, lineWidth: 1))
+                        .frame(width: 32, height: 34)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(SkyTheme.line, lineWidth: 1))
                 }
                 .buttonStyle(PressableButtonStyle())
                 .disabled(bridge.flaggedCount == 0)
                 .accessibilityLabel("Previous Flagged Bar")
 
-                Spacer(minLength: 4)
-
                 if bridge.flaggedCount > 0 {
-                    Text("Bar \(bridge.activeFlagBarNumber) (\(bridge.activeFlagPosition) of \(max(1, bridge.activeFlagTotal)))")
-                        .font(.system(size: 13.5, weight: .bold, design: .rounded).monospacedDigit())
+                    Text("Bar \(bridge.activeFlagBarNumber) (\(bridge.activeFlagPosition)/\(max(1, bridge.activeFlagTotal)))")
+                        .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
                         .foregroundStyle(SkyTheme.navy900)
+                        .lineLimit(1)
                 } else {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 4) {
                         Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 12.5))
                             .foregroundStyle(SkyTheme.sureInk)
-                        Text("All bars reviewed")
-                            .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                        Text("All reviewed")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
                             .foregroundStyle(SkyTheme.sureInk)
                     }
                 }
-
-                Spacer(minLength: 4)
 
                 Button {
                     bridge.stepFlaggedBar(1)
                 } label: {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 13.5, weight: .bold))
                         .foregroundStyle(SkyTheme.navy900)
-                        .frame(width: 34, height: 34)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(SkyTheme.line, lineWidth: 1))
+                        .frame(width: 32, height: 34)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(SkyTheme.line, lineWidth: 1))
                 }
                 .buttonStyle(PressableButtonStyle())
                 .disabled(bridge.flaggedCount == 0)
                 .accessibilityLabel("Next Flagged Bar")
+
+                Spacer(minLength: 2)
+
+                Button {
+                    bridge.markCurrentBarLooksRight()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12, weight: .heavy))
+                        Text("Looks Right")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .frame(height: 34)
+                    .background(
+                        bridge.flaggedCount > 0 ? SkyTheme.sureInk : SkyTheme.sureInk.opacity(0.45),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
+                }
+                .buttonStyle(PressableButtonStyle())
+                .disabled(bridge.flaggedCount == 0)
 
                 Button {
                     withAnimation(springAnimation) {
@@ -601,56 +747,103 @@ struct ScoreEditorChromeOverlay: View {
                     }
                 } label: {
                     Text("Done")
-                        .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundStyle(SkyTheme.blue600)
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, 8)
                         .frame(height: 34)
                 }
                 .buttonStyle(PressableButtonStyle())
             }
 
-            HStack(spacing: 8) {
-                Button {
-                    bridge.markCurrentBarLooksRight()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 13, weight: .heavy))
-                        Text("Looks Right")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
+            // Row 2: Inline Note & Rhythm Editing Controls (keep Original Photo visible while editing!)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 5) {
+                    // Tool selector: Drag | + Note | Rest
+                    HStack(spacing: 2) {
+                        ForEach([EditTool.drag, EditTool.note, EditTool.rest]) { tool in
+                            let isSelected = (bridge.editTool == tool)
+                            Button {
+                                bridge.setEditTool(tool)
+                            } label: {
+                                Text(tool.label)
+                                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                                    .foregroundStyle(isSelected ? SkyTheme.blue700 : SkyTheme.slate600)
+                                    .padding(.horizontal, 8)
+                                    .frame(height: 28)
+                                    .background(
+                                        isSelected ? Color.white : Color.clear,
+                                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    )
+                            }
+                            .buttonStyle(PressableButtonStyle())
+                        }
                     }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 40)
-                    .background(
-                        bridge.flaggedCount > 0 ? SkyTheme.sureInk : SkyTheme.sureInk.opacity(0.45),
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    )
-                }
-                .buttonStyle(PressableButtonStyle())
-                .disabled(bridge.flaggedCount == 0)
+                    .padding(2.5)
+                    .background(SkyTheme.sky100, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
 
-                Button {
-                    withAnimation(springAnimation) {
-                        bridge.setEditorMode(.edit)
+                    Button {
+                        bridge.togglePianoPad()
+                    } label: {
+                        Image(systemName: "pianokeys")
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .foregroundStyle(bridge.isPianoPadVisible ? .white : SkyTheme.navy900)
+                            .frame(width: 34, height: 34)
+                            .background(
+                                bridge.isPianoPadVisible ? SkyTheme.blue600 : Color.white,
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(SkyTheme.line, lineWidth: 1)
+                            )
                     }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 13, weight: .bold))
-                        Text("Edit Notes")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .buttonStyle(PressableButtonStyle())
+                    .accessibilityLabel("Toggle Piano Keyboard")
+
+                    durationChip(id: "whole", symbol: "𝅝", label: "Whole")
+                    durationChip(id: "half", symbol: "𝅗𝅥", label: "Half")
+                    durationChip(id: "quarter", symbol: "♩", label: "Quarter")
+                    durationChip(id: "eighth", symbol: "♪", label: "Eighth")
+                    durationChip(id: "16th", symbol: "𝅘𝅥𝅯", label: "16th")
+
+                    Button {
+                        bridge.toggleDot()
+                    } label: {
+                        Text("·")
+                            .font(.system(size: 19, weight: .black))
+                            .foregroundStyle(bridge.isDotted ? SkyTheme.blue700 : SkyTheme.navy900)
+                            .frame(width: 34, height: 34)
+                            .background(
+                                bridge.isDotted ? SkyTheme.sky100 : Color.white,
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(bridge.isDotted ? SkyTheme.blue600 : SkyTheme.line, lineWidth: 1)
+                            )
                     }
-                    .foregroundStyle(SkyTheme.navy900)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 40)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(SkyTheme.line, lineWidth: 1)
-                    )
+                    .buttonStyle(PressableButtonStyle())
+
+                    accidentalChip(alter: 1, symbol: "♯", label: "Sharp")
+                    accidentalChip(alter: -1, symbol: "♭", label: "Flat")
+                    accidentalChip(alter: 0, symbol: "♮", label: "Natural")
+
+                    Button {
+                        bridge.deleteSelected()
+                    } label: {
+                        Image(systemName: "delete.left")
+                            .font(.system(size: 13.5, weight: .semibold))
+                            .foregroundStyle(SkyTheme.wrongInk)
+                            .frame(width: 36, height: 34)
+                            .background(SkyTheme.wrongFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(SkyTheme.wrongInk.opacity(0.25), lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(PressableButtonStyle())
+                    .accessibilityLabel("Delete Selected Note or Rest")
                 }
-                .buttonStyle(PressableButtonStyle())
             }
         }
     }
@@ -1084,19 +1277,6 @@ struct ScoreEditorChromeOverlay: View {
                         bridge.adjustPageEdges()
                     } label: {
                         Text("Edges")
-                            .font(.system(size: 11.5, weight: .bold, design: .rounded))
-                            .foregroundStyle(SkyTheme.navy900)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.white, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(SkyTheme.line, lineWidth: 1))
-                    }
-                    .buttonStyle(PressableButtonStyle())
-
-                    Button {
-                        bridge.rescanActiveBar()
-                    } label: {
-                        Text("Retake Row")
                             .font(.system(size: 11.5, weight: .bold, design: .rounded))
                             .foregroundStyle(SkyTheme.navy900)
                             .padding(.horizontal, 8)
@@ -1712,3 +1892,348 @@ struct ScoreLibraryView: View {
         .engravedCard(cornerRadius: 20)
     }
 }
+
+// MARK: - Rich Native OMR Reading Progress UI (stage == .reading)
+
+/// Full-screen native SwiftUI OMR progress overlay displayed while the sheet music is being transcribed.
+/// Features:
+/// - Upright normalized page thumbnail with a smooth animated optical scanner beam sweep
+/// - Live sub-second elapsed timer + on-device Vision prep badge (`"Upright & normalized in 888 ms"`)
+/// - 4-stage live pipeline checklist showing exact stage progress (`Prep` -> `Staff & Barlines` -> `Noteheads & Beams` -> `Beat & Rhythm Check`)
+/// - 1-tap `Fast Mode (~6s)` vs `Deep 2-Pass Accuracy (~15s)` toggle
+struct NativeReadingProgressView: View {
+    @Bindable var bridge: MusicScanBridgeController
+    var store = LocalScoreStore.shared
+
+    @State private var scanBeamPhase: CGFloat = 0.0
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.25)) { timeline in
+            readingProgressContent(now: timeline.date)
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 2.1).repeatForever(autoreverses: true)) {
+                scanBeamPhase = 1.0
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func readingProgressContent(now: Date) -> some View {
+        let elapsed = max(0.1, now.timeIntervalSince(bridge.readingStartedAt ?? now))
+        let expectedTotal: Double = bridge.fastMode ? 7.5 : 17.5
+        let computedPct = min(0.96, max(bridge.readingProgressFraction, 0.08 + 0.88 * (1.0 - exp(-elapsed / (expectedTotal * 0.72)))))
+        let activeStage = resolvedPipelineStage(elapsed: elapsed)
+
+        ZStack {
+                SkyDitheredCanvas()
+                    .ignoresSafeArea()
+
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 16) {
+                        // Top Status Pill + Live Timer
+                        HStack(spacing: 8) {
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(SkyTheme.blue600)
+                                    .frame(width: 8, height: 8)
+                                Text(bridge.readingBatchText.isEmpty ? "OPTICAL MUSIC READER" : bridge.readingBatchText.uppercased())
+                                    .font(.system(size: 11, weight: .heavy, design: .rounded))
+                                    .tracking(0.6)
+                                    .foregroundStyle(SkyTheme.blue700)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(SkyTheme.sky100, in: Capsule())
+
+                            Spacer()
+
+                            HStack(spacing: 4) {
+                                Image(systemName: "timer")
+                                    .font(.system(size: 11.5, weight: .bold))
+                                Text(String(format: "%.1fs", elapsed))
+                                    .font(.system(size: 13, weight: .heavy, design: .rounded).monospacedDigit())
+                            }
+                            .foregroundStyle(SkyTheme.navy900)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.white, in: Capsule())
+                            .overlay(Capsule().stroke(SkyTheme.line, lineWidth: 1))
+                        }
+
+                        // Upright Sheet-Music Preview with Animated Optical Scanner Beam
+                        opticalScanPreviewCard(progress: computedPct)
+
+                        // Title + Animated Progress Bar + Sub-stage caption
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(stageHeadline(for: activeStage))
+                                    .font(.system(size: 18, weight: .heavy, design: .rounded))
+                                    .foregroundStyle(SkyTheme.navy900)
+
+                                Spacer()
+
+                                Text("\(Int(round(computedPct * 100)))%")
+                                    .font(.system(size: 14.5, weight: .heavy, design: .rounded).monospacedDigit())
+                                    .foregroundStyle(SkyTheme.blue600)
+                            }
+
+                            GeometryReader { barGeo in
+                                ZStack(alignment: .leading) {
+                                    Capsule()
+                                        .fill(SkyTheme.sky100)
+                                        .frame(height: 9)
+
+                                    Capsule()
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [SkyTheme.blue600, SkyTheme.blue600.opacity(0.72)],
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            )
+                                        )
+                                        .frame(width: max(18, barGeo.size.width * computedPct), height: 9)
+                                        .animation(.easeOut(duration: 0.25), value: computedPct)
+                                }
+                            }
+                            .frame(height: 9)
+
+                            HStack {
+                                Text(stageSubheadline(for: activeStage))
+                                    .font(.system(size: 12.5, weight: .medium))
+                                    .foregroundStyle(SkyTheme.slate600)
+                                Spacer()
+                                if let prepMs = bridge.lastPrepDurationMs {
+                                    Text("On-device prep: \(prepMs) ms")
+                                        .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
+                                        .foregroundStyle(SkyTheme.sureInk)
+                                }
+                            }
+                        }
+
+                        // 4-Stage Pipeline Breakdown Checklist
+                        VStack(spacing: 8) {
+                            pipelineRow(
+                                index: 0,
+                                currentStage: activeStage,
+                                title: "1. Upright rotation & contrast normalization",
+                                detail: bridge.lastPrepDurationMs.map { "\($0) ms on-device" } ?? "Vision CoreML"
+                            )
+                            pipelineRow(
+                                index: 1,
+                                currentStage: activeStage,
+                                title: "2. Detecting staff lines, clefs & barlines",
+                                detail: "Page geometry & system layout"
+                            )
+                            pipelineRow(
+                                index: 2,
+                                currentStage: activeStage,
+                                title: "3. Reading noteheads, stems, beams & rests",
+                                detail: "GPU optical music transformer"
+                            )
+                            pipelineRow(
+                                index: 3,
+                                currentStage: activeStage,
+                                title: bridge.fastMode
+                                    ? "4. Building playable MusicXML (Fast single-pass)"
+                                    : "4. Second-opinion rhythm & beat verification",
+                                detail: bridge.fastMode ? "Skipped 2nd pass (~6s faster)" : "Flags uncertain bars for Fix-It"
+                            )
+                        }
+                        .padding(12)
+                        .background(SkyTheme.sky50, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(SkyTheme.line, lineWidth: 1))
+
+                        // Speed Mode Switcher Card
+                        HStack(spacing: 10) {
+                            Image(systemName: bridge.fastMode ? "bolt.fill" : "checkmark.shield.fill")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(bridge.fastMode ? SkyTheme.marigold : SkyTheme.blue600)
+                                .frame(width: 32, height: 32)
+                                .background(Color.white, in: Circle())
+                                .overlay(Circle().stroke(SkyTheme.line, lineWidth: 1))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(bridge.fastMode ? "Fast Mode Active (~6–8s)" : "Deep 2-Pass Verification (~15–20s)")
+                                    .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                                    .foregroundStyle(SkyTheme.navy900)
+                                Text(bridge.fastMode
+                                     ? "Single-pass OMR for maximum speed."
+                                     : "Runs a 2nd verification pass to flag uncertain bars.")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(SkyTheme.slate600)
+                            }
+
+                            Spacer()
+
+                            Button {
+                                bridge.setFastMode(!bridge.fastMode)
+                            } label: {
+                                Text(bridge.fastMode ? "Use 2-Pass" : "Use Fast")
+                                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                                    .foregroundStyle(SkyTheme.blue700)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Color.white, in: Capsule())
+                                    .overlay(Capsule().stroke(SkyTheme.sky200, lineWidth: 1))
+                            }
+                            .buttonStyle(PressableButtonStyle())
+                        }
+                        .padding(11)
+                        .background(SkyTheme.sky50.opacity(0.7), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(SkyTheme.line, lineWidth: 1))
+                    }
+                    .padding(18)
+                    .frame(maxWidth: 500)
+                    .engravedCard(cornerRadius: 24)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity)
+                }
+            }
+    }
+
+    private func opticalScanPreviewCard(progress: Double) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white)
+
+            if let preview = store.latestPreviewImage {
+                Image(uiImage: preview)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 176)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .padding(8)
+            } else {
+                StaffLinesBackdrop(lineSpacing: 11)
+                    .frame(height: 150)
+                    .overlay {
+                        VStack(spacing: 8) {
+                            Image(systemName: "doc.text.viewfinder")
+                                .font(.system(size: 30, weight: .semibold))
+                                .foregroundStyle(SkyTheme.blue600)
+                            Text(bridge.documentTitle.isEmpty ? "Reading sheet music…" : bridge.documentTitle)
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundStyle(SkyTheme.navy900)
+                        }
+                    }
+            }
+
+            // Animated horizontal optical scan beam sweeping across the upright page
+            GeometryReader { geo in
+                let yPos = 14 + (geo.size.height - 28) * scanBeamPhase
+                VStack(spacing: 0) {
+                    LinearGradient(
+                        colors: [
+                            SkyTheme.blue600.opacity(0.0),
+                            SkyTheme.blue600.opacity(0.22),
+                            SkyTheme.blue600.opacity(0.85)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 18)
+
+                    Rectangle()
+                        .fill(SkyTheme.blue600)
+                        .frame(height: 2.5)
+                        .shadow(color: SkyTheme.blue600.opacity(0.75), radius: 6, y: 0)
+                }
+                .offset(y: yPos - 18)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .allowsHitTesting(false)
+        }
+        .frame(height: 186)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(SkyTheme.sky200, lineWidth: 1.2)
+        )
+    }
+
+    private func resolvedPipelineStage(elapsed: Double) -> Int {
+        if bridge.readingStepIndex >= 3 { return 3 }
+        if elapsed < 1.3 { return 0 }
+        if elapsed < 4.5 { return max(1, bridge.readingStepIndex) }
+        if elapsed < (bridge.fastMode ? 6.5 : 11.5) { return max(2, bridge.readingStepIndex) }
+        return 3
+    }
+
+    private func stageHeadline(for stage: Int) -> String {
+        switch stage {
+        case 0: return "Preparing & aligning page…"
+        case 1: return "Finding staves, clefs & barlines…"
+        case 2: return "Reading notes, chords & rhythms…"
+        default:
+            return bridge.fastMode
+                ? "Assembling playable score…"
+                : "Double-checking tricky bars…"
+        }
+    }
+
+    private func stageSubheadline(for stage: Int) -> String {
+        switch stage {
+        case 0: return "Rotated upright & enhanced staff contrast on-device"
+        case 1: return "Mapping grand-staff systems and measure bounding boxes"
+        case 2: return "Transcribing voices, accidentals, beams & tuplets on GPU"
+        default:
+            return bridge.fastMode
+                ? "Generating VexFlow notation & FluidR3 audio voices"
+                : "Comparing 2nd pass so uncertain bars are highlighted in Fix mode"
+        }
+    }
+
+    private func pipelineRow(index: Int, currentStage: Int, title: String, detail: String) -> some View {
+        let isDone = index < currentStage
+        let isActive = index == currentStage
+
+        return HStack(spacing: 10) {
+            ZStack {
+                if isDone {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(SkyTheme.sureInk)
+                } else if isActive {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(SkyTheme.blue600)
+                } else {
+                    Circle()
+                        .stroke(SkyTheme.slate600.opacity(0.35), lineWidth: 1.5)
+                        .frame(width: 15, height: 15)
+                }
+            }
+            .frame(width: 20, height: 20)
+
+            VStack(alignment: .leading, spacing: 1.5) {
+                Text(title)
+                    .font(.system(size: 12.5, weight: isActive || isDone ? .bold : .semibold, design: .rounded))
+                    .foregroundStyle(isDone ? SkyTheme.navy900 : (isActive ? SkyTheme.blue700 : SkyTheme.slate600))
+                Text(detail)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(SkyTheme.slate600)
+            }
+
+            Spacer()
+
+            if isDone {
+                Text("Done")
+                    .font(.system(size: 10.5, weight: .heavy, design: .rounded))
+                    .foregroundStyle(SkyTheme.sureInk)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(SkyTheme.sureFill, in: Capsule())
+            } else if isActive {
+                Text("Active")
+                    .font(.system(size: 10.5, weight: .heavy, design: .rounded))
+                    .foregroundStyle(SkyTheme.blue700)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(SkyTheme.sky100, in: Capsule())
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
+

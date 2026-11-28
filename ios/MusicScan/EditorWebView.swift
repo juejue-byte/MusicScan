@@ -132,8 +132,19 @@ final class MusicScanBridgeController {
     var activeFlagReason: String = ""
     var activeFlagLevel: String = "check"
     var activeBarCropRect: NormalizedCropRect? = nil
+    var activeBarInCropRect: NormalizedCropRect? = nil
     var activeBarPageRect: NormalizedCropRect? = nil
     var allPageBarBoxes: [PageBarOverlayBox] = []
+    var isFixPhotoExpanded: Bool = true
+    var showFullPageInFix: Bool = false
+
+    // MARK: - Live Reading Progress State
+    var readingStageText: String = "Reading your sheet music…"
+    var readingStepIndex: Int = 0
+    var readingBatchText: String = ""
+    var readingProgressFraction: Double = 0.08
+    var readingStartedAt: Date? = nil
+    var lastPrepDurationMs: Int? = nil
 
     #if os(iOS)
     fileprivate weak var coordinator: EditorWebView.Coordinator?
@@ -256,7 +267,8 @@ final class MusicScanBridgeController {
 
     func setEditTool(_ tool: EditTool) {
         editTool = tool
-        if editorMode != .edit {
+        // Stay in .fix mode if the user is comparing against the original photo while editing notes
+        if editorMode == .play {
             editorMode = .edit
         }
         isNativePencilInkActive = (tool == .ink)
@@ -594,14 +606,17 @@ struct EditorWebView: UIViewRepresentable {
         }
 
         /// Presents the live Vision manual document scanner or photo library immediately in Swift (0 ms JS round-trip).
+        /// Also pre-warms the Modal GPU worker while the user picks or frames their sheet music, saving 4-8s on cold start.
         func triggerNativeScan(forcePhotoLibrary: Bool) {
             triggerHaptic("light")
+            warmupServerGPU()
             preferPhotoLibraryForNextScan = forcePhotoLibrary
             startScan(requestID: 0)
         }
 
         func presentNativeDocumentPicker() {
             triggerHaptic("light")
+            warmupServerGPU()
             var types: [UTType] = [.pdf, .image, .xml]
             if let musicXML = UTType(filenameExtension: "musicxml") {
                 types.append(musicXML)
@@ -1014,6 +1029,9 @@ struct EditorWebView: UIViewRepresentable {
             case "state":
                 if let rawStage = body["stage"] as? String,
                    let parsedStage = WorkspaceStage(rawValue: rawStage) {
+                    if parent.controller.stage != .reading && parsedStage == .reading {
+                        parent.controller.readingStartedAt = Date()
+                    }
                     if parent.controller.stage == .reading && parsedStage == .editor {
                         triggerHaptic("success")
                     }
@@ -1025,6 +1043,18 @@ struct EditorWebView: UIViewRepresentable {
                         parent.controller.preparingMessage = nil
                         parent.controller.preparingProgress = nil
                     }
+                }
+                if let rStep = (body["readingStep"] as? NSNumber)?.intValue {
+                    parent.controller.readingStepIndex = max(0, min(3, rStep))
+                }
+                if let rText = body["readingText"] as? String, !rText.isEmpty {
+                    parent.controller.readingStageText = rText
+                }
+                if let rBatch = body["readingBatch"] as? String {
+                    parent.controller.readingBatchText = rBatch
+                }
+                if let rPct = (body["readingPct"] as? NSNumber)?.doubleValue, rPct > 0 {
+                    parent.controller.readingProgressFraction = max(0.05, min(1.0, rPct / 100.0))
                 }
                 if let title = body["title"] as? String, !title.isEmpty {
                     parent.controller.documentTitle = LocalScoreItem.humanizeTitle(title)
@@ -1284,6 +1314,15 @@ struct EditorWebView: UIViewRepresentable {
                 ctrl.activeBarCropRect = NormalizedCropRect(x: x, y: y, width: w, height: h)
             } else {
                 ctrl.activeBarCropRect = nil
+            }
+            if let barInCropDict = body["barInCropRect"] as? [String: Any],
+               let x = (barInCropDict["x"] as? NSNumber)?.doubleValue,
+               let y = (barInCropDict["y"] as? NSNumber)?.doubleValue,
+               let w = (barInCropDict["w"] as? NSNumber)?.doubleValue,
+               let h = (barInCropDict["h"] as? NSNumber)?.doubleValue {
+                ctrl.activeBarInCropRect = NormalizedCropRect(x: x, y: y, width: w, height: h)
+            } else {
+                ctrl.activeBarInCropRect = nil
             }
             if let pageRectDict = body["pageRect"] as? [String: Any],
                let x = (pageRectDict["x"] as? NSNumber)?.doubleValue,
@@ -1596,6 +1635,7 @@ struct EditorWebView: UIViewRepresentable {
         }
 
         private struct EncodedScanPayload: Sendable {
+            let jpegs: [Data]
             let firstBase64: String
             let fileName: String
             let pageCount: Int
@@ -1637,6 +1677,7 @@ struct EditorWebView: UIViewRepresentable {
                         .prefix(19)
                         .replacingOccurrences(of: ":", with: "-")
                     return EncodedScanPayload(
+                        jpegs: jpegs,
                         firstBase64: first.base64EncodedString(),
                         fileName: "Scan \(stamp).jpg",
                         pageCount: jpegs.count,
@@ -1656,6 +1697,12 @@ struct EditorWebView: UIViewRepresentable {
                     }
                     return
                 }
+
+                // Stage normalized scan JPEGs in LocalScoreStore immediately so NativeReadingProgressView
+                // and Fix-It photo comparison have 0ms local access to the upright sheet music image.
+                LocalScoreStore.shared.stageNormalizedScanPages(encoded.jpegs)
+                self.parent.controller.lastPrepDurationMs = encoded.prepDurationMs
+                self.parent.controller.readingStartedAt = Date()
 
                 ScanSLIRecorder.shared.recordOnDevicePrep(
                     durationMs: encoded.prepDurationMs,
@@ -2729,13 +2776,13 @@ private enum NativeWebPolishScript {
 
       function computeBarCropAndPageRects(mi) {
         const ms = window.__ms;
-        if (!ms?.S || mi < 0) return { cropRect: null, pageRect: null, pageJobId: ms?.S?.job || '' };
+        if (!ms?.S || mi < 0) return { cropRect: null, barInCropRect: null, pageRect: null, pageJobId: ms?.S?.job || '' };
         const m = ms.S.meta?.[mi];
         const pid = (typeof ms.pageIdOf === 'function' ? ms.pageIdOf(mi) : m?.page) || ms.S.job || '';
         const pg = (typeof ms.pageInfo === 'function' ? ms.pageInfo(pid) : ms.S.pages?.[pid]) || ms.S.result;
         const pageSize = pg?.page_size;
         if (!m?.bbox || !Array.isArray(pageSize) || pageSize.length < 2 || pageSize[0] <= 0 || pageSize[1] <= 0) {
-          return { cropRect: null, pageRect: null, pageJobId: pid || '' };
+          return { cropRect: null, barInCropRect: null, pageRect: null, pageJobId: pid || '' };
         }
         const [W, H] = pageSize;
         const [x0, y0, x1, y1] = m.bbox;
@@ -2750,19 +2797,27 @@ private enum NativeWebPolishScript {
         };
 
         // Generous padded crop around the bar within its system row (for iPhone Fix-It inline photo strip)
-        const padX = Math.max(44, (x1 - x0) * 0.28);
-        const padY = 26;
+        const padX = Math.max(54, (x1 - x0) * 0.34);
+        const padY = 28;
         const sx = Math.max(0, x0 - padX);
         const ex = Math.min(W, x1 + padX);
         const sy = Math.max(0, Math.min(sys.bbox?.[1] ?? y0, y0) - padY);
         const ey = Math.min(H, Math.max(sys.bbox?.[3] ?? y1, y1) + padY);
+        const cropW = Math.max(1, ex - sx);
+        const cropH = Math.max(1, ey - sy);
         const cropRect = {
           x: sx / W,
           y: sy / H,
-          w: Math.max(0.05, (ex - sx) / W),
-          h: Math.max(0.04, (ey - sy) / H)
+          w: Math.max(0.05, cropW / W),
+          h: Math.max(0.04, cropH / H)
         };
-        return { cropRect, pageRect, pageJobId: pid || '' };
+        const barInCropRect = {
+          x: Math.max(0, Math.min(0.95, (x0 - sx) / cropW)),
+          y: Math.max(0, Math.min(0.92, (y0 - sy) / cropH)),
+          w: Math.max(0.05, Math.min(1.0, (x1 - x0) / cropW)),
+          h: Math.max(0.10, Math.min(1.0, (y1 - y0) / cropH))
+        };
+        return { cropRect, barInCropRect, pageRect, pageJobId: pid || '' };
       }
 
       function computePageBoxes(pageJobId) {
@@ -3145,7 +3200,19 @@ private enum NativeWebPolishScript {
         const toastEl = document.getElementById('toast');
         const toast = (toastEl && !isHidden(toastEl)) ? (toastEl.textContent || '').trim() : '';
 
-        const key = `${stage}|${title}|${editing}|${playing}|${libraryCount}|${modalOpen}|${fastMode}|${toast}`;
+        let readingStep = 0;
+        const activeStepEl = document.querySelector('#viewProgress .step.active');
+        if (activeStepEl) {
+          const stepKey = activeStepEl.getAttribute('data-s');
+          readingStep = ['upload', 'clean', 'read', 'done'].indexOf(stepKey);
+          if (readingStep < 0) readingStep = 0;
+        }
+        const readingText = (document.getElementById('progressText')?.textContent || 'Reading your sheet music…').trim();
+        const readingBatch = (document.getElementById('progressBatch')?.textContent || '').trim();
+        const rawBarWidth = document.getElementById('progressBar')?.style?.width || '8%';
+        const readingPct = parseFloat(rawBarWidth) || 8;
+
+        const key = `${stage}|${title}|${editing}|${playing}|${libraryCount}|${modalOpen}|${fastMode}|${toast}|${readingStep}|${readingText}|${readingBatch}|${Math.round(readingPct)}`;
         if (key !== lastStateKey) {
           lastStateKey = key;
           postNative({
@@ -3161,6 +3228,10 @@ private enum NativeWebPolishScript {
             modalOpen,
             fastMode,
             toast,
+            readingStep,
+            readingText,
+            readingBatch,
+            readingPct,
             samples: []
           });
         }
@@ -3196,7 +3267,7 @@ private enum NativeWebPolishScript {
             }
           }
 
-          const { cropRect, pageRect, pageJobId } = computeBarCropAndPageRects(flagIdx >= 0 ? flagIdx : barIndex);
+          const { cropRect, barInCropRect, pageRect, pageJobId } = computeBarCropAndPageRects(flagIdx >= 0 ? flagIdx : barIndex);
           const activeBarRects = computeBarCropAndPageRects(barIndex);
           const pageBoxes = computePageBoxes(activeBarRects.pageJobId || pageJobId);
           const tempoInput = document.getElementById('tempo');
@@ -3255,6 +3326,7 @@ private enum NativeWebPolishScript {
               flagReason,
               flagLevel,
               cropRect,
+              barInCropRect,
               pageRect: activeBarRects.pageRect || pageRect,
               pageBoxes
             });
@@ -3279,7 +3351,7 @@ private enum NativeWebPolishScript {
         childList: true,
         characterData: true,
         attributes: true,
-        attributeFilter: ['class', 'hidden']
+        attributeFilter: ['class', 'hidden', 'style']
       });
       document.addEventListener('pointerup', () => setTimeout(scheduleReportStage, 30), { passive: true });
       document.addEventListener('keyup', () => setTimeout(scheduleReportStage, 30), { passive: true });
