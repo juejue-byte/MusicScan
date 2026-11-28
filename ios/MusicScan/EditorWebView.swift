@@ -1007,6 +1007,8 @@ struct EditorWebView: UIViewRepresentable {
                 parent.onOpenGuide()
             case "localScoreUpsert":
                 handleLocalScoreUpsert(body)
+            case "apiProxy":
+                handleAPIProxy(requestID: id, body: body)
             case "editorState":
                 handleEditorStateUpdate(body)
             case "state":
@@ -1091,6 +1093,70 @@ struct EditorWebView: UIViewRepresentable {
                 )
             default:
                 reply(id, ["error": "Unknown command: \(cmd)"])
+            }
+        }
+
+        /// Proxies live OMR and billing `fetch()` requests from the offline `musicscan-app://` document directly
+        /// over `URLSession`, preserving binary `FormData` (`multipart/form-data`) bodies that WebKit strips from custom scheme tasks.
+        private func handleAPIProxy(requestID: Int, body: [String: Any]) {
+            let relPath = (body["path"] as? String ?? "")
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            let method = (body["method"] as? String ?? "GET").uppercased()
+            let headers = body["headers"] as? [String: String] ?? [:]
+            let bodyB64 = body["bodyB64"] as? String ?? ""
+            let query = body["query"] as? String ?? ""
+            let baseAddress = loadedRemoteURL?.absoluteString
+                ?? UserDefaults.standard.string(forKey: AppConfig.serverURLStorageKey)
+                ?? AppConfig.defaultServerAddress
+
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard let baseURL = ServerConfig.normalizedURL(from: baseAddress),
+                      var remoteURL = ServerConfig.endpoint(from: baseURL, path: relPath) else {
+                    self.reply(requestID, ["error": "Invalid server URL."])
+                    return
+                }
+                if !query.isEmpty, var comps = URLComponents(url: remoteURL, resolvingAgainstBaseURL: false) {
+                    let existingItems = comps.queryItems ?? []
+                    let extraItems = URLComponents(string: "?\(query)")?.queryItems ?? []
+                    comps.queryItems = existingItems + extraItems
+                    if let combined = comps.url { remoteURL = combined }
+                }
+
+                var proxyReq = URLRequest(url: remoteURL)
+                proxyReq.httpMethod = method
+                proxyReq.timeoutInterval = 180
+                for (k, v) in headers {
+                    let lower = k.lowercased()
+                    if lower == "host" || lower == "origin" || lower == "referer" || lower == "content-length" {
+                        continue
+                    }
+                    proxyReq.setValue(v, forHTTPHeaderField: k)
+                }
+                if proxyReq.value(forHTTPHeaderField: "Authorization") == nil,
+                   let bearer = await AuthManager.shared.bearerHeader() {
+                    proxyReq.setValue(bearer, forHTTPHeaderField: "Authorization")
+                }
+                if !bodyB64.isEmpty, let decoded = Data(base64Encoded: bodyB64) {
+                    proxyReq.httpBody = decoded
+                }
+
+                do {
+                    let (data, response) = try await URLSession.shared.data(for: proxyReq)
+                    let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 200
+                    let contentType = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type")
+                        ?? response.mimeType
+                        ?? "application/json"
+                    self.reply(requestID, [
+                        "status": statusCode,
+                        "contentType": contentType,
+                        "bodyB64": data.base64EncodedString()
+                    ])
+                } catch {
+                    self.reply(requestID, [
+                        "error": error.localizedDescription
+                    ])
+                }
             }
         }
 
@@ -1850,27 +1916,32 @@ private enum MusicScanNativeBridgeScript {
         } catch (_) {}
       }
 
+      function ensureReplyRouter() {
+        if (window.__msNativeReply && window.__msNativeReply.__isBridgeRouter) return;
+        const downstream = window.__msNativeReply;
+        const router = (rid, result) => {
+          const pendingMap = window.__msNativeBridgePending;
+          const p = pendingMap && pendingMap.get(rid);
+          if (p) {
+            pendingMap.delete(rid);
+            if (result && result.error) p.reject(new Error(result.error));
+            else p.resolve(result);
+            return;
+          }
+          if (typeof downstream === 'function') downstream(rid, result);
+        };
+        router.__isBridgeRouter = true;
+        window.__msNativeReply = router;
+      }
+
       function callNative(cmd, args = {}) {
         const handler = window.webkit?.messageHandlers?.musicscan;
         if (!handler) return Promise.resolve({});
         const id = ++seq;
         return new Promise((resolve, reject) => {
-          const prevReply = window.__msNativeReply;
           window.__msNativeBridgePending = window.__msNativeBridgePending || new Map();
           window.__msNativeBridgePending.set(id, { resolve, reject });
-          if (!window.__msNativeReplyWrapped) {
-            window.__msNativeReplyWrapped = true;
-            window.__msNativeReply = (rid, result) => {
-              const p = window.__msNativeBridgePending.get(rid);
-              if (p) {
-                window.__msNativeBridgePending.delete(rid);
-                if (result && result.error) p.reject(new Error(result.error));
-                else p.resolve(result);
-                return;
-              }
-              if (typeof prevReply === 'function') prevReply(rid, result);
-            };
-          }
+          ensureReplyRouter();
           handler.postMessage({ id, cmd, ...args });
         });
       }
@@ -2212,36 +2283,178 @@ private enum MusicScanNativeBridgeScript {
         return data;
       }
 
+      function uint8ToBase64(u8) {
+        let bin = '';
+        for (let i = 0; i < u8.length; i += 0x8000) {
+          bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+        }
+        return btoa(bin);
+      }
+
+      function base64ToUint8(b64) {
+        if (!b64) return new Uint8Array(0);
+        const bin = atob(b64);
+        const out = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+        return out;
+      }
+
+      async function encodeMultipartFormData(fd) {
+        const boundary = '----MusicScanBoundary' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+        const enc = new TextEncoder();
+        const chunks = [];
+        let totalLen = 0;
+        const pushBytes = (u8) => { chunks.push(u8); totalLen += u8.byteLength; };
+        const pushStr = (s) => pushBytes(enc.encode(s));
+
+        for (const [key, val] of fd.entries()) {
+          pushStr(`--${boundary}\r\n`);
+          if (val instanceof Blob) {
+            const filename = (val.name || 'upload.bin').replace(/"/g, '_');
+            const mime = val.type || 'application/octet-stream';
+            pushStr(`Content-Disposition: form-data; name="${key}"; filename="${filename}"\r\n`);
+            pushStr(`Content-Type: ${mime}\r\n\r\n`);
+            pushBytes(new Uint8Array(await val.arrayBuffer()));
+            pushStr('\r\n');
+          } else {
+            pushStr(`Content-Disposition: form-data; name="${key}"\r\n\r\n`);
+            pushStr(String(val ?? ''));
+            pushStr('\r\n');
+          }
+        }
+        pushStr(`--${boundary}--\r\n`);
+
+        const out = new Uint8Array(totalLen);
+        let offset = 0;
+        for (const c of chunks) {
+          out.set(c, offset);
+          offset += c.byteLength;
+        }
+        return {
+          bodyB64: uint8ToBase64(out),
+          contentType: `multipart/form-data; boundary=${boundary}`
+        };
+      }
+
+      async function serializeRequestBody(body) {
+        if (!body) return { bodyB64: '', contentType: null };
+        if (typeof FormData !== 'undefined' && body instanceof FormData) {
+          return await encodeMultipartFormData(body);
+        }
+        if (typeof body === 'string') {
+          return {
+            bodyB64: uint8ToBase64(new TextEncoder().encode(body)),
+            contentType: null
+          };
+        }
+        if (body instanceof Blob) {
+          return {
+            bodyB64: uint8ToBase64(new Uint8Array(await body.arrayBuffer())),
+            contentType: body.type || 'application/octet-stream'
+          };
+        }
+        if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
+          const u8 = body instanceof ArrayBuffer
+            ? new Uint8Array(body)
+            : new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+          return { bodyB64: uint8ToBase64(u8), contentType: null };
+        }
+        return {
+          bodyB64: uint8ToBase64(new TextEncoder().encode(String(body))),
+          contentType: null
+        };
+      }
+
+      function wrapJobsResponseJson(response, url) {
+        const isJobsRoute = url.includes('api/jobs') && !/\/(page\.png|original\.jpg)(?:[?#]|$)/.test(url);
+        if (!isJobsRoute) return response;
+        const origJson = response.json.bind(response);
+        Object.defineProperty(response, 'json', {
+          configurable: true,
+          writable: true,
+          value: async () => {
+            const data = await origJson();
+            try {
+              return inspectJobsPayload(response.status, response.ok, url, data);
+            } catch (_) {
+              return data;
+            }
+          }
+        });
+        return response;
+      }
+
       const origFetch = window.fetch.bind(window);
       window.fetch = async (input, init) => {
-        try {
-          const url = typeof input === 'string' ? input : (input && input.url) || '';
-          const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
-          if (method === 'POST' && url.includes('api/jobs')) {
-            lastPendingPostStartMs = performance.now();
+        const url = typeof input === 'string' ? input : (input && input.url) || '';
+        const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+        if (method === 'POST' && url.includes('api/jobs')) {
+          lastPendingPostStartMs = performance.now();
+        }
+
+        // Route live OMR/billing API calls over the native Swift bridge so FormData multipart bodies
+        // are never stripped by WKURLSchemeHandler on custom schemes (`musicscan-app://`).
+        const isImageAsset = /\/(page\.png|original\.jpg)(?:[?#]|$)/.test(url);
+        const isLocalStaticAPI = /\/?api\/(samples|config)(?:[?#]|$)/.test(url);
+        const isLiveServerAPI = /\/?api\/(jobs|scan|rescan-row|warmup|health|billing)/.test(url)
+          && !isImageAsset
+          && !isLocalStaticAPI;
+
+        if (isLiveServerAPI && window.webkit?.messageHandlers?.musicscan) {
+          let apiPath = url;
+          let query = '';
+          try {
+            const parsed = new URL(url, window.location.href);
+            apiPath = parsed.pathname.replace(/^\/+/, '');
+            query = parsed.search ? parsed.search.slice(1) : '';
+          } catch (_) {
+            const qIdx = url.indexOf('?');
+            if (qIdx >= 0) {
+              apiPath = url.slice(0, qIdx);
+              query = url.slice(qIdx + 1);
+            }
           }
-        } catch (_) {}
+
+          const headersObj = {};
+          const rawHeaders = (init && init.headers) || (input && input.headers);
+          if (rawHeaders) {
+            if (typeof rawHeaders.forEach === 'function') {
+              rawHeaders.forEach((v, k) => { headersObj[k] = v; });
+            } else if (Array.isArray(rawHeaders)) {
+              for (const [k, v] of rawHeaders) headersObj[k] = v;
+            } else if (typeof rawHeaders === 'object') {
+              Object.assign(headersObj, rawHeaders);
+            }
+          }
+
+          const { bodyB64, contentType } = await serializeRequestBody(init && init.body);
+          if (contentType) {
+            headersObj['Content-Type'] = contentType;
+          }
+
+          const proxyRes = await callNative('apiProxy', {
+            path: apiPath,
+            query,
+            method,
+            headers: headersObj,
+            bodyB64
+          });
+          const status = Number(proxyRes?.status) || 200;
+          const respType = proxyRes?.contentType || 'application/json';
+          const respBytes = base64ToUint8(proxyRes?.bodyB64 || '');
+          const response = new Response(respBytes, {
+            status,
+            headers: { 'Content-Type': respType }
+          });
+          return wrapJobsResponseJson(response, url);
+        }
+
         const response = await origFetch(input, init);
         try {
-          const url = typeof input === 'string' ? input : (input && input.url) || '';
-          const isJobsRoute = url.includes('api/jobs') && !/\/(page\.png|original\.jpg)(?:[?#]|$)/.test(url);
-          if (isJobsRoute) {
-            const origJson = response.json.bind(response);
-            Object.defineProperty(response, 'json', {
-              configurable: true,
-              writable: true,
-              value: async () => {
-                const data = await origJson();
-                try {
-                  return inspectJobsPayload(response.status, response.ok, url, data);
-                } catch (_) {
-                  return data;
-                }
-              }
-            });
-          }
-        } catch (e) {}
-        return response;
+          return wrapJobsResponseJson(response, url);
+        } catch (_) {
+          return response;
+        }
       };
 
       let veilRafPending = false;
@@ -2361,68 +2574,45 @@ private enum NativeWebPolishScript {
         return new File([bytes], name || 'score', { type: mime || 'application/octet-stream' });
       }
 
-      window.__msImportFile = (name, mime, b64) => {
-        try {
-          const file = b64ToFile(b64, name, mime);
-          const input = document.getElementById('fileInput');
-          if (!input) return false;
+      function invokeStartUpload(file, retries = 25) {
+        if (typeof window.__ms?.startUpload === 'function') {
+          window.__ms.startUpload(file);
+          return true;
+        }
+        if (retries > 0) {
+          setTimeout(() => invokeStartUpload(file, retries - 1), 40);
+          return true;
+        }
+        const input = document.getElementById('fileInput');
+        if (input) {
           const dt = new DataTransfer();
           dt.items.add(file);
           input.files = dt.files;
           input.dispatchEvent(new Event('change', { bubbles: true }));
           return true;
+        }
+        return false;
+      }
+
+      window.__msImportFile = (name, mime, b64) => {
+        try {
+          const file = b64ToFile(b64, name, mime);
+          return invokeStartUpload(file);
         } catch (err) {
           console.error('Native file import failed:', err);
           return false;
         }
       };
 
-      function installPreloadedScanHook() {
-        const handler = window.webkit?.messageHandlers?.musicscan;
-        if (!handler || handler.__msPreloadedHooked) return;
-        const origPost = handler.postMessage.bind(handler);
-        handler.postMessage = (msg) => {
-          if (msg && msg.cmd === 'scan' && msg.id && window.__msPendingScanPayload) {
-            const payload = window.__msPendingScanPayload;
-            window.__msPendingScanPayload = null;
-            setTimeout(() => {
-              if (typeof window.__msNativeReply === 'function') {
-                window.__msNativeReply(msg.id, payload);
-              }
-            }, 0);
-            return;
-          }
-          return origPost(msg);
-        };
-        handler.__msPreloadedHooked = true;
-      }
-      installPreloadedScanHook();
-
       window.__msImportScannedImages = (name, firstB64, moreB64) => {
         try {
-          installPreloadedScanHook();
           const extrasB64 = Array.isArray(moreB64) ? moreB64 : [];
-          const camLabel = document.getElementById('cameraInput')?.closest('label');
-          if (camLabel) {
-            window.__msPendingScanPayload = {
-              b64: firstB64,
-              name: name || 'scan.jpg',
-              pages: 1 + extrasB64.length,
-              more: extrasB64
-            };
-            camLabel.click();
-            return true;
-          }
           const base = (name || 'scan.jpg').replace(/\.jpg$/i, '');
           const first = b64ToFile(firstB64, name || 'scan.jpg', 'image/jpeg');
           const extras = extrasB64.map((b, i) => b64ToFile(b, `${base} p${i + 2}.jpg`, 'image/jpeg'));
           first.pages = 1 + extras.length;
           first.more = extras;
-          if (typeof window.__ms?.startUpload === 'function') {
-            window.__ms.startUpload(first);
-            return true;
-          }
-          return false;
+          return invokeStartUpload(first);
         } catch (err) {
           console.error('Native scan image import failed:', err);
           return false;
