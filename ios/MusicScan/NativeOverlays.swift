@@ -510,13 +510,11 @@ struct ScanWorkspaceView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.86)
 
-                    Text(isSimulator
-                         ? "Pick sheet music pages to transcribe"
-                         : "Live edge crop · manual shutter")
+                    Text("Pick or photograph sheet music")
                         .font(.system(size: 13.5 * min(scale, 1.04), weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.90))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.84)
+                        .foregroundStyle(Color.white.opacity(0.92))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.90)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)

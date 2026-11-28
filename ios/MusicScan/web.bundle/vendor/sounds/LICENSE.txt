@@ -1,0 +1,2 @@
+Samples converted from the FluidR3 GM SoundFont, Copyright (c) 2000-2002, 2008, 2013 Frank Wen, MIT License,
+via the npm package soundfont-for-samplers (MIT). Built by scripts/build_sounds.py.

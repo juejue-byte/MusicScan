@@ -1,0 +1,444 @@
+// Draws a Score with VexFlow and returns a layout map used for hit-testing and overlays.
+import { Score, STEPS, keyAlter, clefKey, clefTop, midiOf } from './score.js';
+import './edits.js';
+import { drawMarks } from './markup.js';
+import { addArticulations, addOrnaments, drawSlurs, graceMap, addGraces } from './notations.js';
+
+const VF = window.Vex.Flow;
+const VF_CLEF = { G2: 'treble', F4: 'bass', C3: 'alto', C4: 'tenor', C1: 'soprano', F3: 'baritone-f', C2: 'mezzo-soprano', G1: 'french' };
+const KEYS = ['Cb', 'Gb', 'Db', 'Ab', 'Eb', 'Bb', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#'];
+const VF_DUR = { breve: '1/2', whole: 'w', half: 'h', quarter: 'q', eighth: '8', '16th': '16', '32nd': '32', '64th': '64' };
+const ACC = { '-2': 'bb', '-1': 'b', 0: 'n', 1: '#', 2: '##' };
+export const STAFF_GAP = 92;      // distance between staves of a row
+export const ROW_PAD_TOP = 46;    // room above the first staff (ledger lines, bar numbers)
+export const ROW_PAD_BOTTOM = 40;
+
+function durFromQl(ql) {
+  const table = [[4, 'whole', 0], [3, 'half', 1], [2, 'half', 0], [1.5, 'quarter', 1], [1, 'quarter', 0], [0.75, 'eighth', 1], [0.5, 'eighth', 0], [0.375, '16th', 1], [0.25, '16th', 0], [0.125, '32nd', 0], [0.0625, '64th', 0]];
+  for (const [q, t, d] of table) if (ql >= q - 1e-6) return [t, d];
+  return ['64th', 0];
+}
+
+export function staffList(score) {
+  // [{pi, staff}] in drawing order
+  const out = [];
+  score.parts.forEach((p, pi) => {
+    let n = 1;
+    for (let mi = 0; mi < p.measures.length; mi++) n = Math.max(n, score.attrs(pi, mi).staves || 1);
+    for (let s = 1; s <= n; s++) out.push({ pi, staff: String(s) });
+  });
+  return out;
+}
+
+function measureWidth(score, mi, staves, first) {
+  let w = 70;
+  for (const s of staves) {
+    const evs = score.events(s.pi, mi).filter((e) => e.staff === s.staff && !e.grace);
+    const onsets = new Set(evs.map((e) => e.onset));
+    let ww = 0;
+    for (const e of evs) {
+      if (!onsets.has(e.onset)) continue;
+      onsets.delete(e.onset);
+      const ql = e.dur / e.div;
+      ww += ql >= 1 ? 34 : ql >= 0.5 ? 27 : 21;
+      if (e.chord.some((c) => c.pitch.alter)) ww += 6;
+    }
+    w = Math.max(w, ww + 36);
+  }
+  if (first) {
+    const a = score.attrs(staves[0].pi, mi);
+    w += 42 + 11 * Math.abs(a.fifths) + (mi === 0 || a.changed?.time ? 28 : 0);
+  }
+  return w;
+}
+
+// Engraving widths above are roomy; a printed row may be drawn up to this much tighter before it has to wrap.
+export const SQUEEZE = 0.84;
+
+// the rows of the photo (bars between <print new-system> marks), with their natural widths
+export function photoRows(score, staves = staffList(score)) {
+  const rows = [];
+  let cur = null;
+  for (let mi = 0; mi < score.nMeasures; mi++) {
+    if (!cur || score.newSystem(mi)) { cur = { bars: [], w: 0 }; rows.push(cur); }
+    cur.w += measureWidth(score, mi, staves, cur.bars.length === 0);
+    cur.bars.push(mi);
+  }
+  return rows;
+}
+
+// zoom at which every printed row fits on one line of the given width (1 when the file has no row marks)
+export function fitZoom(score, pxWidth) {
+  const rows = photoRows(score);
+  if (rows.length < 2 && !score.newSystem(0)) return 1;
+  const widest = Math.max(...rows.map((r) => r.w));
+  return pxWidth / (widest * SQUEEZE + 14 + 10 + 4); // + the left and right margins of render()
+}
+
+export function layoutRows(score, width) {
+  const staves = staffList(score);
+  const rows = [];
+  let cur = [], used = 0;
+  for (let mi = 0; mi < score.nMeasures; mi++) {
+    let w = measureWidth(score, mi, staves, cur.length === 0);
+    // keep the rows of the photo (<print new-system>): a printed row is squeezed to fit, and only wraps
+    // when it would get too tight to read (a phone held upright)
+    if (cur.length && (used + w > width / SQUEEZE || score.newSystem(mi))) {
+      rows.push(cur); cur = []; used = 0;
+      w = measureWidth(score, mi, staves, true);
+    }
+    cur.push({ mi, w });
+    used += w;
+  }
+  if (cur.length) rows.push(cur);
+  return { rows, staves };
+}
+
+export function render(score, el, opts = {}) {
+  const zoom = opts.zoom || 1;
+  const pxWidth = Math.max(300, opts.width || el.clientWidth || 900);
+  const width = pxWidth / zoom;
+  const left = 14, inner = width - left - 10;
+  const { rows, staves } = layoutRows(score, inner);
+  const rowH = ROW_PAD_TOP + (staves.length - 1) * STAFF_GAP + 40 + ROW_PAD_BOTTOM;
+  const height = rows.length * rowH + 20;
+  const sel = opts.selected || new Set();
+  const selNote = opts.selectedNote || null;
+  const meta = opts.meta || [];
+  const playing = opts.playing ?? -1;
+  // Redraw only the rows whose bars changed when the layout is otherwise the same (an edit, a new selection):
+  // VexFlow formatting is the expensive part, and one row is a small part of the page.
+  const sigs = barSignatures(score, staves, selNote);
+  const rowKey = rows.map((r) => r.map((m) => m.mi).join(',')).join('|') + '#' + staves.map((s) => `${s.pi}/${s.staff}`).join(',');
+  const prev = opts.prev;
+  const incremental = !!(prev && prev.score === score && prev.svg?.isConnected && prev.svg.parentNode === el && prev.pxWidth === pxWidth && prev.zoom === zoom && prev.rowKey === rowKey);
+  const rowW = rows.map((r) => r.map((m) => m.w.toFixed(2)).join(','));
+  let layout, ctx, svg, dirty, bars;
+  if (incremental) {
+    layout = prev;
+    ({ ctx, svg } = prev);
+    // a bar is redrawn when it changed; its whole row when the row's spacing changed with it
+    dirty = new Set();
+    bars = new Set();
+    rows.forEach((row, ri) => {
+      const changed = row.filter((m) => sigs[m.mi] !== prev.sigs[m.mi]);
+      if (!changed.length) return;
+      dirty.add(ri);
+      for (const m of rowW[ri] === prev.rowW[ri] ? changed : row) bars.add(m.mi);
+    });
+    if (bars.size) {
+      layout.notes = layout.notes.filter((n) => !bars.has(n.ev.mi));
+      layout.staves = layout.staves.filter((st) => !bars.has(st.mi));
+      for (const mi of bars) svg.querySelector(`:scope > g[data-bar="${mi}"]`)?.remove();
+    }
+  } else {
+    el.innerHTML = '';
+    const renderer = new VF.Renderer(el, VF.Renderer.Backends.SVG);
+    renderer.resize(pxWidth, height * zoom);
+    ctx = renderer.getContext();
+    if (zoom !== 1) ctx.scale(zoom, zoom);
+    svg = el.querySelector('svg');
+    const bgRoot = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    bgRoot.setAttribute('class', 'ms-bg');
+    svg.prepend(bgRoot);
+    layout = { width, height, zoom, pxWidth, rowH, rows: [], measures: [], staves: [], notes: [], svg, ctx, score, rowKey };
+    dirty = new Set(rows.map((r, ri) => ri));
+    bars = new Set(rows.flat().map((m) => m.mi));
+  }
+  layout.sigs = sigs;
+  layout.rowW = rowW;
+  layout.redrawn = dirty.size;
+  layout.redrawnBars = bars.size;
+  const bg = svg.querySelector(':scope > g.ms-bg');
+  bg.innerHTML = '';
+
+  rows.forEach((row, ri) => {
+    if (!dirty.has(ri)) return;
+    const y0 = 10 + ri * rowH;
+    const scale = inner / row.reduce((a, m) => a + m.w, 0);
+    const stretch = ri === rows.length - 1 ? Math.min(scale, 1.35) : scale;
+    let x = left;
+    const rowInfo = layout.rows[ri] || { y0, y1: y0 + rowH, measures: [] };
+    row.forEach((m, k) => {
+      const w = m.w * stretch;
+      const mi = m.mi;
+      if (!bars.has(mi)) { x += w; return; }
+      // each bar is its own group, so an edit can replace just that bar
+      const grp = ctx.openGroup('ms-bar');
+      grp.setAttribute('data-bar', String(mi));
+      grp.setAttribute('data-row', String(ri));
+      const vfStaves = [];
+      staves.forEach((s, si) => {
+        const a = score.attrs(s.pi, mi);
+        const clef = a.clefs[s.staff] || a.clefs['1'] || { sign: 'G', line: 2 };
+        const stave = new VF.Stave(x, y0 + ROW_PAD_TOP - 30 + si * STAFF_GAP, w);
+        if (k === 0 || a.changed?.['clef' + s.staff]) stave.addClef(VF_CLEF[clefKey(clef)] || 'treble', k === 0 ? 'default' : 'small', clef.octaveChange === -1 ? '8vb' : clef.octaveChange === 1 ? '8va' : undefined);
+        if (k === 0 || a.changed?.key) { if (a.fifths !== 0 || a.changed?.key) stave.addKeySignature(KEYS[a.fifths + 7] || 'C'); }
+        if (mi === 0 || a.changed?.time) stave.addTimeSignature(`${a.beats}/${a.beatType}`);
+        if (k === row.length - 1 && mi === score.nMeasures - 1) stave.setEndBarType(VF.Barline.type.END);
+        const bl = score.barlines(s.pi, mi);
+        if (bl.left?.repeat === 'forward') stave.setBegBarType(VF.Barline.type.REPEAT_BEGIN);
+        else if (bl.left?.style === 'heavy-light' || bl.left?.style === 'light-light') stave.setBegBarType(VF.Barline.type.DOUBLE);
+        if (bl.right?.repeat === 'backward') stave.setEndBarType(VF.Barline.type.REPEAT_END);
+        else if (bl.right?.style === 'light-heavy') stave.setEndBarType(VF.Barline.type.END);
+        else if (bl.right?.style === 'light-light') stave.setEndBarType(VF.Barline.type.DOUBLE);
+        const ending = si === 0 ? score.endingAt(mi) : null;
+        if (ending) {
+          // first/second-time bracket over the top staff
+          const T = VF.VoltaType;
+          const type = ending.first && ending.last ? (ending.open ? T.BEGIN : T.BEGIN_END) : ending.first ? T.BEGIN : ending.last && !ending.open ? T.END : T.MID;
+          stave.setVoltaType(type, ending.first ? ending.numbers.join(', ') + '.' : '', -5);
+        }
+        stave.setContext(ctx);
+        vfStaves.push({ stave, s, clef, a });
+      });
+      const startX = Math.max(...vfStaves.map((v) => v.stave.getNoteStartX()));
+      for (const v of vfStaves) { v.stave.setNoteStartX(startX); v.stave.draw(); }
+      if (k === 0 && staves.length > 1) {
+        new VF.StaveConnector(vfStaves[0].stave, vfStaves[vfStaves.length - 1].stave).setType('singleLeft').setContext(ctx).draw();
+      }
+      if (staves.length > 1) {
+        new VF.StaveConnector(vfStaves[0].stave, vfStaves[vfStaves.length - 1].stave).setType('singleRight').setContext(ctx).draw();
+      }
+      if (k === 0) {
+        // braces for multi-staff parts
+        let i = 0;
+        while (i < vfStaves.length) {
+          let j = i;
+          while (j + 1 < vfStaves.length && vfStaves[j + 1].s.pi === vfStaves[i].s.pi) j++;
+          if (j > i) new VF.StaveConnector(vfStaves[i].stave, vfStaves[j].stave).setType('brace').setContext(ctx).draw();
+          i = j + 1;
+        }
+      }
+      // notes
+      const allVoices = [];
+      const perStave = [];
+      const formatter = new VF.Formatter();
+      for (const v of vfStaves) {
+        const evs = score.events(v.s.pi, mi).filter((e) => e.staff === v.s.staff && !e.grace);
+        const graces = graceMap(score, v.s.pi, mi);
+        const top = clefTop(v.clef);
+        const shownTop = top; // pitch already written as notated
+        const voices = {};
+        for (const e of evs) (voices[e.voice] ||= []).push(e);
+        const vkeys = Object.keys(voices).sort((a, b) => +a - +b);
+        // display accidentals per staff
+        const measAlter = {};
+        const order = [...evs].sort((a, b) => a.onset - b.onset);
+        const accFor = new Map();
+        for (const e of order) {
+          if (e.rest) continue;
+          for (const c of e.chord) {
+            const key = c.pitch.step + c.pitch.octave;
+            const cur = key in measAlter ? measAlter[key] : keyAlter(v.a.fifths, c.pitch.step);
+            const al = c.pitch.alter || 0;
+            const explicit = c.el.querySelector(':scope > accidental');
+            if (al !== cur || explicit) accFor.set(c.el, ACC[al] ?? null);
+            measAlter[key] = al;
+          }
+        }
+        const vfVoices = [];
+        vkeys.forEach((vk, vi) => {
+          const tickables = [];
+          const byEl = new Map();
+          const stem = vkeys.length > 1 ? (vi === 0 ? 1 : -1) : undefined;
+          let lastClef = clefKey(v.clef);
+          for (const e of voices[vk]) {
+            const ck = clefKey(e.clef);
+            if (ck !== lastClef && !e.hidden) {
+              try { tickables.push(new VF.ClefNote(VF_CLEF[ck] || 'treble', 'small')); } catch (err) { /* ignore */ }
+              lastClef = ck;
+            }
+            const eclef = e.clef || v.clef;
+            const eTop = clefTop(eclef);
+            let type = e.type, dots = e.dots;
+            if (!type || !VF_DUR[type]) { [type, dots] = durFromQl((e.dur / e.div) * (e.tuplet ? e.tuplet.actual / e.tuplet.normal : 1)); }
+            let dur = VF_DUR[type] || 'q';
+            if (e.hidden) {
+              const g = new VF.GhostNote({ duration: dur, dots });
+              tickables.push(g);
+              byEl.set(e.el, g);
+              layout.notes.push({ ev: e, vf: g, stave: v.stave, top: eTop, clef: eclef, rowIdx: ri, staffIdx: staves.indexOf(v.s), ghost: true });
+              continue;
+            }
+            let note;
+            const vfClef = VF_CLEF[ck] || 'treble';
+            if (e.rest) {
+              let idx = eTop - 4;
+              if (vkeys.length > 1) idx += vi === 0 ? 2 : -2;
+              if (e.measureRest || (type === 'whole' && e.dur >= score.measureLength(v.s.pi, mi) - 1e-6)) idx = eTop - 2;
+              const key = `${STEPS[((idx % 7) + 7) % 7].toLowerCase()}/${Math.floor(idx / 7)}`;
+              note = new VF.StaveNote({ keys: [key], duration: dur + 'r', dots, clef: vfClef });
+            } else {
+              const members = [...e.chord].sort((a, b) => midiOf(a.pitch) - midiOf(b.pitch));
+              const keys = members.map((c) => `${c.pitch.step.toLowerCase()}/${c.pitch.octave - (eclef.octaveChange || 0)}`);
+              const opt = { keys, duration: dur, dots, clef: vfClef, auto_stem: stem === undefined };
+              if (stem !== undefined) opt.stem_direction = stem;
+              note = new VF.StaveNote(opt);
+              members.forEach((c, i) => {
+                const a = accFor.get(c.el);
+                if (a) note.addModifier(new VF.Accidental(a), i);
+              });
+            }
+            if (dots) { try { VF.Dot.buildAndAttach([note], { all: true }); } catch (err) { /* older API */ } }
+            if (e.fermata) {
+              try {
+                const below = e.fermata === 'inverted';
+                note.addModifier(new VF.Articulation(below ? 'a@u' : 'a@a').setPosition(below ? VF.Modifier.Position.BELOW : VF.Modifier.Position.ABOVE), 0);
+              } catch (err) { /* ignore */ }
+            }
+            if (!e.rest) { addArticulations(VF, note, e); addOrnaments(VF, note, e); }
+            if (!e.rest && graces.has(e.el)) addGraces(VF, note, graces.get(e.el), { clef: eclef, fifths: v.a.fifths, keyAlter, vfClef });
+            const isSel = selNote && (selNote === e.el || e.chord.some((c) => c.el === selNote));
+            if (isSel) note.setStyle({ fillStyle: '#1769C2', strokeStyle: '#1769C2' });
+            tickables.push(note);
+            byEl.set(e.el, note);
+            layout.notes.push({ ev: e, vf: note, stave: v.stave, top: eTop, clef: eclef, rowIdx: ri, staffIdx: staves.indexOf(v.s) });
+          }
+          if (!tickables.length) return;
+          // triplets and other tuplets: bracket + number, and the right spacing
+          const tuplets = [];
+          const done = new Set();
+          for (const e of voices[vk]) {
+            if (!e.tuplet || done.has(e.el)) continue;
+            const g = score.tupletGroup(e);
+            for (const x of g) done.add(x.el);
+            const notes = g.map((x) => byEl.get(x.el)).filter(Boolean);
+            if (notes.length < 2) continue;
+            try { tuplets.push(new VF.Tuplet(notes, { num_notes: e.tuplet.actual, notes_occupied: e.tuplet.normal, location: stem === -1 ? -1 : 1 })); } catch (err) { /* ignore */ }
+          }
+          const voice = new VF.Voice({ num_beats: v.a.beats, beat_value: v.a.beatType }).setMode(VF.Voice.Mode.SOFT);
+          voice.addTickables(tickables);
+          vfVoices.push({ voice, tickables, stem, tuplets });
+        });
+        if (!vfVoices.length) {
+          const g = new VF.Voice({ num_beats: v.a.beats, beat_value: v.a.beatType }).setMode(VF.Voice.Mode.SOFT);
+          g.addTickables([new VF.GhostNote({ duration: 'w' })]);
+          vfVoices.push({ voice: g, tickables: [], stem: undefined });
+        }
+        formatter.joinVoices(vfVoices.map((x) => x.voice));
+        allVoices.push(...vfVoices.map((x) => x.voice));
+        perStave.push({ v, vfVoices });
+        layout.staves.push({ mi, pi: v.s.pi, staff: v.s.staff, stave: v.stave, top: v.stave.getYForLine(0), clef: v.clef, fifths: v.a.fifths, rowIdx: ri, staffIdx: staves.indexOf(v.s), x0: x, x1: x + w });
+      }
+      const avail = Math.max(30, x + w - startX - 14);
+      try { formatter.format(allVoices, avail); } catch (err) { console.warn('format', err); }
+      for (const { v, vfVoices } of perStave) {
+        for (const { voice, tickables, stem, tuplets } of vfVoices) {
+          let beams = [];
+          try {
+            const beamable = tickables.filter((t) => t instanceof VF.StaveNote);
+            beams = VF.Beam.generateBeams(beamable, { groups: [new VF.Fraction(v.a.beatType >= 8 && v.a.beats % 3 === 0 ? 3 : 1, v.a.beatType >= 8 && v.a.beats % 3 === 0 ? 8 : 4)], stem_direction: stem, beam_rests: false, maintain_stem_directions: stem !== undefined });
+          } catch (err) { beams = []; }
+          try { voice.draw(ctx, v.stave); } catch (err) { console.warn('draw', err); }
+          for (const b of beams) { try { b.setContext(ctx).draw(); } catch (err) { /* ignore */ } }
+          for (const t of tuplets || []) { try { t.setContext(ctx).draw(); } catch (err) { /* ignore */ } }
+        }
+      }
+      // measure overlays (drawn into the background group so they sit under the music)
+      const top = y0 + ROW_PAD_TOP - 30 + vfStaves[0].stave.getYForLine(0) - vfStaves[0].stave.getY() - 14;
+      const bottom = vfStaves[vfStaves.length - 1].stave.getYForLine(4) + 14;
+      const info = { mi, x0: x, x1: x + w, y0: top, y1: bottom, rowIdx: ri };
+      rowInfo.measures[k] = info;
+      layout.measures[mi] = info;
+      ctx.closeGroup();
+      x += w;
+    });
+    layout.rows[ri] = rowInfo;
+  });
+  // bar highlights, flags and numbers for every bar (plain SVG, cheap), then ties, slurs and marks across rows
+  for (const info of layout.measures) if (info) drawBarOverlay(score, bg, info, { sel, meta, playing, staves });
+  // rows redrawn out of order go back into reading order (hit tests and note stepping walk these lists)
+  if (incremental && bars.size) { layout.notes.sort((a, b) => a.ev.mi - b.ev.mi); layout.staves.sort((a, b) => a.mi - b.mi); }
+  svg.querySelector(':scope > g[data-ties]')?.remove();
+  svg.querySelector(':scope > g.ms-marks')?.remove();
+  ctx.openGroup('ms-ties').setAttribute('data-ties', '1');
+  drawTies(score, layout, ctx);
+  ctx.closeGroup();
+  try { layout.marks = drawMarks(score, layout, { selected: opts.selectedMark }); } catch (err) { console.warn('marks', err); layout.marks = []; }
+  return layout;
+}
+
+// what a bar looks like on the page: its MusicXML in every part, the clef/key/time in force, its ending bracket,
+// and which of its notes is selected (drawn blue). A row is redrawn only when one of its bars' signature changes.
+const XS = new XMLSerializer();
+function barSignatures(score, staves, selNote) {
+  const sigs = [];
+  const parts = [...new Set(staves.map((s) => s.pi))];
+  for (let mi = 0; mi < score.nMeasures; mi++) {
+    let sig = '';
+    for (const pi of parts) {
+      const m = score.parts[pi].measures[mi];
+      if (!m) continue;
+      sig += score.barRevision(m) ?? XS.serializeToString(m);
+      const a = score.attrs(pi, mi);
+      sig += JSON.stringify([a.fifths, a.beats, a.beatType, a.divisions, a.clefs, a.changed]);
+      if (selNote && selNote.parentNode === m) sig += '#sel' + [...m.children].indexOf(selNote);
+    }
+    try { sig += JSON.stringify(score.endingAt(mi)); } catch (err) { /* ignore */ }
+    if (mi === score.nMeasures - 1) sig += '#last';
+    sigs.push(sig);
+  }
+  return sigs;
+}
+
+// selection, flag colour, playhead, overflow warning and number of one bar, under the music
+function drawBarOverlay(score, bg, info, { sel, meta, playing, staves }) {
+  const { mi } = info, x = info.x0, w = info.x1 - info.x0, top = info.y0, bottom = info.y1;
+  const level = meta[mi]?.level;
+  const problems = staves.some((s) => score.measureProblems(s.pi, mi).over);
+  const mk = (tag, attrs) => { const r = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [a, b] of Object.entries(attrs)) r.setAttribute(a, b); bg.appendChild(r); return r; };
+  if (sel.has(mi)) mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#1769C2', 'fill-opacity': '0.10', stroke: '#1769C2', 'stroke-width': 1.5, rx: 4 });
+  else if (level === 'bad') mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#C2362B', 'fill-opacity': '0.10', rx: 4 });
+  else if (level === 'check') mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#E39B1B', 'fill-opacity': '0.12', rx: 4 });
+  if (playing === mi) mk('rect', { x: x + 1, y: top, width: w - 2, height: bottom - top, fill: '#5FAEEB', 'fill-opacity': '0.16', rx: 4 });
+  if (problems) mk('rect', { x: x + 2, y: top + 1, width: w - 4, height: bottom - top - 2, fill: 'none', stroke: '#C2362B', 'stroke-dasharray': '5 4', 'stroke-width': 1.5, rx: 4 });
+  const num = score.parts[0].measures[mi]?.getAttribute('number') ?? String(mi + 1);
+  const t = mk('text', { x: x + 4, y: top - 3, 'font-size': 11, fill: level === 'bad' ? '#C2362B' : level === 'check' ? '#8A5300' : '#4E647C', 'font-family': 'system-ui, sans-serif', class: 'ms-num' });
+  t.textContent = num + (level === 'bad' ? '  ⚠' : level === 'check' ? '  ?' : '') + (problems ? '  too long' : '');
+}
+
+// ties: a curve from each tied note to the next one; across a line break, half a curve on each line
+function drawTies(score, layout, ctx) {
+  const at = new Map();
+  for (const n of layout.notes) {
+    if (n.ghost || n.ev.rest) continue;
+    const members = [...n.ev.chord].sort((a, b) => midiOf(a.pitch) - midiOf(b.pitch));
+    members.forEach((c, i) => at.set(c.el, { n, i }));
+  }
+  for (const n of layout.notes) {
+    if (n.ghost || n.ev.rest || !score.isTied(n.ev)) continue;
+    let nx = null;
+    try { nx = score.nextEvent(n.ev); } catch (err) { nx = null; }
+    for (const c of n.ev.chord) {
+      if (![...c.el.children].some((t) => t.localName === 'tie' && t.getAttribute('type') === 'start')) continue;
+      const a = at.get(c.el);
+      const d = nx?.chord.find((x) => midiOf(x.pitch) === midiOf(c.pitch));
+      const b = d ? at.get(d.el) : null;
+      const ties = [];
+      if (b && b.n.rowIdx === a.n.rowIdx) ties.push({ first_note: a.n.vf, last_note: b.n.vf, first_indices: [a.i], last_indices: [b.i] });
+      else {
+        ties.push({ first_note: a.n.vf, last_note: null, first_indices: [a.i], last_indices: [a.i] });
+        if (b) ties.push({ first_note: null, last_note: b.n.vf, first_indices: [b.i], last_indices: [b.i] });
+      }
+      for (const t of ties) { try { new VF.StaveTie(t).setContext(ctx).draw(); } catch (err) { /* ignore */ } }
+    }
+  }
+  drawSlurs(VF, ctx, score, layout);
+}
+
+// pitch under a point on a stave
+export function pitchAtY(st, y, fifths) {
+  const steps = Math.round((y - st.top) / 5);
+  const idx = clefTop(st.clef) - steps;
+  const octave = Math.floor(idx / 7), step = STEPS[((idx % 7) + 7) % 7];
+  return { pitch: { step, octave, alter: keyAlter(fifths, step) }, y: st.top + steps * 5, steps };
+}
+
+export function noteYs(n) {
+  // y of each chord member's notehead
+  return n.ev.chord.map((c) => {
+    const idx = (c.pitch.octave - (n.clef.octaveChange || 0)) * 7 + STEPS.indexOf(c.pitch.step);
+    return { el: c.el, pitch: c.pitch, y: n.stave.getYForLine(0) + (clefTop({ ...n.clef, octaveChange: 0 }) - idx) * 5 };
+  });
+}

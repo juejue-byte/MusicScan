@@ -18,32 +18,122 @@ enum WorkspaceStage: String, Sendable, Equatable {
     case editor
 }
 
-/// Real sample sheet-music entry exposed by the live MusicScan server (`api/samples`).
+/// Primary mode of the native SwiftUI score editor dock (iPhone) and studio workspace (iPad).
+enum EditorMode: String, CaseIterable, Identifiable, Sendable, Equatable {
+    case play
+    case fix
+    case edit
+
+    var id: String { rawValue }
+}
+
+/// Active note/markup tool when editing a score.
+enum EditTool: String, CaseIterable, Identifiable, Sendable, Equatable {
+    case drag
+    case note
+    case rest
+    case ink
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .drag: return "Drag"
+        case .note: return "+ Note"
+        case .rest: return "Rest"
+        case .ink: return "Ink"
+        }
+    }
+
+    var iPadLabel: String {
+        switch self {
+        case .drag: return "Drag Notes"
+        case .note: return "+ Add"
+        case .rest: return "Rest"
+        case .ink: return "Apple Pencil Ink"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .drag: return "hand.point.up.left.fill"
+        case .note: return "music.note"
+        case .rest: return "pause.fill"
+        case .ink: return "pencil.tip"
+        }
+    }
+}
+
+/// Normalized bounding box for a bar on the scanned page image (0...1 coordinates).
+struct PageBarOverlayBox: Identifiable, Equatable, Sendable {
+    let id: Int
+    let barNumber: String
+    let level: String
+    let rect: NormalizedCropRect
+}
+
+/// Real sample sheet-music entry exposed by the bundled/live MusicScan app (`api/samples`).
 struct WebSampleItem: Identifiable, Equatable, Sendable {
     let id: Int
     let title: String
     let thumbURL: String
 }
 
-/// Bridges native SwiftUI tabs and controls to the embedded `WKWebView` without tight view coupling.
+/// Bridges native SwiftUI tabs, toolbars, docks, and Studio panes to the embedded local-first `WKWebView`.
 @MainActor
 @Observable
 final class MusicScanBridgeController {
     var stage: WorkspaceStage = .home
+    var activeScoreID: String = ""
     var documentTitle: String = ""
     var isEditing: Bool = false
     var isPlaying: Bool = false
     var libraryCount: Int = 0
-    var libraryReady: Bool = false
+    var libraryReady: Bool = true
     var hasResume: Bool = false
     var isModalOpen: Bool = false
     var fastMode: Bool = false
     var samples: [WebSampleItem] = []
     var toastMessage: String?
-    /// Non-nil immediately after picking photos/files while images are downscaled & handed to the reader,
-    /// eliminating the silent dead-zone between picker dismissal and upload start.
+
+    /// Non-nil immediately after picking photos/files while images are normalized & handed to the reader.
     var preparingMessage: String?
     var preparingProgress: Double?
+
+    // MARK: - Live Native Editor Chrome State (iPhone Dock & iPad Studio)
+
+    var editorMode: EditorMode = .play
+    var editTool: EditTool = .drag
+    var activeDuration: String = "quarter"
+    var isDotted: Bool = false
+    var activeAccidental: Int? = nil
+    var isPianoPadVisible: Bool = false
+    var isNativePencilInkActive: Bool = false
+    var showiPadPhotoPane: Bool = true
+    var canUndo: Bool = false
+    var canRedo: Bool = false
+
+    var tempoBPM: Int = 96
+    var isLoopEnabled: Bool = false
+    var currentBarIndex: Int = 0
+    var currentBarNumber: String = "1"
+    var totalBars: Int = 0
+
+    var activePageIndex: Int = 0
+    var pageCount: Int = 1
+    var activePageJobID: String? = nil
+
+    var flaggedCount: Int = 0
+    var redFlaggedCount: Int = 0
+    var activeFlagPosition: Int = 1
+    var activeFlagTotal: Int = 0
+    var activeFlagBarIndex: Int = 0
+    var activeFlagBarNumber: String = "1"
+    var activeFlagReason: String = ""
+    var activeFlagLevel: String = "check"
+    var activeBarCropRect: NormalizedCropRect? = nil
+    var activeBarPageRect: NormalizedCropRect? = nil
+    var allPageBarBoxes: [PageBarOverlayBox] = []
 
     #if os(iOS)
     fileprivate weak var coordinator: EditorWebView.Coordinator?
@@ -84,12 +174,51 @@ final class MusicScanBridgeController {
     }
 
     func openResume() {
+        if let first = LocalScoreStore.shared.scores.first {
+            openLocalScore(first)
+            return
+        }
         #if os(iOS)
         coordinator?.openResumeInWeb()
         #endif
     }
 
+    func openLocalScore(_ item: LocalScoreItem) {
+        #if os(iOS)
+        coordinator?.openLocalScoreInWeb(item)
+        #endif
+    }
+
+    func deleteLocalScore(_ item: LocalScoreItem) {
+        LocalScoreStore.shared.deleteScore(id: item.id)
+        libraryCount = LocalScoreStore.shared.scores.count
+        #if os(iOS)
+        coordinator?.removeScoreFromWebLibrary(id: item.id)
+        #endif
+    }
+
+    func renameLocalScore(_ item: LocalScoreItem, to newTitle: String) {
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        LocalScoreStore.shared.renameScore(id: item.id, newTitle: trimmed)
+        if activeScoreID == item.id {
+            documentTitle = trimmed
+            #if os(iOS)
+            coordinator?.renameActiveScoreInWeb(trimmed)
+            #endif
+        } else {
+            #if os(iOS)
+            coordinator?.renameLibraryScoreInWeb(id: item.id, newTitle: trimmed)
+            #endif
+        }
+    }
+
     func showLibraryHome() {
+        if isPlaying {
+            togglePlay()
+        }
+        editorMode = .play
+        isNativePencilInkActive = false
         #if os(iOS)
         coordinator?.showLibraryHomeInWeb()
         #endif
@@ -112,21 +241,222 @@ final class MusicScanBridgeController {
         coordinator?.syncProStateToWeb()
         #endif
     }
+
+    // MARK: - Native Editor Chrome Actions
+
+    func setEditorMode(_ mode: EditorMode) {
+        editorMode = mode
+        if mode != .edit {
+            isNativePencilInkActive = false
+        }
+        #if os(iOS)
+        coordinator?.setEditorModeInWeb(mode)
+        #endif
+    }
+
+    func setEditTool(_ tool: EditTool) {
+        editTool = tool
+        if editorMode != .edit {
+            editorMode = .edit
+        }
+        isNativePencilInkActive = (tool == .ink)
+        #if os(iOS)
+        coordinator?.setEditToolInWeb(tool)
+        #endif
+    }
+
+    func selectDuration(_ duration: String) {
+        activeDuration = duration
+        if editorMode == .play {
+            editorMode = .edit
+        }
+        #if os(iOS)
+        coordinator?.triggerEditActionInWeb("dur:\(duration)")
+        #endif
+    }
+
+    func toggleDot() {
+        isDotted.toggle()
+        #if os(iOS)
+        coordinator?.triggerEditActionInWeb("dot")
+        #endif
+    }
+
+    func applyAccidental(_ alter: Int) {
+        activeAccidental = alter
+        #if os(iOS)
+        coordinator?.triggerEditActionInWeb("acc:\(alter)")
+        #endif
+    }
+
+    func triggerRest() {
+        #if os(iOS)
+        coordinator?.triggerEditActionInWeb("rest")
+        #endif
+    }
+
+    func deleteSelected() {
+        #if os(iOS)
+        coordinator?.triggerEditActionInWeb("delete")
+        #endif
+    }
+
+    func togglePianoPad() {
+        isPianoPadVisible.toggle()
+        #if os(iOS)
+        coordinator?.setPianoPadVisibleInWeb(isPianoPadVisible)
+        #endif
+    }
+
+    func togglePlay() {
+        #if os(iOS)
+        coordinator?.transportInWeb(isPlaying ? "stop" : "play")
+        #endif
+    }
+
+    func stopPlayback() {
+        guard isPlaying else { return }
+        #if os(iOS)
+        coordinator?.transportInWeb("stop")
+        #endif
+    }
+
+    func toggleLoop() {
+        isLoopEnabled.toggle()
+        #if os(iOS)
+        coordinator?.transportInWeb("toggleLoop")
+        #endif
+    }
+
+    func setTempo(_ bpm: Int) {
+        let clamped = min(max(bpm, 36), 220)
+        tempoBPM = clamped
+        #if os(iOS)
+        coordinator?.setTempoInWeb(clamped)
+        #endif
+    }
+
+    func stepFlaggedBar(_ delta: Int) {
+        if editorMode != .fix {
+            editorMode = .fix
+        }
+        #if os(iOS)
+        coordinator?.fixNavInWeb(delta < 0 ? "prev" : "next")
+        #endif
+    }
+
+    func markCurrentBarLooksRight() {
+        #if os(iOS)
+        coordinator?.fixNavInWeb("markOK")
+        #endif
+    }
+
+    func rescanActiveBar() {
+        #if os(iOS)
+        coordinator?.rescanActiveBarInWeb()
+        #endif
+    }
+
+    func undo() {
+        #if os(iOS)
+        coordinator?.undoInWeb()
+        #endif
+    }
+
+    func redo() {
+        #if os(iOS)
+        coordinator?.redoInWeb()
+        #endif
+    }
+
+    func renameActiveScore(to newTitle: String) {
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        documentTitle = trimmed
+        if !activeScoreID.isEmpty {
+            LocalScoreStore.shared.renameScore(id: activeScoreID, newTitle: trimmed)
+        }
+        #if os(iOS)
+        coordinator?.renameActiveScoreInWeb(trimmed)
+        #endif
+    }
+
+    func openPagesSheet() {
+        #if os(iOS)
+        coordinator?.openPagesModalInWeb()
+        #endif
+    }
+
+    func stepPage(_ delta: Int) {
+        let target = min(max(0, activePageIndex + delta), max(0, pageCount - 1))
+        guard target != activePageIndex else { return }
+        activePageIndex = target
+        #if os(iOS)
+        coordinator?.jumpToPageInWeb(target)
+        #endif
+    }
+
+    func adjustPageEdges() {
+        #if os(iOS)
+        coordinator?.adjustEdgesInWeb()
+        #endif
+    }
+
+    func retakePagePhoto() {
+        #if os(iOS)
+        coordinator?.retakePhotoInWeb()
+        #endif
+    }
+
+    func openKeyTimeTranspose() {
+        #if os(iOS)
+        coordinator?.openKeyTimeInWeb()
+        #endif
+    }
+
+    func exportScore(format: String) {
+        #if os(iOS)
+        coordinator?.exportScoreInWeb(format: format)
+        #endif
+    }
+
+    func exportLocalScore(_ item: LocalScoreItem, format: String) {
+        #if os(iOS)
+        if activeScoreID == item.id && stage == .editor {
+            coordinator?.exportScoreInWeb(format: format)
+            return
+        }
+        if format == "xml", let xml = LocalScoreStore.shared.loadMusicXML(for: item.id),
+           let data = xml.data(using: .utf8) {
+            let safeTitle = item.cleanTitle.replacingOccurrences(of: "/", with: "-")
+            coordinator?.presentDirectFileShare(
+                fileName: "\(safeTitle.isEmpty ? "score" : safeTitle).musicxml",
+                data: data
+            )
+            return
+        }
+        // For MIDI export of an unopened score, open it and export MIDI
+        openLocalScore(item)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            coordinator?.exportScoreInWeb(format: format)
+        }
+        #endif
+    }
+
+    func focusBarOnPage(_ barIndex: Int) {
+        currentBarIndex = barIndex
+        #if os(iOS)
+        coordinator?.focusBarInWeb(barIndex)
+        #endif
+    }
 }
 
-/// Native iOS/iPadOS shell around the MusicScan web editor (`web/`).
+/// Native iOS/iPadOS shell around the local-first MusicScan web editor (`MusicScan/web.bundle`).
 ///
-/// Implements the `window.webkit.messageHandlers.musicscan` bridge (`web/js/native.js`):
-/// - `scan`      VisionKit multi-page document camera on device (PHPicker photo library on simulator)
-/// - `share`     Native share sheet for MuseScore (`.musicxml`) and `.mid` export (popover-anchored on iPad)
-/// - `haptic`    Tactile feedback while dragging notes or adding symbols
-/// - `settings`  Opens the native Account & Settings sheet
-/// - `guide`     Opens the native Quick Guide & Shortcuts sheet
-/// - `paywall`   Opens the native Superwall / StoreKit 2 paywall, verifies with the server, and unlocks the active job
-/// - `restore`   Restores Apple subscriptions and syncs with the server
-/// - `state`     Reports active screen (`home`/`reading`/`editor`) so native chrome stays unobtrusive
-///
-/// Also supports iPad hardware-keyboard `⌘` shortcuts and Apple Pencil double-tap via `window.__msCommand`.
+/// Serves `musicscan-app://local/index.html?embed=native` instantaneously from the app bundle via
+/// `LocalWebSchemeHandler`, persisting scores on-device in `LocalScoreStore` and waking Modal only
+/// for GPU OMR (`/api/jobs`, `/api/jobs/<id>/rescan`) and billing verification.
 #if os(iOS)
 struct EditorWebView: UIViewRepresentable {
     let url: URL
@@ -146,11 +476,12 @@ struct EditorWebView: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
+        config.setURLSchemeHandler(LocalWebSchemeHandler(), forURLScheme: LocalWebSchemeHandler.scheme)
         config.userContentController.add(WeakScriptMessageHandler(context.coordinator), name: "musicscan")
 
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
         config.userContentController.addUserScript(WKUserScript(
-            source: "window.MUSICSCAN_APP = { platform: 'ios', version: '\(version)', nativePaywall: true };",
+            source: "window.MUSICSCAN_APP = { platform: 'ios', version: '\(version)', nativePaywall: true, localFirst: true };",
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         ))
@@ -185,14 +516,14 @@ struct EditorWebView: UIViewRepresentable {
 
         context.coordinator.webView = webView
         controller.coordinator = context.coordinator
-        context.coordinator.load(url, token: reloadToken)
+        context.coordinator.load(remoteServerURL: url, token: reloadToken)
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         context.coordinator.parent = self
         controller.coordinator = context.coordinator
-        context.coordinator.load(url, token: reloadToken)
+        context.coordinator.load(remoteServerURL: url, token: reloadToken)
         context.coordinator.syncProStateIfNeeded(isPro)
     }
 
@@ -205,7 +536,7 @@ struct EditorWebView: UIViewRepresentable {
         var parent: EditorWebView
         weak var webView: WKWebView?
 
-        private var loadedURL: URL?
+        private var loadedRemoteURL: URL?
         private var loadedToken = -1
         private var isWebReady = false
         private var pendingWebDelivery: (() -> Void)?
@@ -214,8 +545,6 @@ struct EditorWebView: UIViewRepresentable {
         private var scanRequestID = 0
         private var preferPhotoLibraryForNextScan = false
         private let selectionFeedback = UISelectionFeedbackGenerator()
-        private var loadTask: Task<Void, Never>?
-        private var loadWatchdogTask: Task<Void, Never>?
         private static let audioSessionQueue = DispatchQueue(
             label: "com.musicscan.audioSession",
             qos: .userInitiated
@@ -235,39 +564,28 @@ struct EditorWebView: UIViewRepresentable {
             }
         }
 
-        func load(_ url: URL, token: Int) {
-            guard let webView, url != loadedURL || token != loadedToken else { return }
-            loadedURL = url
+        func load(remoteServerURL: URL, token: Int) {
+            guard let webView, remoteServerURL != loadedRemoteURL || token != loadedToken else { return }
+            loadedRemoteURL = remoteServerURL
             loadedToken = token
             isWebReady = false
-            parent.controller.libraryReady = false
-            BillingManager.shared.updateServerURL(url)
-            let cookieStore = webView.configuration.websiteDataStore.httpCookieStore
+            BillingManager.shared.updateServerURL(remoteServerURL)
 
-            loadTask?.cancel()
-            loadWatchdogTask?.cancel()
-            loadWatchdogTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(25))
-                guard !Task.isCancelled, let self, !self.isWebReady else { return }
-                self.webView?.stopLoading()
-                self.parent.onLoadError("Connection timed out while reaching the score server. Tap Try Again or check Server Settings.")
-            }
+            // Instantaneously load the bundled offline web editor via musicscan-app://local/index.html?embed=native
+            let localURL = LocalWebSchemeHandler.localEditorURL
+            let request = URLRequest(
+                url: localURL,
+                cachePolicy: .reloadIgnoringLocalCacheData,
+                timeoutInterval: 15
+            )
+            webView.load(request)
 
-            loadTask = Task { @MainActor [weak self, weak webView] in
-                // Skip redundant /api/config round-trip on default server when Supabase is already configured,
-                // avoiding extra startup latency and unnecessary Modal wake-up traffic.
-                let defaultHost = URL(string: AppConfig.fallbackServerURL)?.host?.lowercased()
-                if !AuthManager.shared.isConfigured || url.host?.lowercased() != defaultHost {
-                    await AuthManager.shared.bootstrapConfig(from: url)
+            // Configure Supabase auth in the background without blocking launch or waking Modal
+            let defaultHost = URL(string: AppConfig.fallbackServerURL)?.host?.lowercased()
+            if !AuthManager.shared.isConfigured || remoteServerURL.host?.lowercased() != defaultHost {
+                Task { @MainActor in
+                    await AuthManager.shared.bootstrapConfig(from: remoteServerURL)
                 }
-                await AuthManager.shared.prepareWebView(cookieStore, for: url)
-                guard !Task.isCancelled, let self, let webView, self.loadedURL == url, self.loadedToken == token else { return }
-                let request = URLRequest(
-                    url: url,
-                    cachePolicy: .useProtocolCachePolicy,
-                    timeoutInterval: 30
-                )
-                webView.load(request)
             }
         }
 
@@ -343,16 +661,236 @@ struct EditorWebView: UIViewRepresentable {
             """)
         }
 
+        func openLocalScoreInWeb(_ item: LocalScoreItem) {
+            triggerHaptic("light")
+            ensurePlaybackAudioSessionActive()
+            guard let xml = LocalScoreStore.shared.loadMusicXML(for: item.id), !xml.isEmpty else {
+                // Fallback to IndexedDB entry if xml file was not written yet
+                deliverWhenWebReady { [weak self] in
+                    self?.webView?.callAsyncJavaScript(
+                        "window.MusicScanNative && window.MusicScanNative.openFromLibraryId(scoreId)",
+                        arguments: ["scoreId": item.id],
+                        in: nil,
+                        in: .page
+                    ) { _ in }
+                }
+                return
+            }
+            let metaJSON = LocalScoreStore.shared.loadMetaJSON(for: item.id) ?? "[]"
+            let pagesJSON = LocalScoreStore.shared.loadPagesJSON(for: item.id) ?? "{}"
+            parent.controller.activeScoreID = item.id
+            parent.controller.documentTitle = item.cleanTitle
+            parent.controller.tempoBPM = item.tempoBPM
+            parent.controller.editorMode = .play
+
+            deliverWhenWebReady { [weak self] in
+                self?.webView?.callAsyncJavaScript(
+                    """
+                    if (window.MusicScanNative && typeof window.MusicScanNative.loadScore === 'function') {
+                      window.MusicScanNative.loadScore({
+                        id: scoreId,
+                        title: title,
+                        xml: xml,
+                        metaJson: metaJson,
+                        pagesJson: pagesJson,
+                        job: job,
+                        tempo: tempo
+                      });
+                    }
+                    """,
+                    arguments: [
+                        "scoreId": item.id,
+                        "title": item.cleanTitle,
+                        "xml": xml,
+                        "metaJson": metaJSON,
+                        "pagesJson": pagesJSON,
+                        "job": item.primaryJobID ?? "",
+                        "tempo": item.tempoBPM
+                    ],
+                    in: nil,
+                    in: .page
+                ) { _ in }
+            }
+        }
+
+        func removeScoreFromWebLibrary(id: String) {
+            webView?.callAsyncJavaScript(
+                "window.MusicScanNative && window.MusicScanNative.removeLibraryItem(scoreId)",
+                arguments: ["scoreId": id],
+                in: nil,
+                in: .page
+            ) { _ in }
+        }
+
+        func renameLibraryScoreInWeb(id: String, newTitle: String) {
+            webView?.callAsyncJavaScript(
+                "window.MusicScanNative && window.MusicScanNative.renameLibraryItem(scoreId, newTitle)",
+                arguments: ["scoreId": id, "newTitle": newTitle],
+                in: nil,
+                in: .page
+            ) { _ in }
+        }
+
+        func renameActiveScoreInWeb(_ newTitle: String) {
+            webView?.callAsyncJavaScript(
+                "window.MusicScanNative && window.MusicScanNative.renameScore(newTitle)",
+                arguments: ["newTitle": newTitle],
+                in: nil,
+                in: .page
+            ) { _ in }
+        }
+
         func showLibraryHomeInWeb() {
             triggerHaptic("selection")
             webView?.evaluateJavaScript("""
                 (() => {
+                  if (window.MusicScanNative && typeof window.MusicScanNative.closeEditor === 'function') {
+                    window.MusicScanNative.closeEditor();
+                    return;
+                  }
                   const btn = document.getElementById('btnNew');
                   if (btn && document.body.classList.contains('editing')) {
                     btn.click();
                   }
                 })();
             """)
+        }
+
+        func setEditorModeInWeb(_ mode: EditorMode) {
+            triggerHaptic("selection")
+            webView?.callAsyncJavaScript(
+                "window.MusicScanNative && window.MusicScanNative.setMode(mode)",
+                arguments: ["mode": mode.rawValue],
+                in: nil,
+                in: .page
+            ) { _ in }
+        }
+
+        func setEditToolInWeb(_ tool: EditTool) {
+            triggerHaptic("selection")
+            webView?.callAsyncJavaScript(
+                "window.MusicScanNative && window.MusicScanNative.setEditTool(tool)",
+                arguments: ["tool": tool.rawValue],
+                in: nil,
+                in: .page
+            ) { _ in }
+        }
+
+        func triggerEditActionInWeb(_ action: String) {
+            triggerHaptic("light")
+            webView?.callAsyncJavaScript(
+                "window.MusicScanNative && window.MusicScanNative.triggerEditAction(act)",
+                arguments: ["act": action],
+                in: nil,
+                in: .page
+            ) { _ in }
+        }
+
+        func setPianoPadVisibleInWeb(_ visible: Bool) {
+            triggerHaptic("selection")
+            webView?.callAsyncJavaScript(
+                "window.MusicScanNative && window.MusicScanNative.setPianoPad(visible)",
+                arguments: ["visible": visible],
+                in: nil,
+                in: .page
+            ) { _ in }
+        }
+
+        func transportInWeb(_ action: String) {
+            triggerHaptic("light")
+            ensurePlaybackAudioSessionActive()
+            webView?.callAsyncJavaScript(
+                "window.MusicScanNative && window.MusicScanNative.transport(action)",
+                arguments: ["action": action],
+                in: nil,
+                in: .page
+            ) { _ in }
+        }
+
+        func setTempoInWeb(_ bpm: Int) {
+            webView?.callAsyncJavaScript(
+                "window.MusicScanNative && window.MusicScanNative.setTempo(bpm)",
+                arguments: ["bpm": bpm],
+                in: nil,
+                in: .page
+            ) { _ in }
+        }
+
+        func fixNavInWeb(_ direction: String) {
+            triggerHaptic(direction == "markOK" ? "success" : "selection")
+            webView?.callAsyncJavaScript(
+                "window.MusicScanNative && window.MusicScanNative.fixNav(direction)",
+                arguments: ["direction": direction],
+                in: nil,
+                in: .page
+            ) { _ in }
+        }
+
+        func rescanActiveBarInWeb() {
+            triggerHaptic("light")
+            warmupServerGPU()
+            webView?.evaluateJavaScript("window.MusicScanNative && window.MusicScanNative.rescanActiveBar()")
+        }
+
+        func undoInWeb() {
+            triggerHaptic("light")
+            webView?.evaluateJavaScript("window.MusicScanNative && window.MusicScanNative.undo()")
+        }
+
+        func redoInWeb() {
+            triggerHaptic("light")
+            webView?.evaluateJavaScript("window.MusicScanNative && window.MusicScanNative.redo()")
+        }
+
+        func openPagesModalInWeb() {
+            triggerHaptic("light")
+            webView?.evaluateJavaScript("window.MusicScanNative && window.MusicScanNative.openPagesModal()")
+        }
+
+        func jumpToPageInWeb(_ pageIndex: Int) {
+            triggerHaptic("selection")
+            webView?.callAsyncJavaScript(
+                "window.MusicScanNative && window.MusicScanNative.jumpToPage(idx)",
+                arguments: ["idx": pageIndex],
+                in: nil,
+                in: .page
+            ) { _ in }
+        }
+
+        func adjustEdgesInWeb() {
+            triggerHaptic("light")
+            webView?.evaluateJavaScript("window.MusicScanNative && window.MusicScanNative.adjustEdges()")
+        }
+
+        func retakePhotoInWeb() {
+            triggerHaptic("light")
+            warmupServerGPU()
+            webView?.evaluateJavaScript("window.MusicScanNative && window.MusicScanNative.retakePhoto()")
+        }
+
+        func openKeyTimeInWeb() {
+            triggerHaptic("light")
+            webView?.evaluateJavaScript("window.MusicScanNative && window.MusicScanNative.openKeyTime()")
+        }
+
+        func exportScoreInWeb(format: String) {
+            triggerHaptic("light")
+            webView?.callAsyncJavaScript(
+                "window.MusicScanNative && window.MusicScanNative.exportScore(fmt)",
+                arguments: ["fmt": format],
+                in: nil,
+                in: .page
+            ) { _ in }
+        }
+
+        func focusBarInWeb(_ barIndex: Int) {
+            triggerHaptic("selection")
+            webView?.callAsyncJavaScript(
+                "window.MusicScanNative && window.MusicScanNative.focusBar(mi)",
+                arguments: ["mi": barIndex],
+                in: nil,
+                in: .page
+            ) { _ in }
         }
 
         func setReviewTabModeInWeb(_ enabled: Bool) {
@@ -383,8 +921,6 @@ struct EditorWebView: UIViewRepresentable {
         // MARK: - WKNavigationDelegate
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            loadWatchdogTask?.cancel()
-            loadWatchdogTask = nil
             isWebReady = true
             parent.onLoaded()
             webView.becomeFirstResponder()
@@ -399,15 +935,11 @@ struct EditorWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             if (error as NSError).code == NSURLErrorCancelled { return }
-            loadWatchdogTask?.cancel()
-            loadWatchdogTask = nil
             parent.onLoadError(error.localizedDescription)
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             if (error as NSError).code == NSURLErrorCancelled { return }
-            loadWatchdogTask?.cancel()
-            loadWatchdogTask = nil
             parent.onLoadError(error.localizedDescription)
         }
 
@@ -422,26 +954,9 @@ struct EditorWebView: UIViewRepresentable {
         ) {
             if let target = action.request.url,
                action.navigationType == .linkActivated,
-               target.host != loadedURL?.host || target.port != loadedURL?.port {
+               target.scheme != LocalWebSchemeHandler.scheme {
                 UIApplication.shared.open(target)
                 decisionHandler(.cancel)
-                return
-            }
-            decisionHandler(.allow)
-        }
-
-        func webView(
-            _ webView: WKWebView,
-            decidePolicyFor navigationResponse: WKNavigationResponse,
-            decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void
-        ) {
-            if navigationResponse.isForMainFrame,
-               let http = navigationResponse.response as? HTTPURLResponse,
-               http.statusCode >= 400 {
-                loadWatchdogTask?.cancel()
-                loadWatchdogTask = nil
-                decisionHandler(.cancel)
-                parent.onLoadError("Score server returned HTTP \(http.statusCode). Tap Try Again or check Server Settings.")
                 return
             }
             decisionHandler(.allow)
@@ -490,6 +1005,10 @@ struct EditorWebView: UIViewRepresentable {
                 parent.onOpenSettings()
             case "guide":
                 parent.onOpenGuide()
+            case "localScoreUpsert":
+                handleLocalScoreUpsert(body)
+            case "editorState":
+                handleEditorStateUpdate(body)
             case "state":
                 if let rawStage = body["stage"] as? String,
                    let parsedStage = WorkspaceStage(rawValue: rawStage) {
@@ -505,38 +1024,30 @@ struct EditorWebView: UIViewRepresentable {
                         parent.controller.preparingProgress = nil
                     }
                 }
-                parent.controller.documentTitle = body["title"] as? String ?? ""
+                if let title = body["title"] as? String, !title.isEmpty {
+                    parent.controller.documentTitle = LocalScoreItem.humanizeTitle(title)
+                }
                 parent.controller.isEditing = body["editing"] as? Bool ?? false
                 let nowPlaying = body["playing"] as? Bool ?? false
                 if nowPlaying && !parent.controller.isPlaying {
                     ensurePlaybackAudioSessionActive()
                 }
                 parent.controller.isPlaying = nowPlaying
+                let storeCount = LocalScoreStore.shared.scores.count
                 if let libCount = (body["libraryCount"] as? NSNumber)?.intValue {
-                    parent.controller.libraryCount = libCount
+                    parent.controller.libraryCount = max(storeCount, libCount)
+                } else {
+                    parent.controller.libraryCount = storeCount
                 }
-                if let libReady = body["libraryReady"] as? Bool {
-                    parent.controller.libraryReady = libReady
-                }
+                parent.controller.libraryReady = true
                 if let hasResume = body["hasResume"] as? Bool {
-                    parent.controller.hasResume = hasResume
+                    parent.controller.hasResume = hasResume || storeCount > 0
                 }
                 if let modalOpen = body["modalOpen"] as? Bool {
                     parent.controller.isModalOpen = modalOpen
                 }
                 if let fastMode = body["fastMode"] as? Bool {
                     parent.controller.fastMode = fastMode
-                }
-                if let rawSamples = body["samples"] as? [[String: Any]] {
-                    let parsed = rawSamples.compactMap { item -> WebSampleItem? in
-                        guard let idx = (item["index"] as? NSNumber)?.intValue,
-                              let title = item["title"] as? String else { return nil }
-                        let thumb = item["thumb"] as? String ?? ""
-                        return WebSampleItem(id: idx, title: title, thumbURL: thumb)
-                    }
-                    if parsed != parent.controller.samples {
-                        parent.controller.samples = parsed
-                    }
                 }
                 if let toast = body["toast"] as? String {
                     parent.controller.toastMessage = toast.isEmpty ? nil : toast
@@ -580,6 +1091,161 @@ struct EditorWebView: UIViewRepresentable {
                 )
             default:
                 reply(id, ["error": "Unknown command: \(cmd)"])
+            }
+        }
+
+        private func handleLocalScoreUpsert(_ body: [String: Any]) {
+            guard let id = body["scoreId"] as? String, !id.isEmpty,
+                  let xml = body["xml"] as? String, !xml.isEmpty else {
+                return
+            }
+            let title = body["title"] as? String ?? "Score"
+            let metaJSON = body["metaJson"] as? String ?? "[]"
+            let pagesJSON = body["pagesJson"] as? String ?? "{}"
+            let primaryJobID = body["job"] as? String
+            let pageJobIDs = (body["pageJobIds"] as? [String]) ?? (primaryJobID.map { [$0] } ?? [])
+            let barsCount = (body["bars"] as? NSNumber)?.intValue ?? 0
+            let partsCount = (body["parts"] as? NSNumber)?.intValue ?? 1
+            let tempoBPM = (body["tempo"] as? NSNumber)?.intValue ?? 96
+
+            LocalScoreStore.shared.upsertFromWebEditor(
+                id: id,
+                title: title,
+                musicXML: xml,
+                metaJSONString: metaJSON,
+                pagesJSONString: pagesJSON,
+                primaryJobID: primaryJobID,
+                pageJobIDs: pageJobIDs,
+                barsCount: barsCount,
+                partsCount: partsCount,
+                tempoBPM: tempoBPM
+            )
+
+            parent.controller.libraryCount = LocalScoreStore.shared.scores.count
+
+            // Cache scanned page photos locally in the background so Fix-It photo comparison works 100% offline
+            if !pageJobIDs.isEmpty {
+                let serverURL = loadedRemoteURL ?? ServerConfig.normalizedURL(from: AppConfig.defaultServerAddress)
+                Task { @MainActor in
+                    await LocalScoreStore.shared.cacheRemoteJobImagesIfNeeded(
+                        scoreID: id,
+                        jobIDs: pageJobIDs,
+                        serverBaseURL: serverURL
+                    )
+                }
+            }
+        }
+
+        private func handleEditorStateUpdate(_ body: [String: Any]) {
+            let ctrl = parent.controller
+            if let scoreID = body["scoreId"] as? String, !scoreID.isEmpty {
+                ctrl.activeScoreID = scoreID
+            }
+            if let title = body["title"] as? String, !title.isEmpty {
+                ctrl.documentTitle = LocalScoreItem.humanizeTitle(title)
+            }
+            if let canUndo = body["canUndo"] as? Bool {
+                ctrl.canUndo = canUndo
+            }
+            if let canRedo = body["canRedo"] as? Bool {
+                ctrl.canRedo = canRedo
+            }
+            if let playing = body["playing"] as? Bool {
+                ctrl.isPlaying = playing
+            }
+            if let loop = body["loop"] as? Bool {
+                ctrl.isLoopEnabled = loop
+            }
+            if let tempo = (body["tempo"] as? NSNumber)?.intValue, tempo > 0 {
+                ctrl.tempoBPM = tempo
+            }
+            if let dur = body["dur"] as? String, !dur.isEmpty {
+                ctrl.activeDuration = dur
+            }
+            if let dot = body["dot"] as? Bool {
+                ctrl.isDotted = dot
+            }
+            if let padOpen = body["padOpen"] as? Bool {
+                ctrl.isPianoPadVisible = padOpen
+            }
+            if let totalBars = (body["totalBars"] as? NSNumber)?.intValue {
+                ctrl.totalBars = totalBars
+            }
+            if let barIdx = (body["barIndex"] as? NSNumber)?.intValue {
+                ctrl.currentBarIndex = max(0, barIdx)
+            }
+            if let barNum = body["barNumber"] as? String, !barNum.isEmpty {
+                ctrl.currentBarNumber = barNum
+            }
+            if let pageIdx = (body["pageIndex"] as? NSNumber)?.intValue {
+                ctrl.activePageIndex = max(0, pageIdx)
+            }
+            if let pageCount = (body["pageCount"] as? NSNumber)?.intValue {
+                ctrl.pageCount = max(1, pageCount)
+            }
+            if let pageJobID = body["pageJobId"] as? String {
+                ctrl.activePageJobID = pageJobID.isEmpty ? nil : pageJobID
+            }
+            if let flagged = (body["flaggedCount"] as? NSNumber)?.intValue {
+                ctrl.flaggedCount = max(0, flagged)
+            }
+            if let redFlagged = (body["redFlaggedCount"] as? NSNumber)?.intValue {
+                ctrl.redFlaggedCount = max(0, redFlagged)
+            }
+            if let flagPos = (body["flagPos"] as? NSNumber)?.intValue {
+                ctrl.activeFlagPosition = max(1, flagPos)
+            }
+            if let flagTotal = (body["flagTotal"] as? NSNumber)?.intValue {
+                ctrl.activeFlagTotal = max(0, flagTotal)
+            }
+            if let flagBarIdx = (body["flagBarIndex"] as? NSNumber)?.intValue {
+                ctrl.activeFlagBarIndex = max(0, flagBarIdx)
+            }
+            if let flagBarNum = body["flagBarNumber"] as? String, !flagBarNum.isEmpty {
+                ctrl.activeFlagBarNumber = flagBarNum
+            }
+            if let flagReason = body["flagReason"] as? String {
+                ctrl.activeFlagReason = flagReason
+            }
+            if let flagLevel = body["flagLevel"] as? String {
+                ctrl.activeFlagLevel = flagLevel
+            }
+            if let cropDict = body["cropRect"] as? [String: Any],
+               let x = (cropDict["x"] as? NSNumber)?.doubleValue,
+               let y = (cropDict["y"] as? NSNumber)?.doubleValue,
+               let w = (cropDict["w"] as? NSNumber)?.doubleValue,
+               let h = (cropDict["h"] as? NSNumber)?.doubleValue {
+                ctrl.activeBarCropRect = NormalizedCropRect(x: x, y: y, width: w, height: h)
+            } else {
+                ctrl.activeBarCropRect = nil
+            }
+            if let pageRectDict = body["pageRect"] as? [String: Any],
+               let x = (pageRectDict["x"] as? NSNumber)?.doubleValue,
+               let y = (pageRectDict["y"] as? NSNumber)?.doubleValue,
+               let w = (pageRectDict["w"] as? NSNumber)?.doubleValue,
+               let h = (pageRectDict["h"] as? NSNumber)?.doubleValue {
+                ctrl.activeBarPageRect = NormalizedCropRect(x: x, y: y, width: w, height: h)
+            } else {
+                ctrl.activeBarPageRect = nil
+            }
+            if let rawBoxes = body["pageBoxes"] as? [[String: Any]] {
+                ctrl.allPageBarBoxes = rawBoxes.compactMap { item in
+                    guard let mi = (item["mi"] as? NSNumber)?.intValue,
+                          let x = (item["x"] as? NSNumber)?.doubleValue,
+                          let y = (item["y"] as? NSNumber)?.doubleValue,
+                          let w = (item["w"] as? NSNumber)?.doubleValue,
+                          let h = (item["h"] as? NSNumber)?.doubleValue else {
+                        return nil
+                    }
+                    let num = item["num"] as? String ?? "\(mi + 1)"
+                    let lvl = item["level"] as? String ?? "ok"
+                    return PageBarOverlayBox(
+                        id: mi,
+                        barNumber: num,
+                        level: lvl,
+                        rect: NormalizedCropRect(x: x, y: y, width: w, height: h)
+                    )
+                }
             }
         }
 
@@ -797,9 +1463,7 @@ struct EditorWebView: UIViewRepresentable {
                     self.parent.controller.toastMessage = "Could not read \(rawFileName)."
                     return
                 }
-                self.parent.controller.preparingMessage = self.isWebReady
-                    ? "Opening \(fileName)…"
-                    : "Connecting…"
+                self.parent.controller.preparingMessage = "Opening \(fileName)…"
                 self.parent.controller.preparingProgress = 0.85
 
                 self.deliverWhenWebReady { [weak self] in
@@ -816,7 +1480,6 @@ struct EditorWebView: UIViewRepresentable {
                         in: .page
                     ) { [weak self] _ in
                         Task { @MainActor in
-                            // Clear safety net if MusicXML opened synchronously or errored silently
                             try? await Task.sleep(for: .milliseconds(900))
                             if self?.parent.controller.stage == .home {
                                 self?.parent.controller.preparingMessage = nil
@@ -894,8 +1557,6 @@ struct EditorWebView: UIViewRepresentable {
             Task { @MainActor [weak self] in
                 let encoded = await Task.detached(priority: .userInitiated) { () -> EncodedScanPayload? in
                     let prepStart = CFAbsoluteTimeGetCurrent()
-                    // Normalize sideways/upside-down photos on-device before upload, and cap at 2200 px long edge
-                    // (0.80 JPEG quality) to match copisteria's 2048 px detector grid while saving Modal GPU & bandwidth.
                     let jpegs: [Data] = images.compactMap { image in
                         autoreleasepool {
                             SheetMusicOrientationNormalizer
@@ -935,9 +1596,7 @@ struct EditorWebView: UIViewRepresentable {
                     pageCount: encoded.pageCount
                 )
 
-                self.parent.controller.preparingMessage = self.isWebReady
-                    ? "Uploading…"
-                    : "Connecting…"
+                self.parent.controller.preparingMessage = "Uploading…"
                 self.parent.controller.preparingProgress = 0.88
 
                 if id != 0 {
@@ -975,6 +1634,29 @@ struct EditorWebView: UIViewRepresentable {
         }
 
         // MARK: - Share Sheet Export (MuseScore / MusicXML / MIDI)
+
+        func presentDirectFileShare(fileName: String, data: Data) {
+            let safeName = (fileName as NSString).lastPathComponent.replacingOccurrences(of: "/", with: "-")
+            let fileURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent(safeName.isEmpty ? "score.musicxml" : safeName)
+            do {
+                try data.write(to: fileURL, options: .atomic)
+                guard let webView else { return }
+                let activity = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+                if let popover = activity.popoverPresentationController {
+                    popover.sourceView = webView
+                    popover.sourceRect = CGRect(
+                        x: webView.bounds.maxX - 80,
+                        y: webView.safeAreaInsets.top + 24,
+                        width: 1,
+                        height: 1
+                    )
+                }
+                presenterViewController()?.present(activity, animated: true)
+            } catch {
+                parent.controller.toastMessage = "Could not export file: \(error.localizedDescription)"
+            }
+        }
 
         private func presentShareSheet(requestID: Int, name: String, base64: String) {
             guard webView != nil, !base64.isEmpty else {
@@ -1105,6 +1787,7 @@ struct EditorWebView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        config.setURLSchemeHandler(LocalWebSchemeHandler(), forURLScheme: LocalWebSchemeHandler.scheme)
         config.userContentController.addUserScript(WKUserScript(
             source: MusicScanNativeBridgeScript.source,
             injectionTime: .atDocumentStart,
@@ -1133,26 +1816,11 @@ struct EditorWebView: NSViewRepresentable {
             guard url != lastURL || token != lastToken else { return }
             lastURL = url
             lastToken = token
-            let cookieStore = webView.configuration.websiteDataStore.httpCookieStore
-            Task { @MainActor in
-                await AuthManager.shared.bootstrapConfig(from: url)
-                await AuthManager.shared.prepareWebView(cookieStore, for: url)
-                webView.load(URLRequest(url: url, cachePolicy: .reloadRevalidatingCacheData, timeoutInterval: 90))
-            }
+            webView.load(URLRequest(url: LocalWebSchemeHandler.localEditorURL))
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             parent.onLoaded()
-        }
-
-        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            if (error as NSError).code == NSURLErrorCancelled { return }
-            parent.onLoadError(error.localizedDescription)
-        }
-
-        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            if (error as NSError).code == NSURLErrorCancelled { return }
-            parent.onLoadError(error.localizedDescription)
         }
     }
 }
@@ -1160,11 +1828,6 @@ struct EditorWebView: NSViewRepresentable {
 
 // MARK: - Injected Native Server-Allowance & Superwall Paywall Sync Script
 
-/// Bridges the server's real `allowance.access` (`free`, `preview`, `full`, `cap`) into the MusicScan web editor:
-/// - When the server returns a half-page `preview` scan, renders a blurred lower-half overlay and routes any
-///   unlock/edit/play/export tap straight to the native Superwall / StoreKit 2 paywall.
-/// - When the purchase is verified on the server and `POST /api/jobs/{id}/unlock` succeeds, seamlessly reloads
-///   the full score and full page image right into the open editor.
 private enum MusicScanNativeBridgeScript {
     static let source = #"""
     (() => {
@@ -1176,7 +1839,6 @@ private enum MusicScanNativeBridgeScript {
       const recordedSLIJobs = new Set();
       let lastPendingPostStartMs = 0;
       let completedPageCounter = 0;
-      let latestSLISummary = '';
       let nativeIsPro = false;
       let activePreviewJobId = null;
       let paywallPending = false;
@@ -1361,8 +2023,6 @@ private enum MusicScanNativeBridgeScript {
           scoreEl ? scoreEl.scrollHeight : 0,
           scoreScroll.scrollHeight - scoreTop
         );
-        // Anchor progressive blur starting at ~38% down the rendered score so upper bars remain 100% crisp
-        // and the lower staves transition smoothly through the 3-stage blur stack.
         const startY = Math.max(88, Math.round(scoreTop + scoreHeight * 0.36));
         const veilHeight = Math.max(250, Math.round(scoreHeight - startY + scoreTop + 36));
         veil.style.top = startY + 'px';
@@ -1453,42 +2113,30 @@ private enum MusicScanNativeBridgeScript {
               ms.S.result = result;
               ms.S.job = jobId;
             }
-            if (typeof ms.openScore === 'function') {
+            if (typeof ms.openScoreFull === 'function') {
+              ms.openScoreFull({
+                id: ms.S?.libId,
+                name: ms.S?.name,
+                xml: result.xml,
+                meta: result.measures || [],
+                quality: result.quality,
+                job: jobId
+              });
+            } else if (typeof ms.openScore === 'function') {
               ms.openScore(result.xml, result.measures || []);
             }
-            if (ms.S) {
-              ms.S.job = jobId;
-              ms.S.photoPage = jobId;
-            }
-            const imgs = document.querySelectorAll('#photoCol img, img[src*="page.png"]');
-            const bust = '?unlocked=' + Date.now();
-            imgs.forEach((img) => {
-              const src = img.getAttribute('src') || '';
-              if (src.includes('page.png')) {
-                img.src = src.split('?')[0] + bust;
-              }
-            });
           } catch (e) {
             console.error('Could not reload unlocked score:', e);
           }
         }
       };
 
-      // Intercept JSON parsing for /api/jobs responses without calling response.clone().
-      // Calling response.clone() + clone.json() concurrently with response.json() on large
-      // multi-chunk HTTP/2 responses (~250 KB completed jobs) triggers a WebKit ReadableStream
-      // tee deadlock where readPage()'s response.json() never resolves.
       function inspectJobsPayload(status, ok, url, data) {
         if (!data || typeof data !== 'object') return data;
         if (status === 402) {
           const detail = data.detail;
-          if (detail && typeof detail === 'object') {
-            if (detail.code === 'page_cap') {
-              console.info('MusicScan monthly cap reached:', detail.message);
-            }
-            if (typeof detail.message === 'string') {
-              return { ...data, detail: detail.message };
-            }
+          if (detail && typeof detail === 'object' && typeof detail.message === 'string') {
+            return { ...data, detail: detail.message };
           }
           return data;
         }
@@ -1505,7 +2153,6 @@ private enum MusicScanNativeBridgeScript {
           return data;
         }
 
-        // Track POST /api/jobs creation start timestamp for SLI latency metrics
         if (data.id && !data.status) {
           jobTimings.set(data.id, {
             startMs: lastPendingPostStartMs || performance.now(),
@@ -1513,7 +2160,6 @@ private enum MusicScanNativeBridgeScript {
           });
         }
 
-        // Record completed scan SLI & quality telemetry when job poll reaches status === 'done'
         if (data.id && data.status === 'done' && !recordedSLIJobs.has(data.id)) {
           recordedSLIJobs.add(data.id);
           completedPageCounter += 1;
@@ -1594,29 +2240,9 @@ private enum MusicScanNativeBridgeScript {
               }
             });
           }
-        } catch (e) {
-          // Never interfere with app fetch behavior.
-        }
+        } catch (e) {}
         return response;
       };
-
-      // Guard editing, Fix It, Rescan, Ink, and Export on server-enforced preview scores,
-      // while allowing Playback (#btnPlay, .pbar), Page navigation (#msPageNav, #msGoodNotesSheet, #msFollowPlayBtn), Flag bar navigation/toggle (#msFlagNav), Photo view, and Zoom.
-      const ALLOWED_PREVIEW_SELECTORS = '#btnNew, #btnPhoto, #photoCol, #zoomIn, #zoomOut, #zoomVal, #btnKeys, #btnPlay, #btnLoop, #btnPractice, #tempo, .tempo, .pbar, .pbar *, #practicePanel, #practicePanel *, #msPageNav, #msPageNav *, #msFlagNav, #msFlagNav *, #msFlagVisBtn, #msQualityInfoSheet, #msQualityInfoSheet *, #msGoodNotesSheet, #msGoodNotesSheet *, #msFollowPlayBtn, #msFollowPlayBtn *, #msMoreToolsBtn, #qualityBanner [data-b=close], #msNativePreviewVeil, #msNativePreviewVeil *, .ms-native-hdr-btn, .toast';
-      function previewInteractionGuard(e) {
-        if (!isCurrentScorePreviewLocked()) return;
-        const editor = document.getElementById('viewEditor');
-        if (!editor || editor.classList.contains('hidden')) return;
-        if (!e.target.closest('#viewEditor, header.top, .pbar') || e.target.closest(ALLOWED_PREVIEW_SELECTORS)) return;
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        if (e.type === 'click') {
-          triggerNativePaywall('Unlock MusicScan Pro to see the full page, edit notes, fix flagged bars, mark up, and export.');
-        }
-      }
-      for (const evt of ['pointerdown', 'pointerup', 'click', 'dblclick']) {
-        document.addEventListener(evt, previewInteractionGuard, true);
-      }
 
       let veilRafPending = false;
       function scheduleRenderPreviewVeil() {
@@ -1638,13 +2264,8 @@ private enum MusicScanNativeBridgeScript {
     """#
 }
 
-// MARK: - Native UI Polish & Stage Bridge Script
+// MARK: - Local-First Native Bridge & window.MusicScanNative API
 
-/// Enhances the MusicScan web UI for native iOS/iPadOS & iPhone Duo feel:
-/// 1. Keeps the Review & Edit tab cleanly focused on saved scans (`#library`) and live score editing.
-/// 2. Fixes narrow & foldable (iPhone Duo Outer/Inner) header/toolbar layouts so nothing clips or wraps awkwardly.
-/// 3. Streams screen stage, library count, fast mode, and live samples to SwiftUI tabs.
-/// 4. Provides `window.__msImportFile` so native Files/PDF/MusicXML pickers feed straight into `startUpload`.
 private enum NativeWebPolishScript {
     static let source = #"""
     (() => {
@@ -1652,6 +2273,9 @@ private enum NativeWebPolishScript {
       window.__msIosPolishInstalled = true;
 
       document.documentElement.classList.add('ms-review-tab');
+      if (document.body) {
+        document.body.classList.add('native-embed');
+      }
 
       const style = document.createElement('style');
       style.id = 'ms-ios-native-polish';
@@ -1666,11 +2290,37 @@ private enum NativeWebPolishScript {
           max-width: 100vw !important;
           overscroll-behavior-x: none;
         }
-        #app, #viewUpload, #viewProgress {
-          overflow-x: hidden !important;
-          max-width: 100% !important;
+        body.native-embed header.top,
+        body.native-embed .top,
+        body.native-embed #qualityBanner,
+        body.native-embed #toolbar,
+        body.native-embed #viewEditor .toolbar,
+        body.native-embed #review,
+        body.native-embed #inspector,
+        body.native-embed .statusbar,
+        body.native-embed #photoCol,
+        body.native-embed #msPageNav,
+        body.native-embed #msFlagNav,
+        body.native-embed #msDocTitleRow,
+        body.native-embed .pbar,
+        body.native-embed #practicePanel {
+          display: none !important;
         }
-        #viewUpload, #viewProgress {
+        body.native-embed #viewEditor,
+        body.native-embed .workspace,
+        body.native-embed .score-col {
+          padding: 0 !important;
+          margin: 0 !important;
+          height: 100vh !important;
+          max-height: 100vh !important;
+          background: transparent !important;
+        }
+        body.native-embed #scoreScroll {
+          height: 100% !important;
+          padding: 12px 10px 42px !important;
+          box-sizing: border-box !important;
+        }
+        #viewProgress {
           background-image: radial-gradient(rgba(23, 105, 194, 0.085) 0.75px, transparent 0.75px) !important;
           background-size: 14px 14px !important;
         }
@@ -1691,1089 +2341,14 @@ private enum NativeWebPolishScript {
         #viewProgress #progressText {
           font-variant-numeric: tabular-nums !important;
         }
-        html.ms-review-tab #viewUpload .hero {
-          display: none !important;
-        }
-        header.top, .top {
-          background: rgba(245, 250, 255, 0.90) !important;
-          -webkit-backdrop-filter: saturate(180%) blur(20px);
-          backdrop-filter: saturate(180%) blur(20px);
-          border-bottom: 1px solid rgba(214, 228, 242, 0.85) !important;
-          padding-top: max(10px, env(safe-area-inset-top, 0px)) !important;
-          padding-bottom: 8px !important;
-          padding-left: max(14px, env(safe-area-inset-left, 0px)) !important;
-          padding-right: max(14px, env(safe-area-inset-right, 0px)) !important;
-          max-width: 100vw !important;
-          box-sizing: border-box !important;
-        }
-        .drop, .sample-card, .lib-card, .card {
-          border-radius: 20px !important;
-          box-shadow: 0 4px 18px rgba(14, 34, 56, 0.05) !important;
-          transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.16s ease;
-        }
-        .btn, button.primary, .sample-card:active, .lib-card:active {
-          transition: transform 0.12s ease, opacity 0.12s ease;
-        }
-        .btn:active, button.primary:active {
-          transform: scale(0.97);
-        }
-        #viewUpload {
-          padding-top: 20px !important;
-          padding-left: max(16px, env(safe-area-inset-left, 0px)) !important;
-          padding-right: max(16px, env(safe-area-inset-right, 0px)) !important;
-          padding-bottom: 28px !important;
-          box-sizing: border-box !important;
-        }
-        #viewUpload .hero, #viewUpload .library {
-          width: 100% !important;
-          max-width: 820px !important;
-          margin-bottom: 12px !important;
-          box-sizing: border-box !important;
-        }
-        #viewUpload .samples {
-          display: grid !important;
-          grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)) !important;
-          gap: 12px !important;
-          width: 100% !important;
-        }
-        #viewUpload .sample {
-          width: auto !important;
-        }
-        .ms-native-hdr-group {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          margin-left: auto;
-          flex-shrink: 0;
-        }
-        body.editing .ms-native-hdr-group {
-          margin-left: 4px;
-        }
-        .ms-native-hdr-btn {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 5px;
-          min-width: 34px;
-          height: 34px;
-          padding: 0 8px;
-          border-radius: 999px;
-          border: 1px solid rgba(23, 105, 194, 0.16);
-          background: rgba(255, 255, 255, 0.88);
-          color: #0F56A3;
-          cursor: pointer;
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 13px;
-          font-weight: 700;
-          box-shadow: 0 1px 4px rgba(14, 34, 56, 0.06);
-          transition: transform 0.12s ease, background 0.15s ease;
-          flex-shrink: 0;
-        }
-        .ms-native-hdr-btn:active {
-          transform: scale(0.94);
-          background: #EAF4FE;
-        }
-        .ms-native-hdr-btn .ms-pro-dot {
-          display: none;
-          width: 7px;
-          height: 7px;
-          border-radius: 999px;
-          background: #F6B93B;
-          box-shadow: 0 0 0 2px rgba(246, 185, 59, 0.25);
-        }
-        html.ms-native-pro .ms-native-hdr-btn.ms-account-btn .ms-pro-dot {
-          display: inline-block;
-        }
-        .ms-native-hdr-btn svg {
-          width: 16px;
-          height: 16px;
-          stroke: currentColor;
-          fill: none;
-          stroke-width: 2;
-          stroke-linecap: round;
-          stroke-linejoin: round;
-        }
-        /* Adaptive Form-Factor Polish: iPhone (<=680px), iPhone Duo / Foldable (681-960px), iPad Studio (>960px) */
-        @media (max-width: 680px) {
-          body.editing .ms-native-hdr-group {
-            display: none !important;
-          }
-          body.editing footer.credit {
-            display: none !important;
-          }
-          body.editing header.top .brand,
-          body.editing .top .brand {
-            display: none !important;
-          }
-          body.editing header.top, body.editing .top {
-            flex-wrap: wrap !important;
-            align-items: center !important;
-            gap: 4px 6px !important;
-            padding-top: max(6px, env(safe-area-inset-top, 0px)) !important;
-            padding-bottom: 6px !important;
-            padding-left: max(10px, env(safe-area-inset-left, 0px)) !important;
-            padding-right: max(10px, env(safe-area-inset-right, 0px)) !important;
-          }
-          body.editing .top-actions {
-            order: 1 !important;
-            width: 100% !important;
-            flex: 1 1 100% !important;
-            min-width: 0 !important;
-            max-width: 100% !important;
-            flex-wrap: nowrap !important;
-            overflow-x: auto !important;
-            -webkit-overflow-scrolling: touch;
-            scrollbar-width: none;
-            justify-content: flex-start !important;
-            align-items: center !important;
-            gap: 5px !important;
-            padding: 1px 0;
-          }
-          body.editing .top-actions #btnNew {
-            margin-right: auto !important;
-            padding: 0 10px !important;
-            font-weight: 700 !important;
-            color: #0F56A3 !important;
-            background: #EAF4FE !important;
-            border: 1px solid #C9DDF1 !important;
-            border-radius: 9px !important;
-          }
-          body.editing .top-actions::-webkit-scrollbar {
-            display: none;
-          }
-          body.editing .top .btn,
-          body.editing .top .btn.icon,
-          body.editing .top .btn.play,
-          body.editing #btnExport {
-            height: 33px !important;
-            min-width: 33px !important;
-            font-size: 12.5px !important;
-          }
-          body.editing .top .btn.icon,
-          body.editing #btnExport {
-            width: 33px !important;
-            padding: 0 !important;
-          }
-          body.editing .top .btn.play {
-            width: auto !important;
-            min-width: 68px !important;
-            padding: 0 12px !important;
-            gap: 5px !important;
-            font-weight: 700 !important;
-          }
-          body.editing .top .btn.play .pl {
-            display: inline !important;
-          }
-          /* Hide secondary header clutter on iPhone when appropriate */
-          html.ms-form-iphone.ms-single-page body.editing #btnPages {
-            display: none !important;
-          }
-          html.ms-form-iphone body.editing #btnRedo:disabled,
-          html.ms-form-iphone body.editing #btnLoop {
-            display: none !important;
-          }
-          body.editing #msDocTitleRow {
-            order: 2 !important;
-            flex: 1 1 100% !important;
-            width: 100% !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: space-between !important;
-            gap: 8px !important;
-            padding-top: 2px !important;
-          }
-          /* Hide the main editing toolbar while Fix it (#review) is open on iPhone so there aren't two stacked toolbars */
-          html.ms-form-iphone body.reviewing #toolbar {
-            display: none !important;
-          }
-          /* Compact 1-line quality banner fallback */
-          #qualityBanner {
-            display: none !important;
-          }
-          /* Clean, Airy iPhone Toolbar */
-          .toolbar {
-            padding: 5px 8px !important;
-            gap: 5px !important;
-            -webkit-overflow-scrolling: touch;
-          }
-          .seg button {
-            height: 33px !important;
-            min-width: 33px !important;
-            padding: 0 9px !important;
-            font-size: 12.5px !important;
-          }
-          /* By default on iPhone, keep the toolbar uncluttered on a single row (Select, Add, Ink, Fix it, Photo, More ▾).
-             When a note is selected or Add Notes is active, automatically reveal Accidentals, Duration, and Rest/Delete. */
-          html.ms-form-iphone:not(.ms-iphone-full-tools) body:not(.ink-mode) .toolbar .seg[aria-label="Rhythm"],
-          html.ms-form-iphone:not(.ms-iphone-full-tools) body:not(.ink-mode) .toolbar .seg[aria-label="Markings and bars"],
-          html.ms-form-iphone:not(.ms-iphone-full-tools) body:not(.ink-mode) .toolbar #btnKeyTime,
-          html.ms-form-iphone:not(.ms-iphone-full-tools) body:not(.ink-mode) .toolbar #btnRescan,
-          html.ms-form-iphone:not(.ms-iphone-full-tools) body:not(.ink-mode) .toolbar .sep {
-            display: none !important;
-          }
-          html.ms-form-iphone:not(.ms-iphone-full-tools):not(.ms-note-selected) body:not(.note-input):not(.ink-mode) .toolbar .seg.durs,
-          html.ms-form-iphone:not(.ms-iphone-full-tools):not(.ms-note-selected) body:not(.note-input):not(.ink-mode) .toolbar .seg[aria-label="Accidentals"],
-          html.ms-form-iphone:not(.ms-iphone-full-tools):not(.ms-note-selected) body:not(.note-input):not(.ink-mode) .toolbar .seg[aria-label="Edit"] {
-            display: none !important;
-          }
-          body.ink-mode #msMoreToolsBtn {
-            display: none !important;
-          }
-          /* Keep floating #inspector hidden on iPhone (Fix it and Photo handle comparison cleanly) */
-          html.ms-form-iphone #inspector {
-            display: none !important;
-          }
-          /* Compact iPhone piano pad when explicitly opened */
-          html.ms-form-iphone #notePad .pad-keys {
-            height: 58px !important;
-          }
-          html.ms-form-iphone #notePad .pad-btn {
-            min-height: 32px !important;
-            font-size: 11px !important;
-            padding: 2px 6px !important;
-          }
-          /* Streamlined iPhone status bar — never overflows horizontally */
-          html.ms-form-iphone .statusbar {
-            padding: 4px 10px !important;
-            font-size: 11.5px !important;
-            gap: 6px !important;
-            overflow: hidden !important;
-            justify-content: space-between !important;
-          }
-          html.ms-form-iphone #btnKeys,
-          html.ms-form-iphone #statHint {
-            display: none !important;
-          }
-          html.ms-form-iphone .statusbar .zoom .btn.icon.small {
-            width: 28px !important;
-            height: 26px !important;
-            font-size: 14px !important;
-          }
-          html.ms-form-iphone .statusbar .zoom span {
-            min-width: 34px !important;
-            font-size: 11.5px !important;
-          }
-          .lib-grid {
-            grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)) !important;
-            gap: 12px !important;
-          }
-          .lib-thumb {
-            height: 112px !important;
-            background: #FFFFFF !important;
-          }
-          .lib-thumb img {
-            object-fit: contain !important;
-            background: #FFFFFF !important;
-            padding: 3px !important;
-          }
-          .lib-head h2 {
-            font-size: 24px !important;
-          }
-        }
-        /* iPhone Duo Inner (Unfolded 681px–960px): Split-Screen Dual-Column Score + Photo & Two-Row Studio Toolbar */
-        @media (min-width: 681px) and (max-width: 960px) {
-          body.editing footer.credit {
-            display: none !important;
-          }
-          .toolbar {
-            padding: 7px 12px !important;
-            gap: 6px !important;
-          }
-          .workspace.split {
-            grid-template-columns: minmax(250px, 40%) 1fr !important;
-          }
-          .rev-crop {
-            grid-template-columns: 1fr 1fr !important;
-            gap: 10px !important;
-          }
-          .rev-pane canvas {
-            max-height: 118px !important;
-          }
-        }
-        /* iPad Landscape / Desktop Studio (>960px): Full Notation Suite & Side-by-Side Photo Verification */
-        @media (min-width: 961px) {
-          .toolbar {
-            padding: 8px 18px !important;
-            gap: 8px !important;
-          }
-          .workspace.split {
-            grid-template-columns: minmax(320px, 42%) 1fr !important;
-          }
-          .rev-crop {
-            grid-template-columns: 1fr 1fr !important;
-            gap: 14px !important;
-          }
-          .rev-pane canvas {
-            max-height: 140px !important;
-          }
-        }
-        /* Toggle chip for iPhone "More ▾" */
-        #msMoreToolsBtn {
-          height: 33px;
-          padding: 0 11px;
-          border-radius: 10px;
-          border: 1px solid #D6E4F2;
-          background: #FFFFFF;
-          color: #0F56A3;
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 12.5px;
-          font-weight: 700;
-          cursor: pointer;
-          white-space: nowrap;
-          flex-shrink: 0;
-        }
-        #msMoreToolsBtn.on {
-          background: #EAF4FE;
-          border-color: #1769C2;
-          color: #0F56A3;
-        }
-        html:not(.ms-form-iphone) #msMoreToolsBtn {
-          display: none !important;
-        }
-        /* Aligned Title Row with One-Tap Rename Button & Compact Scan Quality Pill */
-        #msDocTitleRow {
-          display: none;
-          align-items: center;
-          justify-content: space-between;
-          gap: 8px;
-          min-width: 0;
-          flex: 1 1 auto;
-        }
-        body.editing #msDocTitleRow {
-          display: flex;
-        }
-        #msTitleRenameWrap {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          min-width: 0;
-          max-width: 100%;
-          padding: 3px 8px 3px 10px;
-          border-radius: 9px;
-          background: rgba(255, 255, 255, 0.78);
-          border: 1px solid rgba(214, 228, 242, 0.9);
-          cursor: pointer;
-          transition: background 0.14s ease, transform 0.12s ease;
-        }
-        #msTitleRenameWrap:active {
-          background: #EAF4FE;
-          transform: scale(0.98);
-        }
-        #msTitleRenameWrap .doc-title {
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif !important;
-          font-size: 13.5px !important;
-          font-weight: 700 !important;
-          color: #0E2238 !important;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          flex: 0 1 auto;
-        }
-        #msRenameIconBtn {
-          display: inline-flex;
-          align-items: center;
-          gap: 3px;
-          height: 22px;
-          padding: 0 7px;
-          border-radius: 6px;
-          border: none;
-          background: #EAF4FE;
-          color: #0F56A3;
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 11px;
-          font-weight: 700;
-          cursor: pointer;
-          flex-shrink: 0;
-        }
-        #msRenameIconBtn svg {
-          width: 11.5px;
-          height: 11.5px;
-          stroke: currentColor;
-          fill: none;
-          stroke-width: 2.1;
-          stroke-linecap: round;
-          stroke-linejoin: round;
-        }
-        #msQualityPill {
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-          height: 27px;
-          padding: 0 10px;
-          border-radius: 999px;
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 11.5px;
-          font-weight: 700;
-          cursor: pointer;
-          white-space: nowrap;
-          flex-shrink: 0;
-          border: 1px solid #D6E4F2;
-          background: #FFFFFF;
-          color: #0E2238;
-          font-variant-numeric: tabular-nums;
-        }
-        #msQualityPill.hidden {
-          display: none !important;
-        }
-        #msQualityPill.good {
-          background: #EBFBEE;
-          border-color: #B7E4C7;
-          color: #1D7A4E;
-        }
-        #msQualityPill.check {
-          background: #FFF8E8;
-          border-color: #F3D193;
-          color: #8A5300;
-        }
-        #msQualityPill.retake {
-          background: #FDE8E6;
-          border-color: #F5B5AE;
-          color: #A32A21;
-        }
-        #msQualityPill .ms-qp-dot {
-          width: 7px;
-          height: 7px;
-          border-radius: 50%;
-          background: currentColor;
-        }
-        #msQualityPill svg {
-          width: 12px;
-          height: 12px;
-          stroke: currentColor;
-          fill: none;
-          stroke-width: 2;
-          opacity: 0.75;
-        }
-        /* Scan Quality Info Sheet (on-demand details + Adjust edges / Retake photo) */
-        #msQualityInfoSheet {
-          position: fixed;
-          inset: 0;
-          z-index: 125;
-          background: rgba(14, 34, 56, 0.38);
-          backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 18px;
-          box-sizing: border-box;
-          animation: msIosFadeIn 0.18s ease both;
-        }
-        #msQualityInfoSheet.hidden {
-          display: none !important;
-        }
-        #msQualityInfoSheet .ms-qi-card {
-          width: 100%;
-          max-width: 420px;
-          background: #FFFFFF;
-          border: 1px solid #D6E4F2;
-          border-radius: 22px;
-          padding: 18px;
-          box-shadow: 0 22px 54px rgba(14, 34, 56, 0.24);
-          font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-          color: #0E2238;
-        }
-        #msQualityInfoSheet .ms-qi-head {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          margin-bottom: 10px;
-        }
-        #msQualityInfoSheet .ms-qi-title {
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 18px;
-          font-weight: 800;
-          margin: 0;
-        }
-        #msQualityInfoSheet .ms-qi-score {
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 13px;
-          font-weight: 800;
-          padding: 4px 10px;
-          border-radius: 999px;
-          background: #EAF4FE;
-          color: #0F56A3;
-        }
-        #msQualityInfoSheet .ms-qi-desc {
-          font-size: 13.5px;
-          line-height: 1.45;
-          color: #4E647C;
-          margin: 0 0 12px;
-        }
-        #msQualityInfoSheet .ms-qi-list {
-          margin: 0 0 14px;
-          padding-left: 18px;
-          font-size: 13px;
-          color: #2A3F57;
-          line-height: 1.45;
-        }
-        #msQualityInfoSheet .ms-qi-actions {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-          justify-content: flex-end;
-        }
-        #msQualityInfoSheet .ms-qi-btn {
-          height: 36px;
-          padding: 0 14px;
-          border-radius: 10px;
-          border: 1px solid #D6E4F2;
-          background: #F5FAFF;
-          color: #0F56A3;
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 13px;
-          font-weight: 700;
-          cursor: pointer;
-        }
-        #msQualityInfoSheet .ms-qi-btn.primary {
-          background: #1769C2;
-          border-color: #1769C2;
-          color: #FFFFFF;
-        }
-        /* Intuitive Fix it (#review) Back to Score header button */
-        #review #rvClose {
-          display: inline-flex !important;
-          align-items: center !important;
-          gap: 5px !important;
-          height: 33px !important;
-          padding: 0 12px !important;
-          border-radius: 10px !important;
-          border: 1px solid #B9D9F7 !important;
-          background: #EAF4FE !important;
-          color: #0F56A3 !important;
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif !important;
-          font-size: 12.5px !important;
-          font-weight: 800 !important;
-          order: -1 !important;
-          margin-right: 4px !important;
-        }
-        #review #rvClose:active {
-          background: #D8EAFC !important;
-          transform: scale(0.96);
-        }
-        /* Crisp SVG icons inside buttons */
-        #btnPhoto svg, #btnPad svg, #msFlagVisBtn svg {
-          width: 14px;
-          height: 14px;
-          stroke: currentColor;
-          fill: none;
-          stroke-width: 2;
-          stroke-linecap: round;
-          stroke-linejoin: round;
-          flex-shrink: 0;
-        }
-        /* Low-Confidence Flagged Bar Filter, Visual Softening & Stepper Navigator */
-        /* Soften default red/amber fills on the score canvas so dozens of flags never feel overwhelming */
-        #score svg g.ms-bg rect[fill="#C2362B"] {
-          fill-opacity: 0.065 !important;
-        }
-        #score svg g.ms-bg rect[fill="#E39B1B"] {
-          fill-opacity: 0.075 !important;
-        }
-        /* Filter mode: Likely wrong (red) only — hide amber "worth a look" highlights */
-        html[data-ms-flag-mode="bad"] #score svg g.ms-bg rect[fill="#E39B1B"],
-        html[data-ms-flag-mode="bad"] #photoSvg rect[stroke="#E39B1B"] {
-          display: none !important;
-        }
-        html[data-ms-flag-mode="bad"] #score svg g.ms-bg text.ms-num[fill="#8A5300"] {
-          fill: #4E647C !important;
-        }
-        /* Filter mode: Off (clean score) — hide all red and amber bar highlights */
-        html[data-ms-flag-mode="off"] #score svg g.ms-bg rect[fill="#C2362B"],
-        html[data-ms-flag-mode="off"] #score svg g.ms-bg rect[fill="#E39B1B"],
-        html[data-ms-flag-mode="off"] #photoSvg rect[stroke="#C2362B"],
-        html[data-ms-flag-mode="off"] #photoSvg rect[stroke="#E39B1B"] {
-          display: none !important;
-        }
-        html[data-ms-flag-mode="off"] #score svg g.ms-bg text.ms-num[fill="#C2362B"],
-        html[data-ms-flag-mode="off"] #score svg g.ms-bg text.ms-num[fill="#8A5300"] {
-          fill: #4E647C !important;
-        }
-        #msFlagNav {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 6px;
-          margin: 2px 10px 6px;
-          padding: 5px 8px;
-          border-radius: 14px;
-          background: rgba(255, 255, 255, 0.94);
-          border: 1px solid #D6E4F2;
-          box-shadow: 0 2px 10px rgba(14, 34, 56, 0.05);
-          user-select: none;
-          -webkit-user-select: none;
-          flex-wrap: wrap;
-        }
-        #msFlagNav.hidden,
-        body.reviewing #msFlagNav {
-          display: none !important;
-        }
-        #msFlagNav .ms-fn-modes {
-          display: inline-flex;
-          align-items: center;
-          background: #EAF4FE;
-          padding: 2px;
-          border-radius: 10px;
-          border: 1px solid #D6E4F2;
-          gap: 2px;
-        }
-        #msFlagNav .ms-fn-mode {
-          height: 27px;
-          padding: 0 9px;
-          border-radius: 8px;
-          border: none;
-          background: transparent;
-          color: #4E647C;
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 11.5px;
-          font-weight: 700;
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          cursor: pointer;
-          white-space: nowrap;
-        }
-        #msFlagNav .ms-fn-mode.on {
-          background: #FFFFFF;
-          color: #0E2238;
-          box-shadow: 0 1px 3px rgba(14, 34, 56, 0.10);
-        }
-        #msFlagNav .ms-fn-dot {
-          width: 7px;
-          height: 7px;
-          border-radius: 50%;
-          display: inline-block;
-        }
-        #msFlagNav .ms-fn-dot.bad { background: #C2362B; }
-        #msFlagNav .ms-fn-dot.all { background: #E39B1B; }
-        #msFlagNav .ms-fn-nav {
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-          margin-left: auto;
-        }
-        #msFlagNav .ms-fn-step {
-          width: 29px;
-          height: 29px;
-          border-radius: 9px;
-          border: 1px solid #D6E4F2;
-          background: #F5FAFF;
-          color: #0F56A3;
-          font-size: 15px;
-          font-weight: 800;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          padding: 0;
-        }
-        #msFlagNav .ms-fn-step:active:not(:disabled) {
-          background: #D8EAFC;
-        }
-        #msFlagNav .ms-fn-step:disabled {
-          opacity: 0.35;
-          cursor: default;
-        }
-        #msFlagNav .ms-fn-status {
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 12px;
-          font-weight: 700;
-          color: #0E2238;
-          padding: 0 4px;
-          font-variant-numeric: tabular-nums;
-          white-space: nowrap;
-          cursor: pointer;
-        }
-        #msFlagNav .ms-fn-status .ms-fn-sub {
-          color: #4E647C;
-          font-weight: 600;
-        }
-        #msFlagNav .ms-fn-ok {
-          height: 29px;
-          padding: 0 10px;
-          border-radius: 9px;
-          border: 1px solid #B7E4C7;
-          background: #EBFBEE;
-          color: #1D7A4E;
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 11.5px;
-          font-weight: 800;
-          cursor: pointer;
-          white-space: nowrap;
-        }
-        #msFlagNav .ms-fn-ok:active {
-          transform: scale(0.96);
-        }
-        #msFlagNav .ms-fn-fix {
-          height: 29px;
-          padding: 0 10px;
-          border-radius: 9px;
-          border: 1px solid #F3D193;
-          background: #FFF8E8;
-          color: #8A5300;
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 11.5px;
-          font-weight: 800;
-          cursor: pointer;
-          white-space: nowrap;
-        }
-        #msFlagVisBtn {
-          display: none;
-          align-items: center;
-          gap: 4px;
-          height: 24px;
-          padding: 0 9px;
-          margin-right: 6px;
-          border-radius: 999px;
-          border: 1px solid #D6E4F2;
-          background: #FFFFFF;
-          color: #4E647C;
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 11.5px;
-          font-weight: 700;
-          cursor: pointer;
-          white-space: nowrap;
-        }
-        #msFlagVisBtn.on {
-          background: #FFF8E8;
-          border-color: #F3D193;
-          color: #8A5300;
-        }
-        .lib-card, #viewProgress .progress-card, #score svg {
-          animation: msIosFadeIn 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
-        }
-        @keyframes msIosFadeIn {
-          from { opacity: 0; transform: translateY(4px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        /* GoodNotes 4-Square Page Bar & Thumbnail Sheet */
-        #msPageNav {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 8px;
-          margin: 4px 10px 6px;
-          padding: 5px 10px;
-          border-radius: 14px;
-          background: rgba(234, 244, 254, 0.92);
-          border: 1px solid #D6E4F2;
-          backdrop-filter: saturate(180%) blur(14px);
-          -webkit-backdrop-filter: saturate(180%) blur(14px);
-          user-select: none;
-          -webkit-user-select: none;
-        }
-        #msPageNav.hidden {
-          display: none !important;
-        }
-        #msPageNav .ms-pn-grid-btn {
-          flex: none;
-          height: 32px;
-          padding: 0 12px;
-          border-radius: 10px;
-          border: 1px solid #B9D9F7;
-          background: #FFFFFF;
-          color: #0F56A3;
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 12.5px;
-          font-weight: 800;
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          cursor: pointer;
-          box-shadow: 0 1px 3px rgba(14, 34, 56, 0.05);
-          transition: transform 0.12s ease, background 0.14s ease;
-        }
-        #msPageNav .ms-pn-grid-btn:active {
-          transform: scale(0.95);
-          background: #EAF4FE;
-        }
-        #msPageNav .ms-pn-grid-btn svg {
-          width: 14px;
-          height: 14px;
-          fill: currentColor;
-        }
-        #msPageNav .ms-pn-status {
-          flex: 1 1 auto;
-          text-align: center;
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 12.5px;
-          font-weight: 700;
-          color: #0E2238;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          cursor: pointer;
-        }
-        #msPageNav .ms-pn-status .ms-pn-sub {
-          font-weight: 600;
-          color: #4E647C;
-          font-variant-numeric: tabular-nums;
-        }
-        #msPageNav .ms-pn-arrows {
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-          flex: none;
-        }
-        #msPageNav .ms-pn-step {
-          flex: none;
-          width: 32px;
-          height: 32px;
-          border-radius: 10px;
-          border: 1px solid #D6E4F2;
-          background: #FFFFFF;
-          color: #0F56A3;
-          font-size: 16px;
-          font-weight: 800;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          padding: 0;
-        }
-        #msPageNav .ms-pn-step:disabled {
-          opacity: 0.38;
-          cursor: default;
-        }
-        /* Intuitive "Go to Playing Bar" Floating Pill when user scrolls away during playback */
-        #msFollowPlayBtn {
-          position: fixed;
-          bottom: 72px;
-          left: 50%;
-          transform: translateX(-50%);
-          z-index: 60;
-          display: inline-flex;
-          align-items: center;
-          gap: 7px;
-          height: 38px;
-          padding: 0 16px;
-          border-radius: 999px;
-          border: 1px solid rgba(255, 255, 255, 0.35);
-          background: linear-gradient(135deg, #0F56A3 0%, #1769C2 100%);
-          color: #FFFFFF;
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 13px;
-          font-weight: 800;
-          box-shadow: 0 8px 24px rgba(15, 86, 163, 0.35), 0 2px 6px rgba(14, 34, 56, 0.14);
-          cursor: pointer;
-          white-space: nowrap;
-          transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s ease;
-        }
-        #msFollowPlayBtn.hidden {
-          display: none !important;
-        }
-        #msFollowPlayBtn:active {
-          transform: translateX(-50%) scale(0.95);
-        }
-        #msFollowPlayBtn .ms-fp-pulse {
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-          background: #5EEAD4;
-          box-shadow: 0 0 0 3px rgba(94, 234, 212, 0.3);
-        }
-        /* GoodNotes-Style 4-Square Page Grid Sheet */
-        #msGoodNotesSheet {
-          position: fixed;
-          inset: 0;
-          z-index: 120;
-          background: rgba(14, 34, 56, 0.38);
-          backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
-          display: flex;
-          align-items: flex-end;
-          justify-content: center;
-          padding: 16px;
-          box-sizing: border-box;
-          animation: msIosFadeIn 0.2s ease both;
-        }
-        #msGoodNotesSheet.hidden {
-          display: none !important;
-        }
-        #msGoodNotesSheet .ms-gn-card {
-          width: 100%;
-          max-width: 720px;
-          max-height: 82vh;
-          background: #F5FAFF;
-          border: 1px solid #D6E4F2;
-          border-radius: 24px;
-          box-shadow: 0 22px 54px rgba(14, 34, 56, 0.26);
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-        }
-        #msGoodNotesSheet .ms-gn-head {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 14px 18px;
-          background: rgba(255, 255, 255, 0.92);
-          border-bottom: 1px solid #D6E4F2;
-        }
-        #msGoodNotesSheet .ms-gn-title {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 17px;
-          font-weight: 800;
-          color: #0E2238;
-        }
-        #msGoodNotesSheet .ms-gn-title svg {
-          width: 18px;
-          height: 18px;
-          fill: #1769C2;
-        }
-        #msGoodNotesSheet .ms-gn-actions {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-        #msGoodNotesSheet .ms-gn-btn {
-          height: 34px;
-          padding: 0 12px;
-          border-radius: 10px;
-          border: 1px solid #D6E4F2;
-          background: #FFFFFF;
-          color: #0F56A3;
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 13px;
-          font-weight: 700;
-          cursor: pointer;
-        }
-        #msGoodNotesSheet .ms-gn-btn.primary {
-          background: #1769C2;
-          border-color: #1769C2;
-          color: #FFFFFF;
-        }
-        #msGoodNotesSheet .ms-gn-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
-          gap: 14px;
-          padding: 16px;
-          overflow-y: auto;
-          -webkit-overflow-scrolling: touch;
-        }
-        #msGoodNotesSheet .ms-gn-tile {
-          background: #FFFFFF;
-          border: 2px solid #D6E4F2;
-          border-radius: 16px;
-          padding: 10px;
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-          cursor: pointer;
-          position: relative;
-          transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
-        }
-        #msGoodNotesSheet .ms-gn-tile:active {
-          transform: scale(0.97);
-        }
-        #msGoodNotesSheet .ms-gn-tile.on {
-          border-color: #1769C2;
-          box-shadow: 0 6px 18px rgba(23, 105, 194, 0.18);
-          background: #FAFDFF;
-        }
-        #msGoodNotesSheet .ms-gn-thumb {
-          width: 100%;
-          height: 176px;
-          border-radius: 10px;
-          background: #FFFFFF;
-          border: 1px solid rgba(14, 34, 56, 0.10);
-          overflow: hidden;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          position: relative;
-          padding: 4px;
-          box-sizing: border-box;
-        }
-        #msGoodNotesSheet .ms-gn-thumb img {
-          width: 100%;
-          height: 100%;
-          object-fit: contain;
-          border-radius: 6px;
-        }
-        #msGoodNotesSheet .ms-gn-badge {
-          position: absolute;
-          top: 7px;
-          left: 7px;
-          min-width: 24px;
-          height: 24px;
-          padding: 0 7px;
-          border-radius: 999px;
-          background: rgba(14, 34, 56, 0.82);
-          color: #FFFFFF;
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 12px;
-          font-weight: 800;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-        }
-        #msGoodNotesSheet .ms-gn-tile.on .ms-gn-badge {
-          background: #1769C2;
-        }
-        #msGoodNotesSheet .ms-gn-playing-pill {
-          position: absolute;
-          bottom: 7px;
-          right: 7px;
-          padding: 2px 8px;
-          border-radius: 999px;
-          background: #0F56A3;
-          color: #FFFFFF;
-          font-size: 10.5px;
-          font-weight: 800;
-        }
-        #msGoodNotesSheet .ms-gn-meta {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 4px;
-        }
-        #msGoodNotesSheet .ms-gn-info {
-          display: flex;
-          flex-direction: column;
-          min-width: 0;
-        }
-        #msGoodNotesSheet .ms-gn-name {
-          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-          font-size: 13.5px;
-          font-weight: 800;
-          color: #0E2238;
-        }
-        #msGoodNotesSheet .ms-gn-bars {
-          font-size: 11.5px;
-          color: #4A6078;
-          font-variant-numeric: tabular-nums;
-        }
-        #msGoodNotesSheet .ms-gn-reorder {
-          display: inline-flex;
-          align-items: center;
-          gap: 3px;
-        }
-        #msGoodNotesSheet .ms-gn-move {
-          width: 26px;
-          height: 26px;
-          border-radius: 7px;
-          border: 1px solid #D6E4F2;
-          background: #F5FAFF;
-          color: #0F56A3;
-          font-size: 12px;
-          font-weight: 800;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          padding: 0;
-        }
-        #msGoodNotesSheet .ms-gn-move:disabled {
-          opacity: 0.32;
-          cursor: default;
-        }
       `;
       (document.head || document.documentElement).appendChild(style);
+
+      function postNative(payload) {
+        try {
+          window.webkit?.messageHandlers?.musicscan?.postMessage(payload);
+        } catch (_) {}
+      }
 
       window.__msSetReviewTabMode = (enabled) => {
         document.documentElement.classList.toggle('ms-review-tab', Boolean(enabled));
@@ -2802,24 +2377,6 @@ private enum NativeWebPolishScript {
         }
       };
 
-      function updateFormFactorClass() {
-        const w = window.innerWidth || document.documentElement.clientWidth || 393;
-        const root = document.documentElement;
-        root.classList.toggle('ms-form-iphone', w <= 680);
-        root.classList.toggle('ms-form-duo', w > 680 && w <= 960);
-        root.classList.toggle('ms-form-ipad', w > 960);
-        const selectBtn = document.querySelector('.toolbar button[data-mode="select"]');
-        if (selectBtn) {
-          selectBtn.textContent = w <= 680 ? '↖ Drag notes' : '↖ Select';
-        }
-      }
-      updateFormFactorClass();
-      window.addEventListener('resize', updateFormFactorClass, { passive: true });
-      window.addEventListener('orientationchange', () => setTimeout(updateFormFactorClass, 120), { passive: true });
-
-      // Intercept postMessage({ cmd: 'scan' }) when a preloaded multi-page native scan is waiting
-      // so app.js's `#cameraInput` handler runs `await startUpload(f)` (Page 1) followed by
-      // `for (const m of f.more) addPages(m)` (Pages 2..N in exact user-selected order).
       function installPreloadedScanHook() {
         const handler = window.webkit?.messageHandlers?.musicscan;
         if (!handler || handler.__msPreloadedHooked) return;
@@ -2845,8 +2402,6 @@ private enum NativeWebPolishScript {
         try {
           installPreloadedScanHook();
           const extrasB64 = Array.isArray(moreB64) ? moreB64 : [];
-          // Preferred path: route through #cameraInput's native scan handler in app.js
-          // so Page 1 opens in the editor and Pages 2..N are sequentially appended in exact order via addPages().
           const camLabel = document.getElementById('cameraInput')?.closest('label');
           if (camLabel) {
             window.__msPendingScanPayload = {
@@ -2858,8 +2413,6 @@ private enum NativeWebPolishScript {
             camLabel.click();
             return true;
           }
-
-          // Fallback path if #cameraInput label is not found
           const base = (name || 'scan.jpg').replace(/\.jpg$/i, '');
           const first = b64ToFile(firstB64, name || 'scan.jpg', 'image/jpeg');
           const extras = extrasB64.map((b, i) => b64ToFile(b, `${base} p${i + 2}.jpg`, 'image/jpeg'));
@@ -2869,71 +2422,16 @@ private enum NativeWebPolishScript {
             window.__ms.startUpload(first);
             return true;
           }
-          const input = document.getElementById('fileInput');
-          if (!input) return false;
-          const dt = new DataTransfer();
-          dt.items.add(first);
-          input.files = dt.files;
-          input.dispatchEvent(new Event('change', { bubbles: true }));
-          return true;
+          return false;
         } catch (err) {
           console.error('Native scan image import failed:', err);
           return false;
         }
       };
 
-      // Ensure pressing the top-bar ▶ Play button plays continuously through all pages
-      // (clearing any accidental single-bar selection when Loop is off so playback doesn't stop or start at the last bar).
-      let playInterceptorInstalled = false;
-      function ensureContinuousPlayBehavior() {
-        if (playInterceptorInstalled) return;
-        const playBtn = document.getElementById('btnPlay');
-        if (!playBtn) return;
-        playInterceptorInstalled = true;
-        playBtn.addEventListener('click', () => {
-          try {
-            const ms = window.__ms;
-            if (!ms || !ms.S || !ms.S.score) return;
-            const isPlaying = document.body.classList.contains('playing');
-            if (isPlaying) return; // Stopping playback
-            const loopOn = Boolean(ms.S.loop);
-            const selectedBars = ms.S.measures;
-            const totalBars = ms.S.score.measures?.length || 0;
-            // If Loop is off and only 1 bar is selected (e.g. from dragging a note or tapping the last bar),
-            // clear the bar selection before togglePlay() reads S.measures so it plays continuously from the active page!
-            if (!loopOn && selectedBars && selectedBars.size === 1) {
-              const onlyBar = [...selectedBars][0];
-              // If the user is at the very last bar or in single-note drag mode, play from the start of the active page (or bar 0)
-              if (onlyBar >= totalBars - 1 || document.documentElement.classList.contains('ms-form-iphone')) {
-                selectedBars.clear();
-                const pages = getPageDescriptors();
-                if (pages[activePageIndex] && activePageIndex > 0) {
-                  const pageStartBar = pages[activePageIndex].lo || 0;
-                  if (pageStartBar > 0) selectedBars.add(pageStartBar);
-                }
-              }
-            }
-          } catch (_) {}
-        }, true);
-      }
-
-      const PHOTO_ICON_SVG = '<svg class="ms-btn-svg" viewBox="0 0 18 18" aria-hidden="true"><rect x="1.75" y="3" width="14.5" height="12" rx="2.2"/><circle cx="6.25" cy="7.25" r="1.4"/><path d="M2.2 13.2l4.1-3.8a1 1 0 0 1 1.38 0l2.4 2.2 2.1-1.9a1 1 0 0 1 1.36 0l2.3 2.1"/></svg>';
-      const PIANO_ICON_SVG = '<svg class="ms-btn-svg" viewBox="0 0 18 18" aria-hidden="true"><rect x="1.75" y="3" width="14.5" height="12" rx="2"/><line x1="6.5" y1="3" x2="6.5" y2="15"/><line x1="11.5" y1="3" x2="11.5" y2="15"/><rect x="5" y="3" width="2.4" height="7" rx="0.5" fill="currentColor"/><rect x="10.6" y="3" width="2.4" height="7" rx="0.5" fill="currentColor"/></svg>';
-      const PENCIL_ICON_SVG = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M12.9 2.6a1.6 1.6 0 0 1 2.3 2.3l-8.9 8.9-3.3.9.9-3.3 9-8.8z"/><path d="M11.3 4.2l2.3 2.3"/></svg>';
-      const FLAG_ICON_SVG = '<svg class="ms-btn-svg" viewBox="0 0 18 18" aria-hidden="true"><path d="M3.5 2.5v13"/><path d="M3.5 3.5h9.5l-2.2 3.5 2.2 3.5H3.5"/></svg>';
-
-      // Default the 2-octave piano pad to closed on iPhone unless explicitly opened by the user
-      try {
-        const w = window.innerWidth || document.documentElement.clientWidth || 393;
-        if (w <= 680 && !sessionStorage.getItem('ms_iphone_pad_init')) {
-          sessionStorage.setItem('ms_iphone_pad_init', '1');
-          localStorage.setItem('musicscan:pad', 'closed');
-        }
-      } catch (_) {}
-
       function humanizeTimestampTitle(raw) {
         if (!raw) return raw;
-        const m = raw.trim().match(/^Scan\s+(\d{4})-(\d{2})-(\d{2})T(\d{2})[-:](\d{2})(?:[-:](\d{2}))?$/i);
+        const m = String(raw).trim().match(/^Scan\s+(\d{4})-(\d{2})-(\d{2})T(\d{2})[-:](\d{2})(?:[-:](\d{2}))?$/i);
         if (!m) return raw;
         const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const monIdx = Math.max(0, Math.min(11, parseInt(m[2], 10) - 1));
@@ -2941,1090 +2439,488 @@ private enum NativeWebPolishScript {
         return `Scan \u00b7 ${months[monIdx]} ${day}`;
       }
 
-      function stripAllEditorEmojis() {
-        const btnPhoto = document.getElementById('btnPhoto');
-        if (btnPhoto && !btnPhoto.__msDeEmojified) {
-          btnPhoto.__msDeEmojified = true;
-          btnPhoto.innerHTML = `${PHOTO_ICON_SVG}<span>Photo</span>`;
-        }
-        const btnPad = document.getElementById('btnPad');
-        if (btnPad && !btnPad.__msDeEmojified) {
-          btnPad.__msDeEmojified = true;
-          btnPad.innerHTML = `${PIANO_ICON_SVG}<span>Piano</span>`;
-        }
-        const closeupLabel = document.getElementById('closeup')?.closest('label');
-        if (closeupLabel && !closeupLabel.__msDeEmojified) {
-          const input = closeupLabel.querySelector('input');
-          if (input) {
-            closeupLabel.__msDeEmojified = true;
-            closeupLabel.innerHTML = '';
-            closeupLabel.appendChild(input);
-            closeupLabel.insertAdjacentHTML('beforeend', `${PHOTO_ICON_SVG}<span>Re-shoot bar</span>`);
-          }
-        }
-        const rvClose = document.getElementById('rvClose');
-        if (rvClose && rvClose.textContent !== '\u2190 Back to Score') {
-          rvClose.textContent = '\u2190 Back to Score';
-          rvClose.title = 'Exit Fix it and return to full score';
-          rvClose.setAttribute('aria-label', 'Back to Score');
-        }
-        document.querySelectorAll('.fix-btn').forEach((fixBtn) => {
-          if (fixBtn.__msToggleHooked) return;
-          fixBtn.__msToggleHooked = true;
-          fixBtn.addEventListener('click', (e) => {
-            if (document.body.classList.contains('reviewing')) {
-              e.preventDefault();
-              e.stopPropagation();
-              document.getElementById('rvClose')?.click();
-            }
-          }, true);
-        });
-      }
-
-      function openQualityInfoSheet() {
-        postNative({ id: 0, cmd: 'haptic', kind: 'light' });
-        let sheet = document.getElementById('msQualityInfoSheet');
-        if (!sheet) {
-          sheet = document.createElement('div');
-          sheet.id = 'msQualityInfoSheet';
-          sheet.className = 'hidden';
-          sheet.addEventListener('click', (e) => {
-            if (e.target === sheet) sheet.classList.add('hidden');
-          });
-          document.body.appendChild(sheet);
-        }
-
-        const q = window.__ms?.S?.result?.quality || window.__ms?.S?.quality || {};
-        const scoreNum = typeof q.score === 'number' ? Math.round(q.score) : null;
-        const level = q.level || (scoreNum !== null && scoreNum < 65 ? 'poor' : 'warn');
-        const { all, bad } = getFlaggedMeasureIndices('all');
-        const reasons = Array.isArray(q.reasons) && q.reasons.length
-          ? q.reasons
-          : ['Parts of this photo were low contrast or slightly tilted.'];
-        const summaryText = all.length > 0
-          ? `${all.length} bar${all.length === 1 ? '' : 's'} highlighted for review${bad.length > 0 ? ` (${bad.length} likely wrong in red)` : ''}.`
-          : 'All bars have been reviewed.';
-
-        sheet.innerHTML = `
-          <div class="ms-qi-card" role="dialog" aria-label="Scan quality details">
-            <div class="ms-qi-head">
-              <div class="ms-qi-title">
-                <span>Scan Quality</span>
-                ${scoreNum !== null ? `<span class="ms-qi-score ${level === 'poor' || level === 'retake' ? 'poor' : ''}">${scoreNum}%</span>` : ''}
-              </div>
-              <button type="button" class="ms-qi-close" data-qi="close">Done</button>
-            </div>
-            <p class="ms-qi-body">
-              ${reasons.join(' \u00b7 ')}<br>
-              <strong>${summaryText}</strong>
-            </p>
-            <div class="ms-qi-actions">
-              ${all.length > 0 ? `<button type="button" class="ms-qi-btn primary" data-qi="fix">Check ${all.length} highlighted bar${all.length === 1 ? '' : 's'}</button>` : ''}
-              <button type="button" class="ms-qi-btn" data-qi="crop">Adjust page edges</button>
-              <button type="button" class="ms-qi-btn" data-qi="retake">Retake photo</button>
-            </div>
-          </div>
-        `;
-
-        sheet.querySelector('[data-qi="close"]')?.addEventListener('click', () => {
-          sheet.classList.add('hidden');
-        });
-        sheet.querySelector('[data-qi="fix"]')?.addEventListener('click', () => {
-          sheet.classList.add('hidden');
-          const fixBtn = document.querySelector('#qualityBanner [data-b="fix"]') || document.querySelector('.fix-btn:not(:disabled)');
-          fixBtn?.click();
-        });
-        sheet.querySelector('[data-qi="crop"]')?.addEventListener('click', () => {
-          sheet.classList.add('hidden');
-          const cropBtn = document.querySelector('#qualityBanner [data-b="edges"]') || document.getElementById('btnEdges');
-          cropBtn?.click();
-        });
-        sheet.querySelector('[data-qi="retake"]')?.addEventListener('click', () => {
-          sheet.classList.add('hidden');
-          const retakeBtn = document.querySelector('#qualityBanner [data-b="retake"]') || document.getElementById('btnNew');
-          retakeBtn?.click();
-        });
-
-        sheet.classList.remove('hidden');
-      }
-
-      function ensureAlignedTitleAndQualityRow() {
-        const header = document.querySelector('header.top') || document.querySelector('.top');
-        const docTitle = document.getElementById('docTitle');
-        if (!header || !docTitle) return;
-
-        let row = document.getElementById('msDocTitleRow');
-        if (!row) {
-          row = document.createElement('div');
-          row.id = 'msDocTitleRow';
-
-          const renameWrap = document.createElement('div');
-          renameWrap.id = 'msTitleRenameWrap';
-          docTitle.parentNode?.insertBefore(row, docTitle);
-          renameWrap.appendChild(docTitle);
-
-          const renameBtn = document.createElement('button');
-          renameBtn.id = 'msRenameIconBtn';
-          renameBtn.type = 'button';
-          renameBtn.title = 'Rename score';
-          renameBtn.setAttribute('aria-label', 'Rename score');
-          renameBtn.innerHTML = `${PENCIL_ICON_SVG}<span>Rename</span>`;
-          renameBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            postNative({ id: 0, cmd: 'haptic', kind: 'selection' });
-            docTitle.click();
-          });
-          renameWrap.appendChild(renameBtn);
-          row.appendChild(renameWrap);
-
-          const qPill = document.createElement('button');
-          qPill.id = 'msQualityPill';
-          qPill.type = 'button';
-          qPill.className = 'hidden';
-          qPill.title = 'View scan quality details and photo options';
-          qPill.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            openQualityInfoSheet();
-          });
-          row.appendChild(qPill);
-        }
-
-        // Auto-humanize raw ISO timestamp titles ("Scan 2026-11-28T04-39-51" -> "Scan · Nov 28")
-        const curText = (docTitle.textContent || '').trim();
-        const nice = humanizeTimestampTitle(curText);
-        if (nice && nice !== curText) {
-          docTitle.textContent = nice;
-          if (window.__ms?.S) {
-            window.__ms.S.name = nice;
-            if (window.__ms.S.score) window.__ms.S.score.title = nice;
-          }
-        }
-
-        const qPill = document.getElementById('msQualityPill');
-        if (qPill) {
-          const q = window.__ms?.S?.result?.quality || window.__ms?.S?.quality;
-          const scoreNum = typeof q?.score === 'number' ? Math.round(q.score) : null;
-          const { all } = getFlaggedMeasureIndices('all');
-          if (scoreNum !== null) {
-            qPill.classList.remove('hidden', 'ok', 'warn', 'poor');
-            const levelClass = scoreNum >= 80 && all.length === 0 ? 'ok' : (scoreNum < 60 ? 'poor' : 'warn');
-            qPill.classList.add(levelClass);
-            qPill.innerHTML = `<span class="ms-qp-dot"></span><span>Scan quality: ${scoreNum}%</span>`;
-          } else if (all.length > 0) {
-            qPill.classList.remove('hidden', 'ok', 'warn', 'poor');
-            qPill.classList.add('warn');
-            qPill.innerHTML = `<span class="ms-qp-dot"></span><span>Scan quality \u00b7 ${all.length}</span>`;
-          } else {
-            qPill.classList.add('hidden');
-          }
-        }
-      }
-
-      let touchScrollGuardInstalled = false;
-      function installTouchScrollProtection() {
-        if (touchScrollGuardInstalled) return;
-        const sc = document.getElementById('score');
-        if (!sc) return;
-        touchScrollGuardInstalled = true;
-
-        let touchStartPos = null;
-        let touchedAlreadySelectedNote = false;
-
-        sc.addEventListener('touchstart', (e) => {
-          if (e.touches.length !== 1) return;
-          const t = e.touches[0];
-          touchStartPos = { x: t.clientX, y: t.clientY };
-          const ms = window.__ms;
-          const mode = ms?.S?.mode || 'select';
-          if (mode === 'ink') return;
-
-          const selEl = ms?.S?.sel;
-          let hitSelectedNote = false;
-          if (selEl && mode === 'select') {
-            const selId = selEl.getAttribute?.('data-id');
-            if (selId) {
-              const domHit = document.elementFromPoint(t.clientX, t.clientY)?.closest?.('[data-id]');
-              if (domHit && domHit.getAttribute('data-id') === selId) {
-                hitSelectedNote = true;
-              }
-            }
-          }
-          touchedAlreadySelectedNote = hitSelectedNote;
-          if (!hitSelectedNote) {
-            e.stopImmediatePropagation();
-          }
-        }, { capture: true, passive: false });
-
-        sc.addEventListener('pointerdown', (e) => {
-          if (e.pointerType !== 'touch') return;
-          touchStartPos = { x: e.clientX, y: e.clientY };
-        }, { capture: true });
-
-        sc.addEventListener('pointermove', (e) => {
-          if (e.pointerType !== 'touch') return;
-          const ms = window.__ms;
-          if (!ms?.S) return;
-          const dx = touchStartPos ? Math.abs(e.clientX - touchStartPos.x) : 0;
-          const dy = touchStartPos ? Math.abs(e.clientY - touchStartPos.y) : 0;
-
-          if (ms.S.mode === 'select' && !touchedAlreadySelectedNote) {
-            if (ms.S.drag) {
-              ms.S.drag = null;
-            }
-            if (dy > 6 || dx > 6) {
-              e.stopImmediatePropagation();
-            }
-          } else if (ms.S.mode === 'add' && (dy > 8 || dx > 8)) {
-            touchStartPos.scrolled = true;
-            e.stopImmediatePropagation();
-          }
-        }, { capture: true });
-
-        sc.addEventListener('pointerup', (e) => {
-          if (e.pointerType !== 'touch') return;
-          const ms = window.__ms;
-          if (ms?.S?.mode === 'add' && touchStartPos?.scrolled) {
-            e.stopImmediatePropagation();
-          }
-          touchStartPos = null;
-          touchedAlreadySelectedNote = false;
-        }, { capture: true });
-      }
-
-      function ensureAdaptiveEditorControls() {
-        updateFormFactorClass();
-        ensureContinuousPlayBehavior();
-        stripAllEditorEmojis();
-        ensureAlignedTitleAndQualityRow();
-        installTouchScrollProtection();
-
-        const btnNew = document.getElementById('btnNew');
-        if (btnNew && !btnNew.__msRelabeled) {
-          btnNew.__msRelabeled = true;
-          btnNew.innerHTML = '&#x2039;&nbsp;Scores';
-          btnNew.title = 'Back to Your music';
-          btnNew.setAttribute('aria-label', 'Back to Your music');
-        }
-
-        const toolbar = document.querySelector('#viewEditor .toolbar');
-        if (toolbar && !document.getElementById('msMoreToolsBtn')) {
-          const btn = document.createElement('button');
-          btn.id = 'msMoreToolsBtn';
-          btn.type = 'button';
-          btn.textContent = 'More tools ▾';
-          btn.title = 'Show or hide full notation tools';
-          btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            postNative({ id: 0, cmd: 'haptic', kind: 'selection' });
-            const expanded = document.documentElement.classList.toggle('ms-iphone-full-tools');
-            btn.classList.toggle('on', expanded);
-            btn.textContent = expanded ? 'Less tools ▴' : 'More tools ▾';
-          });
-          toolbar.appendChild(btn);
-        }
-
-        document.getElementById('msBarCompareBtn')?.remove();
-        document.getElementById('msSliBadge')?.remove();
-
+      // Sync active score & IndexedDB library with Swift LocalScoreStore
+      let lastSyncedUpsertSignature = '';
+      function syncActiveScoreToNativeStore(force = false) {
         const ms = window.__ms;
-        const hasNoteSel = Boolean(ms?.S?.sel) || Boolean(document.querySelector('#overlay .sel'));
-        const hasBarSel = Boolean(ms?.S?.measures?.size) || Boolean(document.querySelector('#overlay .msel'));
-        document.documentElement.classList.toggle('ms-note-selected', hasNoteSel);
-        document.documentElement.classList.toggle('ms-bar-selected', hasBarSel || hasNoteSel);
+        if (!ms?.S?.score || !ms.S.libId) return;
+        try {
+          const xml = ms.S.score.toXML();
+          const metaJson = JSON.stringify(ms.S.meta || []);
+          const pagesJson = JSON.stringify(ms.S.pages || {});
+          const rawTitle = (ms.S.score.title || ms.S.name || 'Score').trim();
+          const title = humanizeTimestampTitle(rawTitle);
+          const pageRanges = typeof ms.pageList === 'function' ? ms.pageList() : [];
+          const pageJobIds = pageRanges.map((r) => r.id).filter(Boolean);
+          if (!pageJobIds.length && ms.S.job) pageJobIds.push(ms.S.job);
+          const sig = `${ms.S.libId}|${title}|${xml.length}|${metaJson.length}|${pageJobIds.join(',')}`;
+          if (!force && sig === lastSyncedUpsertSignature) return;
+          lastSyncedUpsertSignature = sig;
+          postNative({
+            id: 0,
+            cmd: 'localScoreUpsert',
+            scoreId: ms.S.libId,
+            title,
+            xml,
+            metaJson,
+            pagesJson,
+            job: ms.S.job || '',
+            pageJobIds,
+            bars: ms.S.score.nMeasures || 0,
+            parts: ms.S.score.parts?.length || 1,
+            tempo: Math.round(ms.S.score.tempo?.() || 96)
+          });
+        } catch (err) {
+          console.error('Failed to sync active score to LocalScoreStore:', err);
+        }
       }
 
-      function postNative(payload) {
+      let idbMigrated = false;
+      async function migrateIndexedDBScoresOnce() {
+        if (idbMigrated) return;
+        const ms = window.__ms;
+        if (!ms?.library?.list) return;
+        idbMigrated = true;
         try {
-          window.webkit?.messageHandlers?.musicscan?.postMessage(payload);
+          const items = await ms.library.list();
+          for (const e of items || []) {
+            if (!e || !e.id || !e.xml) continue;
+            const pageJobIds = e.pages ? Object.keys(e.pages) : (e.job ? [e.job] : []);
+            postNative({
+              id: 0,
+              cmd: 'localScoreUpsert',
+              scoreId: e.id,
+              title: humanizeTimestampTitle(e.name || 'Score'),
+              xml: e.xml,
+              metaJson: JSON.stringify(e.meta || []),
+              pagesJson: JSON.stringify(e.pages || {}),
+              job: e.job || '',
+              pageJobIds,
+              bars: e.bars || 0,
+              parts: e.parts || 1,
+              tempo: 96
+            });
+          }
         } catch (_) {}
       }
 
-      function ensureHeaderActions() {
-        const header = document.querySelector('header.top') || document.querySelector('.top');
-        if (!header || document.getElementById('msNativeHeaderGroup')) return;
-
-        const group = document.createElement('div');
-        group.id = 'msNativeHeaderGroup';
-        group.className = 'ms-native-hdr-group';
-
-        const guideBtn = document.createElement('button');
-        guideBtn.id = 'msNativeGuideBtn';
-        guideBtn.type = 'button';
-        guideBtn.className = 'ms-native-hdr-btn';
-        guideBtn.setAttribute('aria-label', 'Quick Guide and Shortcuts');
-        guideBtn.title = 'Quick Guide';
-        guideBtn.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 0 1 4.9.8c0 1.7-2.4 2.1-2.4 3.5"/><circle cx="12" cy="17.2" r="0.8" fill="currentColor" stroke="none"/></svg>';
-        guideBtn.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          postNative({ id: 0, cmd: 'haptic', kind: 'selection' });
-          postNative({ id: 0, cmd: 'guide' });
-        });
-
-        const settingsBtn = document.createElement('button');
-        settingsBtn.id = 'msNativeSettingsBtn';
-        settingsBtn.type = 'button';
-        settingsBtn.className = 'ms-native-hdr-btn ms-account-btn';
-        settingsBtn.setAttribute('aria-label', 'Account and Settings');
-        settingsBtn.title = 'Account & Settings';
-        settingsBtn.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.5"/><path d="M5.5 19.5a6.5 6.5 0 0 1 13 0"/></svg><span class="ms-pro-dot"></span>';
-        settingsBtn.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          postNative({ id: 0, cmd: 'haptic', kind: 'selection' });
-          postNative({ id: 0, cmd: 'settings' });
-        });
-
-        group.appendChild(guideBtn);
-        group.appendChild(settingsBtn);
-        header.appendChild(group);
-      }
-
-      let activePageIndex = 0;
-      let playingPageIndex = -1;
-      let lastPageNavSignature = '';
-      let scrollListenerInstalled = false;
-      let playbackFollowDetached = false;
-      let programmaticScrollUntil = 0;
-      let origScoreScrollTo = null;
-
-      const FOUR_SQUARE_SVG = '<svg viewBox="0 0 18 18" aria-hidden="true"><rect x="1.5" y="1.5" width="6.2" height="6.2" rx="1.6"/><rect x="10.3" y="1.5" width="6.2" height="6.2" rx="1.6"/><rect x="1.5" y="10.3" width="6.2" height="6.2" rx="1.6"/><rect x="10.3" y="10.3" width="6.2" height="6.2" rx="1.6"/></svg>';
-
-      function computePageRangesFromState() {
+      // Hook library.save so every edit or new scan is immediately persisted in Swift LocalScoreStore
+      let librarySaveHooked = false;
+      function hookLibrarySave() {
         const ms = window.__ms;
-        const meta = ms?.S?.meta;
-        const nMeasures = ms?.S?.score?.nMeasures || ms?.S?.score?.measures?.length || 0;
-        const fallbackJob = ms?.S?.job || null;
-        if (!Array.isArray(meta) || nMeasures <= 0) return [];
-        const ranges = [];
-        for (let i = 0; i < nMeasures; i++) {
-          const id = meta[i]?.page ?? fallbackJob;
-          const prev = ranges[ranges.length - 1];
-          if (prev && prev.id === id) {
-            prev.hi = i;
-          } else {
-            ranges.push({ id, lo: i, hi: i });
-          }
-        }
-        return ranges;
-      }
-
-      function getPageDescriptors() {
-        const ms = window.__ms;
-        const ranges = computePageRangesFromState();
-        const tabsBox = document.getElementById('pageTabs');
-        const tabBtns = tabsBox
-          ? [...tabsBox.querySelectorAll('button:not(.add)')]
-          : [];
-
-        if (ranges.length > 1) {
-          const meta = ms?.S?.meta || [];
-          return ranges.map((r, idx) => {
-            const flagged = meta.slice(r.lo, r.hi + 1).some((m) => m && m.level === 'bad');
-            const origUrl = r.id ? `api/jobs/${r.id}/original.jpg` : '';
-            const pagePngUrl = r.id ? `api/jobs/${r.id}/page.png` : '';
-            return {
-              index: idx,
-              id: r.id,
-              lo: r.lo,
-              hi: r.hi,
-              label: `Page ${idx + 1}`,
-              bars: `${r.lo + 1}\u2013${r.hi + 1}`,
-              flagged,
-              active: idx === activePageIndex,
-              thumbUrl: origUrl || pagePngUrl,
-              fallbackThumbUrl: pagePngUrl,
-              tabBtn: tabBtns[idx] || null
-            };
-          });
-        }
-
-        if (tabBtns.length > 1) {
-          return tabBtns.map((btn, idx) => {
-            const title = btn.getAttribute('title') || '';
-            const match = title.match(/bars\s+([0-9]+)(?:[\u2013-]([0-9]+))?/i);
-            const lo = match ? Math.max(0, parseInt(match[1], 10) - 1) : 0;
-            const hi = match && match[2] ? Math.max(lo, parseInt(match[2], 10) - 1) : lo;
-            return {
-              index: idx,
-              id: null,
-              lo,
-              hi,
-              label: `Page ${idx + 1}`,
-              bars: match ? (match[2] ? `${match[1]}\u2013${match[2]}` : `${match[1]}`) : '',
-              flagged: btn.classList.contains('flag'),
-              active: idx === activePageIndex,
-              thumbUrl: '',
-              tabBtn: btn
-            };
-          });
-        }
-        return [];
-      }
-
-      function getPageMarkYs() {
-        const pages = getPageDescriptors();
-        const measures = window.__ms?.S?.layout?.measures;
-        if (pages.length > 1 && Array.isArray(measures) && measures.length > 0) {
-          return pages.map((p, idx) => {
-            if (idx === 0) return 0;
-            const m = measures[p.lo];
-            return m && typeof m.y0 === 'number' ? Math.max(0, m.y0) : 0;
-          });
-        }
-        const overlay = document.getElementById('overlay');
-        if (!overlay) return [0];
-        const marks = [...overlay.querySelectorAll('g.pagemark rect')];
-        const ys = [0];
-        for (const r of marks) {
-          const y = parseFloat(r.getAttribute('y') || '0');
-          if (!Number.isNaN(y)) ys.push(Math.max(0, y));
-        }
-        return ys;
-      }
-
-      function performProgrammaticScoreScroll(topY) {
-        const sc = document.getElementById('scoreScroll');
-        if (!sc) return;
-        programmaticScrollUntil = performance.now() + 550;
-        const fn = origScoreScrollTo || sc.scrollTo.bind(sc);
-        fn({ top: Math.max(0, topY), behavior: 'smooth' });
-      }
-
-      function updateFollowPlayButton() {
-        let btn = document.getElementById('msFollowPlayBtn');
-        const isPlaying = document.body.classList.contains('playing');
-        if (!isPlaying || !playbackFollowDetached) {
-          if (btn) btn.classList.add('hidden');
-          return;
-        }
-        if (!btn) {
-          btn = document.createElement('button');
-          btn.id = 'msFollowPlayBtn';
-          btn.type = 'button';
-          btn.className = 'hidden';
-          btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            postNative({ id: 0, cmd: 'haptic', kind: 'selection' });
-            playbackFollowDetached = false;
-            btn.classList.add('hidden');
-            jumpToCurrentPlayingBar();
-          });
-          document.body.appendChild(btn);
-        }
-        const barText = (document.getElementById('pbarBar')?.textContent || 'Playing').trim();
-        const pageSuffix = playingPageIndex >= 0 ? ` · Page ${playingPageIndex + 1}` : '';
-        btn.innerHTML = `<span class="ms-fp-pulse"></span><span>Go to ${barText}${pageSuffix}</span>`;
-        btn.classList.remove('hidden');
-      }
-
-      function jumpToCurrentPlayingBar() {
-        const cursor = document.querySelector('#overlay rect.cursor');
-        if (cursor) {
-          const cy = parseFloat(cursor.getAttribute('y') || '0');
-          if (!Number.isNaN(cy)) {
-            performProgrammaticScoreScroll(cy - 48);
-          }
-        }
-        if (playingPageIndex >= 0) {
-          activePageIndex = playingPageIndex;
-          syncPageNavigatorActiveState();
-        }
-      }
-
-      function jumpToPageIndex(idx, fromUserAction = true) {
-        const pages = getPageDescriptors();
-        if (!pages.length) return;
-        const clamped = Math.max(0, Math.min(pages.length - 1, idx));
-        activePageIndex = clamped;
-        const target = pages[clamped];
-        postNative({ id: 0, cmd: 'haptic', kind: 'selection' });
-
-        // If playback is running and the user explicitly jumps to a page, detach auto-follow
-        // so playback never yanks them back to the playing bar!
-        if (fromUserAction && document.body.classList.contains('playing')) {
-          if (playingPageIndex >= 0 && clamped !== playingPageIndex) {
-            playbackFollowDetached = true;
-          } else if (clamped === playingPageIndex) {
-            playbackFollowDetached = false;
-          }
-          updateFollowPlayButton();
-        }
-
-        const ys = getPageMarkYs();
-        const targetY = ys[clamped] !== undefined ? Math.max(0, ys[clamped] - 28) : 0;
-
-        if (target && target.tabBtn && !target.tabBtn.disabled) {
-          programmaticScrollUntil = performance.now() + 550;
-          target.tabBtn.click();
-          // Also explicitly scroll #scoreScroll in case the web tab click was suppressed by our scroll guard
-          performProgrammaticScoreScroll(targetY);
-        } else {
-          performProgrammaticScoreScroll(targetY);
-        }
-        syncPageNavigatorActiveState();
-      }
-
-      function syncPageNavigatorActiveState() {
-        const nav = document.getElementById('msPageNav');
-        if (!nav || nav.classList.contains('hidden')) return;
-        const pages = getPageDescriptors();
-        const cur = pages[activePageIndex];
-        const statusEl = nav.querySelector('.ms-pn-status');
-        if (statusEl && cur) {
-          const barsPart = cur.bars ? ` <span class="ms-pn-sub">· Bars ${cur.bars}</span>` : '';
-          const playPart = (document.body.classList.contains('playing') && playingPageIndex >= 0 && playingPageIndex !== activePageIndex)
-            ? ` <span class="ms-pn-sub">(▶ P.${playingPageIndex + 1})</span>`
-            : '';
-          statusEl.innerHTML = `Page ${activePageIndex + 1} of ${pages.length}${barsPart}${playPart}`;
-        }
-        const prevBtn = nav.querySelector('[data-pn="prev"]');
-        const nextBtn = nav.querySelector('[data-pn="next"]');
-        if (prevBtn) prevBtn.disabled = activePageIndex <= 0;
-        if (nextBtn) nextBtn.disabled = activePageIndex >= Math.max(0, pages.length - 1);
-      }
-
-      // GoodNotes-style 4-square visual Page Overview & Manager Sheet
-      function openGoodNotesPageSheet() {
-        postNative({ id: 0, cmd: 'haptic', kind: 'light' });
-        let sheet = document.getElementById('msGoodNotesSheet');
-        if (!sheet) {
-          sheet = document.createElement('div');
-          sheet.id = 'msGoodNotesSheet';
-          sheet.className = 'hidden';
-          sheet.addEventListener('click', (e) => {
-            if (e.target === sheet) sheet.classList.add('hidden');
-          });
-          document.body.appendChild(sheet);
-        }
-
-        const renderSheet = () => {
-          const pages = getPageDescriptors();
-          const isPlaying = document.body.classList.contains('playing');
-          sheet.innerHTML = `
-            <div class="ms-gn-card" role="dialog" aria-label="Pages overview">
-              <div class="ms-gn-head">
-                <div class="ms-gn-title">
-                  ${FOUR_SQUARE_SVG}
-                  <span>Pages (${pages.length || 1})</span>
-                </div>
-                <div class="ms-gn-actions">
-                  <button type="button" class="ms-gn-btn" data-gn="manage">Manage / Add…</button>
-                  <button type="button" class="ms-gn-btn primary" data-gn="close">Done</button>
-                </div>
-              </div>
-              <div class="ms-gn-grid">
-                ${pages.map((p, i) => `
-                  <div class="ms-gn-tile${i === activePageIndex ? ' on' : ''}" data-gn-idx="${i}">
-                    <div class="ms-gn-thumb">
-                      ${p.thumbUrl ? `<img src="${p.thumbUrl}" data-fallback="${p.fallbackThumbUrl || ''}" alt="Page ${i + 1}" loading="lazy">` : '<span>♪</span>'}
-                      <span class="ms-gn-badge">${i + 1}</span>
-                      ${isPlaying && i === playingPageIndex ? '<span class="ms-gn-playing-pill">▶ Playing</span>' : ''}
-                    </div>
-                    <div class="ms-gn-meta">
-                      <div class="ms-gn-info">
-                        <span class="ms-gn-name">Page ${i + 1}</span>
-                        <span class="ms-gn-bars">Bars ${p.bars || '—'}${p.flagged ? ' · ⚠' : ''}</span>
-                      </div>
-                    </div>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          `;
-
-          sheet.querySelectorAll('.ms-gn-thumb img').forEach((img) => {
-            img.addEventListener('error', () => {
-              const fb = img.getAttribute('data-fallback');
-              if (fb && img.getAttribute('src') !== fb) {
-                img.setAttribute('src', fb);
-              }
-            }, { once: true });
-          });
-
-          sheet.querySelector('[data-gn="close"]')?.addEventListener('click', () => {
-            sheet.classList.add('hidden');
-          });
-          sheet.querySelector('[data-gn="manage"]')?.addEventListener('click', () => {
-            sheet.classList.add('hidden');
-            document.getElementById('btnPages')?.click();
-          });
-          sheet.querySelectorAll('[data-gn-idx]').forEach((tile) => {
-            tile.addEventListener('click', () => {
-              const idx = parseInt(tile.getAttribute('data-gn-idx') || '0', 10);
-              sheet.classList.add('hidden');
-              jumpToPageIndex(idx, true);
-            });
-          });
+        if (librarySaveHooked || !ms?.library?.save) return;
+        librarySaveHooked = true;
+        const origSave = ms.library.save.bind(ms.library);
+        ms.library.save = (entry) => {
+          const res = origSave(entry);
+          setTimeout(() => syncActiveScoreToNativeStore(true), 10);
+          return res;
         };
-
-        renderSheet();
-        sheet.classList.remove('hidden');
       }
 
-      function ensurePageNavigator() {
-        const scoreCol = document.querySelector('#viewEditor .score-col');
-        const scoreScroll = document.getElementById('scoreScroll');
-        if (!scoreCol || !scoreScroll) return;
-
-        // Hook #btnPages in the top header so tapping it opens the GoodNotes 4-square grid when multiple pages exist
-        const topPagesBtn = document.getElementById('btnPages');
-        if (topPagesBtn && !topPagesBtn.__msGridIconAdded) {
-          topPagesBtn.__msGridIconAdded = true;
-          topPagesBtn.innerHTML = `${FOUR_SQUARE_SVG}<span class="l">Pages</span>`;
-        }
-
-        if (!scrollListenerInstalled) {
-          scrollListenerInstalled = true;
-          origScoreScrollTo = scoreScroll.scrollTo.bind(scoreScroll);
-
-          // Wrap scoreScroll.scrollTo so app.js's drawCursor() -> scrollToBar() never yanks the viewport
-          // back while the user is freely browsing or jumped to another page during playback!
-          scoreScroll.scrollTo = function(...args) {
-            const isProgrammaticFromUs = performance.now() <= programmaticScrollUntil;
-            if (document.body.classList.contains('playing') && playbackFollowDetached && !isProgrammaticFromUs) {
-              return;
-            }
-            return origScoreScrollTo(...args);
-          };
-
-          // Detect genuine user touch / wheel scrolling during playback to detach auto-follow gracefully
-          const onUserManualScrollIntent = () => {
-            if (document.body.classList.contains('playing')) {
-              playbackFollowDetached = true;
-              updateFollowPlayButton();
-            }
-          };
-          scoreScroll.addEventListener('touchmove', onUserManualScrollIntent, { passive: true });
-          scoreScroll.addEventListener('wheel', onUserManualScrollIntent, { passive: true });
-
-          scoreScroll.addEventListener('scroll', () => {
-            const ys = getPageMarkYs();
-            if (ys.length <= 1) return;
-            const curY = scoreScroll.scrollTop + 96;
-            let idx = 0;
-            for (let i = 0; i < ys.length; i++) {
-              if (curY >= ys[i]) idx = i;
-            }
-            if (idx !== activePageIndex) {
-              activePageIndex = idx;
-              syncPageNavigatorActiveState();
-            }
-          }, { passive: true });
-        }
-
-        let nav = document.getElementById('msPageNav');
-        if (!nav) {
-          nav = document.createElement('div');
-          nav.id = 'msPageNav';
-          nav.className = 'ms-page-nav hidden';
-          nav.setAttribute('role', 'navigation');
-          nav.setAttribute('aria-label', 'Score pages');
-          scoreCol.insertBefore(nav, scoreScroll);
-        }
-
-        const pages = getPageDescriptors();
-        if (pages.length <= 1) {
-          nav.classList.add('hidden');
-          lastPageNavSignature = '';
-          return;
-        }
-
-        nav.classList.remove('hidden');
-        const signature = pages.map((p) => `${p.index}:${p.bars}:${p.flagged ? 1 : 0}`).join('|');
-
-        if (signature !== lastPageNavSignature) {
-          lastPageNavSignature = signature;
-          activePageIndex = Math.max(0, Math.min(pages.length - 1, activePageIndex));
-
-          nav.innerHTML = `
-            <button type="button" class="ms-pn-grid-btn" data-pn="grid" title="Open 4-square page overview">
-              ${FOUR_SQUARE_SVG}
-              <span>Pages (${pages.length})</span>
-            </button>
-            <div class="ms-pn-status" data-pn="status" title="Tap to open 4-square page grid"></div>
-            <div class="ms-pn-arrows">
-              <button type="button" class="ms-pn-step" data-pn="prev" aria-label="Previous page">‹</button>
-              <button type="button" class="ms-pn-step" data-pn="next" aria-label="Next page">›</button>
-            </div>
-          `;
-
-          nav.querySelector('[data-pn="grid"]')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            openGoodNotesPageSheet();
-          });
-          nav.querySelector('[data-pn="status"]')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            openGoodNotesPageSheet();
-          });
-          nav.querySelector('[data-pn="prev"]')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            jumpToPageIndex(activePageIndex - 1, true);
-          });
-          nav.querySelector('[data-pn="next"]')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            jumpToPageIndex(activePageIndex + 1, true);
-          });
-        }
-        syncPageNavigatorActiveState();
-      }
-
-      function syncPageWithPlaybackCursor() {
-        const isPlaying = document.body.classList.contains('playing');
-        if (!isPlaying) {
-          playingPageIndex = -1;
-          if (playbackFollowDetached) {
-            playbackFollowDetached = false;
-            updateFollowPlayButton();
-          }
-          return;
-        }
-        const cursor = document.querySelector('#overlay rect.cursor');
-        if (!cursor) return;
-        const cy = parseFloat(cursor.getAttribute('y') || '0');
-        if (Number.isNaN(cy)) return;
-        const ys = getPageMarkYs();
-        if (ys.length <= 1) return;
-        let idx = 0;
-        for (let i = 0; i < ys.length; i++) {
-          if (cy + 24 >= ys[i]) idx = i;
-        }
-        playingPageIndex = idx;
-        updateFollowPlayButton();
-
-        // Only auto-advance the user's activePageIndex if they haven't manually scrolled or jumped to another page
-        if (!playbackFollowDetached && idx !== activePageIndex) {
-          activePageIndex = idx;
-        }
-        syncPageNavigatorActiveState();
-      }
-
-      // Low-Confidence Flagged Bar Filter & Stepper Navigator
-      // Modes: 'all' (red + amber), 'bad' (red likely-wrong only), 'off' (clean score, all highlights hidden)
-      let flagHighlightMode = 'all';
-      let flagModeAutoInitializedForJob = null;
+      // Flagged bar helpers for native Fix-It dock & iPad Inspector
       let activeFlagBarIndex = -1;
-      let lastFlagSignature = '';
-
-      function applyFlagHighlightMode(mode, userInitiated = false) {
-        flagHighlightMode = mode;
-        document.documentElement.setAttribute('data-ms-flag-mode', mode);
-        if (userInitiated) {
-          postNative({ id: 0, cmd: 'haptic', kind: 'selection' });
-        }
-        // Strip or restore '  ⚠' and '  ?' suffixes on SVG bar numbers to match the active filter
-        const meta = window.__ms?.S?.meta || [];
-        const score = window.__ms?.S?.score;
-        const texts = document.querySelectorAll('#score svg g.ms-bg text.ms-num');
-        texts.forEach((t, idx) => {
-          const m = meta[idx];
-          if (!m) return;
-          const num = score?.parts?.[0]?.measures?.[idx]?.getAttribute('number') ?? String(idx + 1);
-          const over = t.textContent?.includes('too long') ? '  too long' : '';
-          if (mode === 'off') {
-            t.textContent = num + over;
-          } else if (mode === 'bad') {
-            t.textContent = num + (m.level === 'bad' ? '  \u26a0' : '') + over;
-          } else {
-            t.textContent = num + (m.level === 'bad' ? '  \u26a0' : m.level === 'check' ? '  ?' : '') + over;
-          }
-        });
-        syncFlagNavigatorUI();
-      }
-
-      function getFlaggedMeasureIndices(mode = flagHighlightMode) {
+      function getFlaggedBars() {
         const meta = window.__ms?.S?.meta;
-        if (!Array.isArray(meta)) return { all: [], bad: [], check: [], active: [] };
+        if (!Array.isArray(meta)) return { all: [], bad: [] };
         const all = [];
         const bad = [];
-        const check = [];
         meta.forEach((m, idx) => {
           if (!m || m.reviewed) return;
           if (m.level === 'bad') {
             bad.push(idx);
             all.push(idx);
           } else if (m.level === 'check') {
-            check.push(idx);
             all.push(idx);
           }
         });
-        const active = mode === 'bad' ? bad : (mode === 'all' ? all : []);
-        return { all, bad, check, active };
+        return { all, bad };
       }
 
-      function jumpToFlaggedBar(mi) {
+      function computeBarCropAndPageRects(mi) {
+        const ms = window.__ms;
+        if (!ms?.S || mi < 0) return { cropRect: null, pageRect: null, pageJobId: ms?.S?.job || '' };
+        const m = ms.S.meta?.[mi];
+        const pid = (typeof ms.pageIdOf === 'function' ? ms.pageIdOf(mi) : m?.page) || ms.S.job || '';
+        const pg = (typeof ms.pageInfo === 'function' ? ms.pageInfo(pid) : ms.S.pages?.[pid]) || ms.S.result;
+        const pageSize = pg?.page_size;
+        if (!m?.bbox || !Array.isArray(pageSize) || pageSize.length < 2 || pageSize[0] <= 0 || pageSize[1] <= 0) {
+          return { cropRect: null, pageRect: null, pageJobId: pid || '' };
+        }
+        const [W, H] = pageSize;
+        const [x0, y0, x1, y1] = m.bbox;
+        const sys = (pg.systems || []).find((s) => s.index === m.system) || { bbox: m.bbox };
+
+        // Normalized rect of the exact bar on the full page (for iPad Left Pane overlay)
+        const pageRect = {
+          x: Math.max(0, x0 / W),
+          y: Math.max(0, (y0 - 6) / H),
+          w: Math.min(1, Math.max(0.02, (x1 - x0) / W)),
+          h: Math.min(1, Math.max(0.02, (y1 - y0 + 12) / H))
+        };
+
+        // Generous padded crop around the bar within its system row (for iPhone Fix-It inline photo strip)
+        const padX = Math.max(44, (x1 - x0) * 0.28);
+        const padY = 26;
+        const sx = Math.max(0, x0 - padX);
+        const ex = Math.min(W, x1 + padX);
+        const sy = Math.max(0, Math.min(sys.bbox?.[1] ?? y0, y0) - padY);
+        const ey = Math.min(H, Math.max(sys.bbox?.[3] ?? y1, y1) + padY);
+        const cropRect = {
+          x: sx / W,
+          y: sy / H,
+          w: Math.max(0.05, (ex - sx) / W),
+          h: Math.max(0.04, (ey - sy) / H)
+        };
+        return { cropRect, pageRect, pageJobId: pid || '' };
+      }
+
+      function computePageBoxes(pageJobId) {
+        const ms = window.__ms;
+        if (!ms?.S?.meta) return [];
+        const pid = pageJobId || ms.S.photoPage || ms.S.job;
+        const pg = (typeof ms.pageInfo === 'function' ? ms.pageInfo(pid) : ms.S.pages?.[pid]) || ms.S.result;
+        const pageSize = pg?.page_size;
+        if (!Array.isArray(pageSize) || pageSize.length < 2 || pageSize[0] <= 0 || pageSize[1] <= 0) return [];
+        const [W, H] = pageSize;
+        const boxes = [];
+        ms.S.meta.forEach((m, mi) => {
+          const mPid = m?.page || ms.S.job;
+          if (mPid !== pid || !m?.bbox || m.bbox[2] <= m.bbox[0]) return;
+          const [x0, y0, x1, y1] = m.bbox;
+          const num = typeof ms.barNumber === 'function' ? String(ms.barNumber(mi)) : String(mi + 1);
+          boxes.push({
+            mi,
+            num,
+            level: m.reviewed ? 'ok' : (m.level || 'ok'),
+            x: Math.max(0, x0 / W),
+            y: Math.max(0, (y0 - 6) / H),
+            w: Math.min(1, Math.max(0.01, (x1 - x0) / W)),
+            h: Math.min(1, Math.max(0.01, (y1 - y0 + 12) / H))
+          });
+        });
+        return boxes;
+      }
+
+      function selectAndScrollToBar(mi) {
         const ms = window.__ms;
         if (!ms?.S?.score || mi < 0 || mi >= ms.S.score.nMeasures) return;
         activeFlagBarIndex = mi;
-        postNative({ id: 0, cmd: 'haptic', kind: 'selection' });
         ms.S.sel = null;
         ms.S.measures = new Set([mi]);
         ms.S.focus = mi;
         if (typeof ms.redraw === 'function') ms.redraw();
-        const layoutMeasure = ms.S.layout?.measures?.[mi];
-        if (layoutMeasure && typeof layoutMeasure.y0 === 'number') {
-          performProgrammaticScoreScroll(layoutMeasure.y0 - 54);
-        }
-        syncFlagNavigatorUI();
-      }
-
-      function stepFlaggedBar(dir) {
-        if (flagHighlightMode === 'off') {
-          const counts = getFlaggedMeasureIndices('all');
-          applyFlagHighlightMode(counts.bad.length > 0 ? 'bad' : 'all', false);
-        }
-        const { active } = getFlaggedMeasureIndices(flagHighlightMode);
-        if (!active.length) return;
-        const ms = window.__ms;
-        const curSel = ms?.S?.measures?.size ? Math.min(...ms.S.measures) : activeFlagBarIndex;
-        let nextIdx = 0;
-        if (dir > 0) {
-          const found = active.findIndex((x) => x > curSel);
-          nextIdx = found >= 0 ? found : 0;
+        if (typeof ms.scrollToBar === 'function') {
+          ms.scrollToBar(mi);
         } else {
-          let found = -1;
-          for (let i = active.length - 1; i >= 0; i--) {
-            if (active[i] < curSel) { found = i; break; }
+          const lm = ms.S.layout?.measures?.[mi];
+          if (lm && typeof lm.y0 === 'number') {
+            document.getElementById('scoreScroll')?.scrollTo({ top: Math.max(0, lm.y0 - 48), behavior: 'smooth' });
           }
-          nextIdx = found >= 0 ? found : active.length - 1;
         }
-        jumpToFlaggedBar(active[nextIdx]);
+        scheduleReportStage();
       }
 
-      function markCurrentFlaggedBarOk() {
-        const ms = window.__ms;
-        if (!ms?.S?.meta) return;
-        const { active } = getFlaggedMeasureIndices(flagHighlightMode);
-        if (!active.length) return;
-        const curSel = ms.S.measures?.size ? Math.min(...ms.S.measures) : activeFlagBarIndex;
-        const targetMi = active.includes(curSel) ? curSel : active[0];
-        const m = ms.S.meta[targetMi];
-        if (!m) return;
-        m.flag = m.level;
-        m.reviewed = true;
-        m.level = 'ok';
-        postNative({ id: 0, cmd: 'haptic', kind: 'success' });
-        if (typeof ms.redraw === 'function') ms.redraw();
-        const updated = getFlaggedMeasureIndices(flagHighlightMode).active;
-        if (updated.length > 0) {
-          const nextBar = updated.find((x) => x > targetMi) ?? updated[0];
-          jumpToFlaggedBar(nextBar);
-        } else {
-          activeFlagBarIndex = -1;
-          syncFlagNavigatorUI();
-        }
-      }
-
-      function syncFlagNavigatorUI() {
-        const nav = document.getElementById('msFlagNav');
-        const visBtn = document.getElementById('msFlagVisBtn');
-        const ms = window.__ms;
-        const { all, bad, active } = getFlaggedMeasureIndices(flagHighlightMode);
-
-        if (visBtn) {
-          if (all.length > 0) {
-            visBtn.style.display = 'inline-flex';
-            const isShown = flagHighlightMode !== 'off';
-            visBtn.classList.toggle('on', isShown);
-            const label = flagHighlightMode === 'bad'
-              ? `Red (${bad.length})`
-              : `Flags (${all.length})`;
-            visBtn.innerHTML = `${FLAG_ICON_SVG}<span>${label}</span>`;
-          } else {
-            visBtn.style.display = 'none';
-          }
-        }
-
-        if (!nav) return;
-        if (all.length === 0) {
-          nav.classList.add('hidden');
-          return;
-        }
-        nav.classList.remove('hidden');
-
-        // Auto-hide the redundant verbose #qualityBanner when our compact Flag Navigator bar is visible
-        const qBanner = document.getElementById('qualityBanner');
-        if (qBanner && !qBanner.classList.contains('hidden')) {
-          qBanner.classList.add('hidden');
-        }
-
-        const modeAllBtn = nav.querySelector('[data-fn-mode="all"]');
-        const modeBadBtn = nav.querySelector('[data-fn-mode="bad"]');
-        const modeOffBtn = nav.querySelector('[data-fn-mode="off"]');
-
-        if (modeAllBtn) {
-          modeAllBtn.classList.toggle('on', flagHighlightMode === 'all');
-          modeAllBtn.innerHTML = `<span class="ms-fn-dot all"></span><span>All (${all.length})</span>`;
-        }
-        if (modeBadBtn) {
-          modeBadBtn.style.display = bad.length > 0 ? 'inline-flex' : 'none';
-          modeBadBtn.classList.toggle('on', flagHighlightMode === 'bad');
-          modeBadBtn.innerHTML = `<span class="ms-fn-dot bad"></span><span>Red (${bad.length})</span>`;
-        }
-        if (modeOffBtn) {
-          modeOffBtn.classList.toggle('on', flagHighlightMode === 'off');
-          modeOffBtn.textContent = 'Hide';
-        }
-
-        const curSel = ms?.S?.measures?.size ? Math.min(...ms.S.measures) : activeFlagBarIndex;
-        const pos = active.indexOf(curSel);
-        const curMi = pos >= 0 ? curSel : (active[0] ?? -1);
-        const statusEl = nav.querySelector('[data-fn="status"]');
-        const prevBtn = nav.querySelector('[data-fn="prev"]');
-        const nextBtn = nav.querySelector('[data-fn="next"]');
-        const okBtn = nav.querySelector('[data-fn="ok"]');
-
-        if (flagHighlightMode === 'off' || active.length === 0) {
-          if (statusEl) {
-            statusEl.innerHTML = `<span class="ms-fn-sub">Highlights hidden</span>`;
-          }
-          if (prevBtn) prevBtn.disabled = all.length === 0;
-          if (nextBtn) nextBtn.disabled = all.length === 0;
-          if (okBtn) okBtn.style.display = 'none';
-        } else {
-          const barNum = ms?.S?.score?.parts?.[0]?.measures?.[curMi]?.getAttribute('number') ?? String(curMi + 1);
-          const idxLabel = pos >= 0 ? `${pos + 1}/${active.length}` : `1/${active.length}`;
-          if (statusEl) {
-            statusEl.innerHTML = `Bar ${barNum} <span class="ms-fn-sub">(${idxLabel})</span>`;
-          }
-          if (prevBtn) prevBtn.disabled = active.length < 1;
-          if (nextBtn) nextBtn.disabled = active.length < 1;
-          if (okBtn) okBtn.style.display = 'inline-flex';
-        }
-      }
-
-      function ensureFlagNavigator() {
-        const scoreCol = document.querySelector('#viewEditor .score-col');
-        const scoreScroll = document.getElementById('scoreScroll');
-        if (!scoreCol || !scoreScroll) return;
-
-        // Add quick flag-visibility pill in bottom statusbar so users can toggle flags anytime
-        const statusbar = document.querySelector('#viewEditor .statusbar');
-        const zoomBox = statusbar?.querySelector('.zoom');
-        if (statusbar && zoomBox && !document.getElementById('msFlagVisBtn')) {
-          const visBtn = document.createElement('button');
-          visBtn.id = 'msFlagVisBtn';
-          visBtn.type = 'button';
-          visBtn.title = 'Cycle low-confidence bar highlights (All / Red only / Hidden)';
-          visBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const { bad } = getFlaggedMeasureIndices('all');
-            const nextMode = flagHighlightMode === 'all'
-              ? (bad.length > 0 ? 'bad' : 'off')
-              : (flagHighlightMode === 'bad' ? 'off' : 'all');
-            applyFlagHighlightMode(nextMode, true);
+      // Expose window.MusicScanNative API for SwiftUI toolbars, docks & iPad Studio
+      window.MusicScanNative = {
+        loadScore({ id, title, xml, metaJson, pagesJson, job, tempo }) {
+          const ms = window.__ms;
+          if (!ms || typeof ms.openScoreFull !== 'function') return;
+          let meta = [];
+          let pages = null;
+          try { meta = JSON.parse(metaJson || '[]'); } catch (_) { meta = []; }
+          try { pages = JSON.parse(pagesJson || 'null'); } catch (_) { pages = null; }
+          const primaryJob = job || (pages && Object.keys(pages)[0]) || null;
+          ms.openScoreFull({
+            id: id || null,
+            name: title || 'Score',
+            xml,
+            meta,
+            quality: null,
+            job: primaryJob,
+            pages: (pages && Object.keys(pages).length > 0) ? pages : null
           });
-          statusbar.insertBefore(visBtn, zoomBox);
-        }
+          if (tempo && ms.practice?.setBpm) {
+            ms.practice.setBpm(Number(tempo));
+          }
+          scheduleReportStage();
+        },
 
-        let nav = document.getElementById('msFlagNav');
-        if (!nav) {
-          nav = document.createElement('div');
-          nav.id = 'msFlagNav';
-          nav.className = 'hidden';
-          nav.setAttribute('role', 'region');
-          nav.setAttribute('aria-label', 'Low-confidence bar navigator');
-          nav.innerHTML = `
-            <div class="ms-fn-modes" role="tablist" aria-label="Highlight filter">
-              <button type="button" class="ms-fn-mode on" data-fn-mode="all" title="Show all flagged bars"></button>
-              <button type="button" class="ms-fn-mode" data-fn-mode="bad" title="Show only likely-wrong (red) bars"></button>
-              <button type="button" class="ms-fn-mode" data-fn-mode="off" title="Hide all low-confidence highlights">Hide</button>
-            </div>
-            <div class="ms-fn-nav">
-              <button type="button" class="ms-fn-step" data-fn="prev" title="Previous flagged bar" aria-label="Previous flagged bar">‹</button>
-              <div class="ms-fn-status" data-fn="status" title="Tap to jump to current flagged bar"></div>
-              <button type="button" class="ms-fn-step" data-fn="next" title="Next flagged bar" aria-label="Next flagged bar">›</button>
-              <button type="button" class="ms-fn-ok" data-fn="ok" title="Mark this bar as checked and move to next">✓ OK</button>
-              <button type="button" class="ms-fn-fix" data-fn="fix" title="Open side-by-side photo comparison">Compare</button>
-            </div>
-          `;
-          scoreCol.insertBefore(nav, scoreScroll);
+        openFromLibraryId(id) {
+          const ms = window.__ms;
+          if (ms && typeof ms.openFromLibrary === 'function') {
+            ms.openFromLibrary(id);
+            scheduleReportStage();
+          }
+        },
 
-          nav.querySelectorAll('[data-fn-mode]').forEach((btn) => {
-            btn.addEventListener('click', (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              const mode = btn.getAttribute('data-fn-mode') || 'all';
-              applyFlagHighlightMode(mode, true);
-              const { active } = getFlaggedMeasureIndices(mode);
-              if (active.length > 0 && !active.includes(activeFlagBarIndex)) {
-                jumpToFlaggedBar(active[0]);
-              }
+        removeLibraryItem(id) {
+          const ms = window.__ms;
+          if (ms?.library?.remove) {
+            ms.library.remove(id).then(() => {
+              if (typeof ms.renderLibrary === 'function') ms.renderLibrary();
+              scheduleReportStage();
             });
-          });
-          nav.querySelector('[data-fn="prev"]')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            stepFlaggedBar(-1);
-          });
-          nav.querySelector('[data-fn="next"]')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            stepFlaggedBar(1);
-          });
-          nav.querySelector('[data-fn="status"]')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const { active } = getFlaggedMeasureIndices(flagHighlightMode);
-            if (active.length > 0) {
-              const ms = window.__ms;
-              const curSel = ms?.S?.measures?.size ? Math.min(...ms.S.measures) : activeFlagBarIndex;
-              jumpToFlaggedBar(active.includes(curSel) ? curSel : active[0]);
-            }
-          });
-          nav.querySelector('[data-fn="ok"]')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            markCurrentFlaggedBarOk();
-          });
-          nav.querySelector('[data-fn="fix"]')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            postNative({ id: 0, cmd: 'haptic', kind: 'selection' });
-            const curSel = window.__ms?.S?.measures?.size ? Math.min(...window.__ms.S.measures) : activeFlagBarIndex;
-            if (window.__msReview && typeof window.__msReview.start === 'function') {
-              window.__msReview.start(curSel >= 0 ? curSel : null);
-            } else {
-              document.querySelector('.fix-btn:not(:disabled)')?.click();
-            }
-          });
-        }
-
-        // Smart default when a new score opens: if there are > 6 total flags and at least 1 red "likely wrong" bar,
-        // start in 'bad' (Red only) mode so the score isn't visually flooded with amber boxes!
-        const ms = window.__ms;
-        const jobKey = (ms?.S?.libId || '') + ':' + (ms?.S?.job || '') + ':' + (ms?.S?.score?.nMeasures || 0);
-        const { all, bad } = getFlaggedMeasureIndices('all');
-        if (jobKey !== flagModeAutoInitializedForJob && (ms?.S?.score?.nMeasures || 0) > 0) {
-          flagModeAutoInitializedForJob = jobKey;
-          const defaultMode = (all.length > 6 && bad.length > 0) ? 'bad' : 'all';
-          activeFlagBarIndex = (defaultMode === 'bad' ? bad[0] : all[0]) ?? -1;
-          applyFlagHighlightMode(defaultMode, false);
-        } else {
-          const sig = `${flagHighlightMode}:${all.join(',')}:${bad.join(',')}:${ms?.S?.measures ? [...ms.S.measures].join(',') : ''}`;
-          if (sig !== lastFlagSignature) {
-            lastFlagSignature = sig;
-            applyFlagHighlightMode(flagHighlightMode, false);
           }
+        },
+
+        renameLibraryItem(id, newTitle) {
+          const ms = window.__ms;
+          if (!ms?.library?.get || !ms?.library?.save) return;
+          ms.library.get(id).then((entry) => {
+            if (!entry) return;
+            entry.name = newTitle;
+            ms.library.save(entry);
+            if (typeof ms.renderLibrary === 'function') ms.renderLibrary();
+            scheduleReportStage();
+          });
+        },
+
+        renameScore(newTitle) {
+          const ms = window.__ms;
+          if (!ms?.S?.score || !newTitle) return;
+          ms.S.name = newTitle;
+          if (typeof ms.edit === 'function') {
+            ms.edit(() => { ms.S.score.title = newTitle; });
+          } else {
+            ms.S.score.title = newTitle;
+          }
+          if (typeof ms.showTitle === 'function') ms.showTitle();
+          syncActiveScoreToNativeStore(true);
+          scheduleReportStage();
+        },
+
+        closeEditor() {
+          const ms = window.__ms;
+          if (!ms) return;
+          if (typeof ms.stopPlay === 'function') ms.stopPlay();
+          if (typeof ms.saveLocalNow === 'function') ms.saveLocalNow();
+          if (typeof ms.show === 'function') ms.show('viewUpload');
+          scheduleReportStage();
+        },
+
+        setMode(mode) {
+          const ms = window.__ms;
+          if (!ms?.S) return;
+          if (mode === 'play') {
+            if (typeof ms.setMode === 'function') ms.setMode('select');
+          } else if (mode === 'fix') {
+            if (typeof ms.setMode === 'function') ms.setMode('select');
+            const { all, bad } = getFlaggedBars();
+            const curSel = ms.S.measures?.size ? Math.min(...ms.S.measures) : activeFlagBarIndex;
+            const target = all.includes(curSel) ? curSel : (bad[0] ?? all[0] ?? 0);
+            selectAndScrollToBar(target);
+          } else if (mode === 'edit') {
+            if (ms.S.mode !== 'add' && ms.S.mode !== 'ink') {
+              if (typeof ms.setMode === 'function') ms.setMode('select');
+            }
+          } else if (mode === 'ink') {
+            if (typeof ms.setMode === 'function') ms.setMode('ink');
+          }
+          scheduleReportStage();
+        },
+
+        setEditTool(tool) {
+          const ms = window.__ms;
+          if (!ms?.S) return;
+          if (tool === 'drag') {
+            ms.S.restMode = false;
+            if (typeof ms.setMode === 'function') ms.setMode('select');
+          } else if (tool === 'note') {
+            ms.S.restMode = false;
+            if (typeof ms.setMode === 'function') ms.setMode('add');
+          } else if (tool === 'rest') {
+            ms.S.restMode = true;
+            if (typeof ms.setMode === 'function') ms.setMode('add');
+          } else if (tool === 'ink') {
+            if (typeof ms.setMode === 'function') ms.setMode('ink');
+          }
+          scheduleReportStage();
+        },
+
+        triggerEditAction(act) {
+          const ms = window.__ms;
+          if (!ms) return;
+          if (act.startsWith('dur:')) {
+            const dur = act.slice(4);
+            if (typeof ms.setDur === 'function') ms.setDur(dur);
+          } else if (act.startsWith('acc:')) {
+            const alter = parseInt(act.slice(4), 10);
+            if (typeof ms.setAcc === 'function') ms.setAcc(alter);
+          } else if (act === 'dot') {
+            if (typeof ms.toggleDot === 'function') ms.toggleDot();
+          } else if (act === 'rest') {
+            if (typeof ms.makeRest === 'function') ms.makeRest();
+          } else if (act === 'delete') {
+            if (typeof ms.del === 'function') ms.del();
+          }
+          syncActiveScoreToNativeStore(true);
+          scheduleReportStage();
+        },
+
+        setPianoPad(visible) {
+          const pad = document.getElementById('notePad');
+          const btnPad = document.getElementById('btnPad');
+          if (!pad) return;
+          const isClosed = pad.classList.contains('closed') || pad.classList.contains('hidden');
+          if (Boolean(visible) === isClosed) {
+            btnPad?.click();
+          }
+          scheduleReportStage();
+        },
+
+        transport(action) {
+          const ms = window.__ms;
+          if (!ms) return;
+          if (action === 'play') {
+            if (!document.body.classList.contains('playing')) {
+              if (!ms.S?.loop && ms.S?.measures?.size === 1) {
+                const onlyBar = [...ms.S.measures][0];
+                const totalBars = ms.S.score?.nMeasures || 0;
+                if (onlyBar >= totalBars - 1) ms.S.measures.clear();
+              }
+              if (typeof ms.togglePlay === 'function') ms.togglePlay();
+            }
+          } else if (action === 'stop') {
+            if (typeof ms.stopPlay === 'function') ms.stopPlay();
+          } else if (action === 'toggleLoop') {
+            if (typeof ms.toggleLoop === 'function') ms.toggleLoop();
+          }
+          scheduleReportStage();
+        },
+
+        setTempo(bpm) {
+          const ms = window.__ms;
+          const tempoInput = document.getElementById('tempo');
+          if (tempoInput) tempoInput.value = String(bpm);
+          if (ms?.practice?.setBpm) ms.practice.setBpm(Number(bpm), true);
+          scheduleReportStage();
+        },
+
+        fixNav(direction) {
+          const ms = window.__ms;
+          if (!ms?.S?.meta) return;
+          const { all } = getFlaggedBars();
+          if (!all.length) return;
+          const curSel = ms.S.measures?.size ? Math.min(...ms.S.measures) : activeFlagBarIndex;
+
+          if (direction === 'markOK') {
+            const targetMi = all.includes(curSel) ? curSel : all[0];
+            const m = ms.S.meta[targetMi];
+            if (m) {
+              m.flag = m.level;
+              m.reviewed = true;
+              m.level = 'ok';
+              if (typeof ms.redraw === 'function') ms.redraw();
+              if (typeof ms.saveLocal === 'function') ms.saveLocal();
+              syncActiveScoreToNativeStore(true);
+            }
+            const updated = getFlaggedBars().all;
+            if (updated.length > 0) {
+              const nextBar = updated.find((x) => x > targetMi) ?? updated[0];
+              selectAndScrollToBar(nextBar);
+            } else {
+              activeFlagBarIndex = -1;
+              scheduleReportStage();
+            }
+            return;
+          }
+
+          let nextIdx = 0;
+          if (direction === 'next') {
+            const found = all.findIndex((x) => x > curSel);
+            nextIdx = found >= 0 ? found : 0;
+          } else {
+            let found = -1;
+            for (let i = all.length - 1; i >= 0; i--) {
+              if (all[i] < curSel) { found = i; break; }
+            }
+            nextIdx = found >= 0 ? found : all.length - 1;
+          }
+          selectAndScrollToBar(all[nextIdx]);
+        },
+
+        rescanActiveBar() {
+          const ms = window.__ms;
+          if (!ms?.S) return;
+          if (!ms.S.measures?.size && activeFlagBarIndex >= 0) {
+            ms.S.measures = new Set([activeFlagBarIndex]);
+          } else if (!ms.S.measures?.size) {
+            ms.S.measures = new Set([0]);
+          }
+          if (typeof ms.rescan === 'function') ms.rescan(0);
+        },
+
+        undo() {
+          const ms = window.__ms;
+          if (ms && typeof ms.undo === 'function') {
+            ms.undo();
+            syncActiveScoreToNativeStore(true);
+            scheduleReportStage();
+          }
+        },
+
+        redo() {
+          const ms = window.__ms;
+          if (ms && typeof ms.redo === 'function') {
+            ms.redo();
+            syncActiveScoreToNativeStore(true);
+            scheduleReportStage();
+          }
+        },
+
+        openPagesModal() {
+          const ms = window.__ms;
+          if (ms && typeof ms.pagesDialog === 'function') ms.pagesDialog();
+        },
+
+        jumpToPage(idx) {
+          const ms = window.__ms;
+          if (!ms || typeof ms.pageList !== 'function') return;
+          const pages = ms.pageList();
+          const target = pages[Math.max(0, Math.min(pages.length - 1, idx))];
+          if (target) {
+            selectAndScrollToBar(target.lo || 0);
+          }
+        },
+
+        adjustEdges() {
+          const ms = window.__ms;
+          if (ms && typeof ms.adjustEdges === 'function') ms.adjustEdges();
+        },
+
+        retakePhoto() {
+          const ms = window.__ms;
+          if (ms && typeof ms.retakePage === 'function') {
+            ms.retakePage(ms.S?.photoPage || ms.S?.job);
+          }
+        },
+
+        openKeyTime() {
+          const ms = window.__ms;
+          if (ms && typeof ms.keyTimeDialog === 'function') ms.keyTimeDialog();
+        },
+
+        exportScore(fmt) {
+          const ms = window.__ms;
+          if (ms && typeof ms.exportAs === 'function') ms.exportAs(fmt || 'xml');
+        },
+
+        focusBar(mi) {
+          selectAndScrollToBar(Number(mi) || 0);
         }
-      }
+      };
 
       let lastStateKey = '';
+      let lastEditorStateKey = '';
+
       function reportStage() {
-        ensureHeaderActions();
-        ensureAdaptiveEditorControls();
-        ensurePageNavigator();
-        ensureFlagNavigator();
-        syncPageWithPlaybackCursor();
+        if (document.body && !document.body.classList.contains('native-embed')) {
+          document.body.classList.add('native-embed');
+        }
+        hookLibrarySave();
+        migrateIndexedDBScoresOnce();
+
         const isHidden = (el) => !el || el.classList.contains('hidden') || el.hidden || el.style.display === 'none';
         const upload = document.getElementById('viewUpload');
         const progress = document.getElementById('viewProgress');
@@ -4039,44 +2935,141 @@ private enum NativeWebPolishScript {
           stage = 'home';
         }
 
+        const ms = window.__ms;
         const titleEl = document.querySelector('.doc-title');
-        const title = titleEl ? (titleEl.textContent || '').trim() : '';
+        const rawTitle = (ms?.S?.score?.title || (titleEl ? titleEl.textContent : '') || ms?.S?.name || '').trim();
+        const title = humanizeTimestampTitle(rawTitle);
+        if (titleEl && title && titleEl.textContent !== title) {
+          titleEl.textContent = title;
+        }
+
         const editing = document.body.classList.contains('editing');
         const playing = document.body.classList.contains('playing');
-        const allTabCount = parseInt(document.querySelector('#library [data-f="all"] span')?.textContent || '', 10);
         const cardCount = document.querySelectorAll('#library .lib-card').length;
-        const libraryCount = Number.isFinite(allTabCount) && allTabCount > 0
-          ? allTabCount
-          : (cardCount || (document.body.classList.contains('has-library') ? 1 : 0));
-        const hasMusicScanDOM = Boolean(upload || progress || editor);
-        const libraryReady = Boolean(hasMusicScanDOM && (window.__msLibraryReady || libraryCount > 0 || stage !== 'home'));
-        const hasResume = Boolean(document.getElementById('resume'));
+        const libraryCount = cardCount || (document.body.classList.contains('has-library') ? 1 : 0);
+        const libraryReady = true;
+        const hasResume = Boolean(document.getElementById('resume')) || libraryCount > 0;
         const modalEl = document.getElementById('modal');
         const modalOpen = Boolean(modalEl && !isHidden(modalEl));
         const fastMode = Boolean(document.getElementById('optFast')?.checked);
         const toastEl = document.getElementById('toast');
         const toast = (toastEl && !isHidden(toastEl)) ? (toastEl.textContent || '').trim() : '';
-        const samples = [];
 
-        const key = `${stage}|${title}|${editing}|${playing}|${libraryCount}|${libraryReady}|${hasResume}|${modalOpen}|${fastMode}|${toast}`;
-        if (key === lastStateKey) return;
-        lastStateKey = key;
+        const key = `${stage}|${title}|${editing}|${playing}|${libraryCount}|${modalOpen}|${fastMode}|${toast}`;
+        if (key !== lastStateKey) {
+          lastStateKey = key;
+          postNative({
+            id: 0,
+            cmd: 'state',
+            stage,
+            title,
+            editing,
+            playing,
+            libraryCount,
+            libraryReady,
+            hasResume,
+            modalOpen,
+            fastMode,
+            toast,
+            samples: []
+          });
+        }
 
-        postNative({
-          id: 0,
-          cmd: 'state',
-          stage,
-          title,
-          editing,
-          playing,
-          libraryCount,
-          libraryReady,
-          hasResume,
-          modalOpen,
-          fastMode,
-          toast,
-          samples
-        });
+        if (stage === 'editor' && ms?.S?.score) {
+          syncActiveScoreToNativeStore(false);
+
+          const totalBars = ms.S.score.nMeasures || 0;
+          const selectedBar = ms.S.measures?.size ? Math.min(...ms.S.measures) : (ms.S.focus >= 0 ? ms.S.focus : 0);
+          const barIndex = Math.max(0, Math.min(Math.max(0, totalBars - 1), selectedBar));
+          const barNumber = typeof ms.barNumber === 'function' ? String(ms.barNumber(barIndex)) : String(barIndex + 1);
+
+          const { all, bad } = getFlaggedBars();
+          const flagIdx = all.includes(barIndex)
+            ? barIndex
+            : (all.includes(activeFlagBarIndex) ? activeFlagBarIndex : (bad[0] ?? all[0] ?? barIndex));
+          activeFlagBarIndex = flagIdx;
+          const flagPos = Math.max(1, all.indexOf(flagIdx) + 1);
+          const flagBarNumber = typeof ms.barNumber === 'function' ? String(ms.barNumber(flagIdx)) : String(flagIdx + 1);
+          const flagMeta = ms.S.meta?.[flagIdx];
+          const flagReason = (flagMeta && typeof ms.barReason === 'function')
+            ? ms.barReason(flagMeta)
+            : (flagMeta?.level === 'bad' ? 'Likely wrong rhythm or pitch' : 'Low confidence bar');
+          const flagLevel = flagMeta?.level || 'check';
+
+          const pages = typeof ms.pageList === 'function' ? ms.pageList() : [];
+          const pageCount = Math.max(1, pages.length);
+          let pageIndex = 0;
+          for (let i = 0; i < pages.length; i++) {
+            if (barIndex >= pages[i].lo && barIndex <= pages[i].hi) {
+              pageIndex = i;
+              break;
+            }
+          }
+
+          const { cropRect, pageRect, pageJobId } = computeBarCropAndPageRects(flagIdx >= 0 ? flagIdx : barIndex);
+          const activeBarRects = computeBarCropAndPageRects(barIndex);
+          const pageBoxes = computePageBoxes(activeBarRects.pageJobId || pageJobId);
+          const tempoInput = document.getElementById('tempo');
+          const tempo = parseInt(tempoInput?.value || '96', 10) || 96;
+          const padEl = document.getElementById('notePad');
+          const padOpen = Boolean(padEl && !padEl.classList.contains('closed') && !padEl.classList.contains('hidden'));
+
+          const edKey = [
+            ms.S.libId || '',
+            title,
+            ms.S.undo?.length || 0,
+            ms.S.redo?.length || 0,
+            playing,
+            Boolean(ms.S.loop),
+            tempo,
+            ms.S.dur || 'quarter',
+            Boolean(ms.S.dot),
+            padOpen,
+            totalBars,
+            barIndex,
+            pageIndex,
+            pageCount,
+            all.length,
+            bad.length,
+            flagIdx,
+            flagPos
+          ].join('|');
+
+          if (edKey !== lastEditorStateKey) {
+            lastEditorStateKey = edKey;
+            postNative({
+              id: 0,
+              cmd: 'editorState',
+              scoreId: ms.S.libId || '',
+              title,
+              canUndo: Boolean(ms.S.undo?.length),
+              canRedo: Boolean(ms.S.redo?.length),
+              playing,
+              loop: Boolean(ms.S.loop),
+              tempo,
+              dur: ms.S.dur || 'quarter',
+              dot: Boolean(ms.S.dot),
+              padOpen,
+              totalBars,
+              barIndex,
+              barNumber,
+              pageIndex,
+              pageCount,
+              pageJobId: activeBarRects.pageJobId || pageJobId || '',
+              flaggedCount: all.length,
+              redFlaggedCount: bad.length,
+              flagPos,
+              flagTotal: all.length,
+              flagBarIndex: flagIdx,
+              flagBarNumber,
+              flagReason,
+              flagLevel,
+              cropRect,
+              pageRect: activeBarRects.pageRect || pageRect,
+              pageBoxes
+            });
+          }
+        }
       }
 
       let rafPending = false;
@@ -4090,13 +3083,6 @@ private enum NativeWebPolishScript {
       }
 
       reportStage();
-      // Safety mark in case an older server bundle hasn't set __msLibraryReady yet
-      setTimeout(() => {
-        if (!window.__msLibraryReady && (document.getElementById('viewUpload') || document.getElementById('viewEditor'))) {
-          window.__msLibraryReady = true;
-          scheduleReportStage();
-        }
-      }, 650);
       const observer = new MutationObserver(() => scheduleReportStage());
       observer.observe(document.body, {
         subtree: true,
@@ -4105,12 +3091,9 @@ private enum NativeWebPolishScript {
         attributes: true,
         attributeFilter: ['class', 'hidden']
       });
-      document.addEventListener('change', (e) => {
-        if (e.target && e.target.id === 'optFast') scheduleReportStage();
-      });
+      document.addEventListener('pointerup', () => setTimeout(scheduleReportStage, 30), { passive: true });
+      document.addEventListener('keyup', () => setTimeout(scheduleReportStage, 30), { passive: true });
       window.addEventListener('ms:library-ready', scheduleReportStage);
-      window.addEventListener('hashchange', scheduleReportStage);
-      window.addEventListener('popstate', scheduleReportStage);
     })();
     """#
 }

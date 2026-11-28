@@ -730,3 +730,39 @@ body:not(.demo) #samples { display: none !important; }
 .lib-card, #viewProgress .progress-card, #score svg {
   animation: msFadeIn 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+/* When embedded inside the native SwiftUI score editor (?embed=native),
+   hide all redundant HTML headers, toolbars, banners, and sidebars so only the
+   clean VexFlow score canvas (#scoreScroll) and interactive modals render. */
+body.native-embed header.top,
+body.native-embed .top,
+body.native-embed #qualityBanner,
+body.native-embed #toolbar,
+body.native-embed #viewEditor .toolbar,
+body.native-embed #review,
+body.native-embed #inspector,
+body.native-embed .statusbar,
+body.native-embed #photoCol,
+body.native-embed #msPageNav,
+body.native-embed #msFlagNav,
+body.native-embed #msDocTitleRow,
+body.native-embed .pbar,
+body.native-embed #practicePanel {
+  display: none !important;
+}
+
+body.native-embed #viewEditor,
+body.native-embed .workspace,
+body.native-embed .score-col {
+  padding: 0 !important;
+  margin: 0 !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  background: transparent !important;
+}
+
+body.native-embed #scoreScroll {
+  height: 100% !important;
+  padding: 12px 10px 36px !important;
+  box-sizing: border-box !important;
+}

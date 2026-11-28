@@ -1,19 +1,23 @@
 import SwiftUI
 
-/// Root MusicScan shell combining 100% of the real GitHub editor (`EditorWebView` + copisteria OMR +
-/// VexFlow 4 live MusicXML editor + FluidR3 sampled audio + Fix It + Rescan + Adjust Edges + Ink)
-/// with a super-easy 2-tab native Sky workspace (`Scan` and `Review & Edit`) tailored for
-/// iPhone Duo (Outer & Inner), iPhone, and iPad.
+/// Root Local-First Hybrid MusicScan shell combining:
+/// - Offline bundled VexFlow 4 live MusicXML editor + FluidR3 sampled audio (`LocalWebSchemeHandler`)
+/// - On-device score, thumbnail, bar crop, and Apple Pencil ink persistence (`LocalScoreStore`)
+/// - Native SwiftUI single 44pt nav bar + 3-mode adaptive bottom dock on iPhone (`.compact`)
+/// - Native SwiftUI 52pt Studio toolbar + 3-region split workspace on iPad (`.regular`)
 struct ContentView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
     @AppStorage(AppConfig.serverURLStorageKey) private var serverAddress = AppConfig.defaultServerAddress
     @AppStorage("musicScan.hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
     @State private var auth = AuthManager.shared
     @State private var billing = BillingManager.shared
     @State private var bridge = MusicScanBridgeController()
+    @State private var scoreStore = LocalScoreStore.shared
 
     @State private var selectedTab: AppTab = .scan
-    @State private var isLoading = true
+    @State private var isLoading = false
     @State private var loadError: String?
     @State private var showWelcomeOverlay = false
     @State private var showSettings = false
@@ -32,34 +36,32 @@ struct ContentView: View {
         !hasCompletedOnboarding || showWelcomeOverlay
     }
 
-    private var shouldShowInitialConnectingSplash: Bool {
-        !isShowingWelcome
-            && isLoading
-            && loadError == nil
-            && serverURL != nil
+    /// Hide the bottom 2-tab bar whenever a score is open in the native editor (`bridge.stage == .editor`),
+    /// so the single adaptive bottom dock (iPhone) or 3-region Studio split view (iPad) owns the bottom chrome.
+    private var shouldHideBottomTabBar: Bool {
+        selectedTab == .review && bridge.stage == .editor
     }
 
-    private var shouldShowReviewSkeleton: Bool {
+    private var shouldShowNativeScoreLibrary: Bool {
         selectedTab == .review
             && loadError == nil
-            && serverURL != nil
-            && (isLoading || (bridge.stage == .home && !bridge.libraryReady))
+            && bridge.stage == .home
+            && !bridge.isModalOpen
+            && !scoreStore.scores.isEmpty
     }
 
     private var shouldShowReviewEmptyState: Bool {
         selectedTab == .review
-            && !isLoading
-            && bridge.libraryReady
             && loadError == nil
-            && serverURL != nil
             && bridge.stage == .home
             && !bridge.isModalOpen
-            && bridge.libraryCount == 0
+            && scoreStore.scores.isEmpty
     }
 
     var body: some View {
         GeometryReader { geo in
-            let hideTabBarForCompactPlayback = bridge.isPlaying && geo.size.height < 640
+            let isStudioLayout = (horizontalSizeClass == .regular && geo.size.width >= 740)
+            let editorInsets = computeEditorCanvasInsets(size: geo.size, isStudioLayout: isStudioLayout)
 
             ZStack {
                 SkyTheme.sky25
@@ -67,44 +69,65 @@ struct ContentView: View {
 
                 VStack(spacing: 0) {
                     ZStack {
-                        // Real MusicScan web workspace stays permanently mounted so cookies,
-                        // IndexedDB library, WebAudio, and open edits never reset on tab switch.
+                        // Local-first WebView stays permanently mounted via musicscan-app://local/index.html?embed=native
                         if let serverURL {
-                            EditorWebView(
-                                url: serverURL,
-                                reloadToken: reloadToken,
-                                isPro: billing.isPro,
-                                controller: bridge,
-                                onLoaded: {
-                                    withAnimation(.easeOut(duration: 0.25)) {
-                                        isLoading = false
-                                        loadError = nil
+                            ZStack {
+                                EditorWebView(
+                                    url: serverURL,
+                                    reloadToken: reloadToken,
+                                    isPro: billing.isPro,
+                                    controller: bridge,
+                                    onLoaded: {
+                                        withAnimation(.easeOut(duration: 0.2)) {
+                                            isLoading = false
+                                            loadError = nil
+                                        }
+                                        bridge.setReviewTabMode(true)
+                                    },
+                                    onLoadError: { message in
+                                        withAnimation(.easeOut(duration: 0.2)) {
+                                            isLoading = false
+                                            loadError = message
+                                        }
+                                    },
+                                    onOpenSettings: {
+                                        showSettings = true
+                                    },
+                                    onOpenGuide: {
+                                        showQuickGuide = true
                                     }
-                                    bridge.setReviewTabMode(true)
-                                },
-                                onLoadError: { message in
-                                    withAnimation(.easeOut(duration: 0.25)) {
-                                        isLoading = false
-                                        loadError = message
+                                )
+                                #if os(iOS)
+                                .overlay {
+                                    if selectedTab == .review
+                                        && bridge.stage == .editor
+                                        && bridge.isNativePencilInkActive
+                                        && !bridge.isModalOpen {
+                                        NativePencilCanvasView(
+                                            scoreID: bridge.activeScoreID,
+                                            isDrawingEnabled: true
+                                        )
                                     }
-                                },
-                                onOpenSettings: {
-                                    showSettings = true
-                                },
-                                onOpenGuide: {
-                                    showQuickGuide = true
                                 }
-                            )
-                            .ignoresSafeArea(edges: .top)
+                                #endif
+                            }
+                            .padding(.top, editorInsets.top)
+                            .padding(.bottom, editorInsets.bottom)
+                            .padding(.leading, editorInsets.leading)
+                            .padding(.trailing, editorInsets.trailing)
                             .opacity(loadError == nil ? 1 : 0)
-                            .allowsHitTesting(selectedTab == .review && !shouldShowReviewEmptyState && loadError == nil)
+                            .allowsHitTesting(
+                                selectedTab == .review
+                                && (bridge.stage == .editor || bridge.stage == .reading)
+                                && loadError == nil
+                            )
                             .accessibilityHidden(
                                 selectedTab != .review
-                                || shouldShowReviewSkeleton
+                                || shouldShowNativeScoreLibrary
                                 || shouldShowReviewEmptyState
                                 || loadError != nil
                             )
-                            .accessibilityLabel("MusicScan Score Editor")
+                            .accessibilityLabel("MusicScan Score Canvas")
                         } else if selectedTab == .review {
                             ConnectionErrorView(
                                 message: "The server address is not valid.",
@@ -114,17 +137,19 @@ struct ContentView: View {
                             )
                         }
 
-                        // Tab 2 overlays (Shimmering Library Skeleton / Error / Empty Library before first scan)
-                        if selectedTab == .review {
-                            if shouldShowReviewSkeleton {
-                                ConnectingOverlayView(
-                                    hostLabel: hostLabel,
-                                    isPro: billing.isPro,
-                                    onOpenGuide: { showQuickGuide = true },
-                                    onOpenSettings: { showSettings = true }
-                                )
+                        // Native Score Editor Chrome (Single 44pt Nav Bar + Adaptive Bottom Dock on iPhone; 3-Region Studio on iPad)
+                        if selectedTab == .review
+                            && bridge.stage == .editor
+                            && !bridge.isModalOpen
+                            && loadError == nil {
+                            ScoreEditorChromeOverlay(bridge: bridge, store: scoreStore)
                                 .transition(.opacity)
-                            } else if let loadError {
+                                .zIndex(4)
+                        }
+
+                        // Tab 2 overlays (Native Score Library / Empty State / Error)
+                        if selectedTab == .review {
+                            if let loadError {
                                 ConnectionErrorView(
                                     message: loadError,
                                     hostLabel: hostLabel,
@@ -132,13 +157,27 @@ struct ContentView: View {
                                     onOpenSettings: { showSettings = true }
                                 )
                                 .transition(.opacity)
+                            } else if shouldShowNativeScoreLibrary {
+                                ScoreLibraryView(
+                                    isPro: billing.isPro,
+                                    bridge: bridge,
+                                    store: scoreStore,
+                                    onGoToScan: {
+                                        withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+                                            selectedTab = .scan
+                                        }
+                                    },
+                                    onOpenGuide: { showQuickGuide = true },
+                                    onOpenSettings: { showSettings = true }
+                                )
+                                .transition(.opacity)
                             } else if shouldShowReviewEmptyState {
                                 ReviewEmptyOverlayView(
                                     isPro: billing.isPro,
                                     hasSamples: !bridge.samples.isEmpty,
-                                    hasResume: bridge.hasResume,
+                                    hasResume: bridge.hasResume || !scoreStore.scores.isEmpty,
                                     onGoToScan: {
-                                        withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
+                                        withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
                                             selectedTab = .scan
                                         }
                                     },
@@ -159,7 +198,7 @@ struct ContentView: View {
                         if selectedTab == .scan {
                             ScanWorkspaceView(
                                 isPro: billing.isPro,
-                                isServerLoading: isLoading,
+                                isServerLoading: false,
                                 loadError: serverURL == nil ? "The server address is not valid." : loadError,
                                 stage: bridge.stage,
                                 activeTitle: bridge.documentTitle,
@@ -179,12 +218,12 @@ struct ContentView: View {
                                 },
                                 onOpenSample: { index in
                                     bridge.openSample(index: index)
-                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
                                         selectedTab = .review
                                     }
                                 },
                                 onResumeEditing: {
-                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
                                         selectedTab = .review
                                     }
                                 },
@@ -198,11 +237,11 @@ struct ContentView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                    if !isShowingWelcome && !hideTabBarForCompactPlayback {
+                    if !isShowingWelcome && !shouldHideBottomTabBar {
                         MusicScanTabBar(
                             selectedTab: $selectedTab,
                             stage: bridge.stage,
-                            libraryCount: bridge.libraryCount,
+                            libraryCount: max(scoreStore.scores.count, bridge.libraryCount),
                             onReselectReview: {
                                 if bridge.stage == .editor {
                                     bridge.showLibraryHome()
@@ -212,9 +251,11 @@ struct ContentView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
-                .animation(.spring(response: 0.3, dampingFraction: 0.86), value: hideTabBarForCompactPlayback)
-                .animation(.easeOut(duration: 0.24), value: shouldShowReviewSkeleton)
-                .animation(.easeOut(duration: 0.24), value: shouldShowReviewEmptyState)
+                .animation(.spring(response: 0.28, dampingFraction: 0.88), value: shouldHideBottomTabBar)
+                .animation(.spring(response: 0.28, dampingFraction: 0.88), value: bridge.editorMode)
+                .animation(.spring(response: 0.28, dampingFraction: 0.88), value: bridge.showiPadPhotoPane)
+                .animation(.easeOut(duration: 0.22), value: shouldShowNativeScoreLibrary)
+                .animation(.easeOut(duration: 0.22), value: shouldShowReviewEmptyState)
                 .animation(.easeOut(duration: 0.22), value: bridge.preparingMessage != nil)
 
                 if let preparing = bridge.preparingMessage, !isShowingWelcome {
@@ -228,7 +269,7 @@ struct ContentView: View {
 
                 if let toast = bridge.toastMessage,
                    !isShowingWelcome,
-                   (selectedTab == .scan || shouldShowReviewEmptyState) {
+                   (selectedTab == .scan || shouldShowReviewEmptyState || shouldShowNativeScoreLibrary) {
                     VStack {
                         HStack(spacing: 8) {
                             Image(systemName: "info.circle.fill")
@@ -251,12 +292,6 @@ struct ContentView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .allowsHitTesting(false)
                     .zIndex(15)
-                }
-
-                if shouldShowInitialConnectingSplash {
-                    ServerLaunchSplashView(hostLabel: hostLabel)
-                        .transition(.opacity)
-                        .zIndex(18)
                 }
 
                 if isShowingWelcome {
@@ -312,23 +347,37 @@ struct ContentView: View {
         .onAppear {
             sanitizeLegacyStoredServerURL()
             billing.configure(serverURL: serverURL)
+            bridge.libraryCount = scoreStore.scores.count
         }
         .onChange(of: bridge.stage) { oldStage, newStage in
-            // Automatically bring the user to Review & Edit as soon as a scan/upload begins reading or opens.
             if (newStage == .reading || newStage == .editor) && oldStage != newStage {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
                     selectedTab = .review
                 }
             }
         }
         .onChange(of: auth.sessionRevision) { _, _ in
-            // Refresh WebView session cookie whenever the user signs in, links, or signs out.
             reloadEditor()
         }
         .onChange(of: billing.isPro) { _, _ in
             bridge.syncProState()
         }
         .tint(SkyTheme.blue600)
+    }
+
+    private func computeEditorCanvasInsets(size: CGSize, isStudioLayout: Bool) -> EdgeInsets {
+        guard selectedTab == .review && bridge.stage == .editor && !bridge.isModalOpen else {
+            return EdgeInsets()
+        }
+        if isStudioLayout {
+            let leftWidth: CGFloat = bridge.showiPadPhotoPane ? min(max(size.width * 0.27, 250), 340) : 0
+            let rightWidth: CGFloat = min(max(size.width * 0.22, 236), 280)
+            return EdgeInsets(top: 52, leading: leftWidth, bottom: 0, trailing: rightWidth)
+        } else {
+            let topBarHeight: CGFloat = 44 + (bridge.editorMode == .fix ? 96 : 0)
+            let bottomDockHeight: CGFloat = (bridge.editorMode == .play ? 62 : 104)
+            return EdgeInsets(top: topBarHeight, leading: 0, bottom: bottomDockHeight, trailing: 0)
+        }
     }
 
     private func reloadEditor() {

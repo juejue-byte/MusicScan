@@ -2674,7 +2674,52 @@ review.initReview({
   playOptions: () => ({ ...practice.playOptions(false), countIn: 0, metronome: false, speedUp: null, onCount: () => {} }),
   showPhoto: (mi) => { if (!S.job) return; $('#photoCol').classList.remove('closed'); setTimeout(() => { redraw(); scrollPhotoTo(mi); }, 0); },
 });
+if (new URLSearchParams(location.search).get('embed') === 'native') {
+  document.body.classList.add('native-embed');
+}
 loadSamples();
 show('viewUpload');
-// for automated tests
-window.__ms = { S, audio, practice, library, renderLibrary, paywall, startUpload, openScore: (xml, meta) => { S.name = 'test.musicxml'; openScore(xml, meta || [], null, null); }, redraw };
+// for automated tests & native SwiftUI bridge
+window.__ms = {
+  S, audio, practice, library, renderLibrary, paywall, startUpload,
+  openScore: (xml, meta) => { S.name = 'test.musicxml'; openScore(xml, meta || [], null, null); },
+  openScoreFull: ({ id, name, xml, meta, quality, job, pages }) => {
+    if (id) S.openLib = id;
+    if (name) S.name = name;
+    openScore(xml, meta || [], quality || null, job || null, pages || null);
+  },
+  openFromLibrary,
+  redraw,
+  setMode,
+  setDur,
+  setAcc,
+  toggleDot,
+  makeRest,
+  del,
+  undo,
+  redo,
+  togglePlay,
+  stopPlay,
+  toggleLoop,
+  rescan,
+  adjustEdges,
+  retakePage,
+  pagesDialog,
+  keyTimeDialog,
+  exportAs,
+  setPen,
+  clearInk,
+  barNumber,
+  barReason,
+  pageList,
+  pageIdOf,
+  pageInfo,
+  focusBar,
+  scrollToBar,
+  saveLocal,
+  saveLocalNow,
+  PAD,
+  edit,
+  showTitle,
+  show
+};
