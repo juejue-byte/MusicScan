@@ -74,7 +74,13 @@ function download(name, data, type) {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
 // a file or score name as people read it: no extension, no upload prefix, spaces for underscores
-const prettyName = (n) => String(n || '').replace(/\.(jpe?g|png|heic|heif|pdf|musicxml|xml|mxl|tiff?|webp)$/i, '').replace(/^\d+_/, '').replace(/_/g, ' ').trim();
+const humanizeScanTimestamp = (s) => {
+  const m = String(s || '').trim().match(/^Scan\s+(\d{4})-(\d{2})-(\d{2})T(\d{2})[-:](\d{2})(?:[-:](\d{2}))?$/i);
+  if (!m) return s;
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `Scan \u00b7 ${months[Math.max(0, Math.min(11, parseInt(m[2], 10) - 1))]} ${parseInt(m[3], 10)}`;
+};
+const prettyName = (n) => humanizeScanTimestamp(String(n || '').replace(/\.(jpe?g|png|heic|heif|pdf|musicxml|xml|mxl|tiff?|webp)$/i, '').replace(/^\d+_/, '').replace(/_/g, ' ').trim());
 const baseName = () => prettyName(S.name).replace(/[^\w\- ]+/g, '').replace(/\s+/g, ' ').trim() || 'score';
 function showTitle() {
   const el = $('#docTitle');
@@ -779,6 +785,7 @@ function onPointerDown(e) {
   if (h.type === 'num') { S.barStaff = null; toggleBar(h.mi, e.shiftKey || e.metaKey || e.ctrlKey); return; }
   const addMode = S.mode === 'add';
   if (h.type === 'note' && !(addMode && (e.shiftKey || h.n.ev.rest))) {
+    const alreadySelected = S.sel === h.member;
     S.sel = h.member;
     S.measures = new Set([h.n.ev.mi]);
     focusBar(h.n.ev.mi, false);
@@ -786,14 +793,18 @@ function onPointerDown(e) {
     if (!ev.rest) {
       const member = ev.chord.find((c) => c.el === h.member);
       audio.preview(midiOf(member.pitch));
-      S.drag = { el: h.member, evEl: ev.el, startY: e.clientY, startX: e.clientX, axis: null, steps: 0, orig: member.pitch, origIdx: S.score.diatonic(member.pitch), pushed: false, pointer: e.pointerId };
-      $('#score').setPointerCapture(e.pointerId);
-    } else {
+      // On touch screens, require tapping a note to select it first before dragging its pitch up/down,
+      // so vertical finger scrolling never accidentally moves unselected notes.
+      if (!S.touch || alreadySelected) {
+        S.drag = { el: h.member, evEl: ev.el, startY: e.clientY, startX: e.clientX, axis: null, steps: 0, orig: member.pitch, origIdx: S.score.diatonic(member.pitch), pushed: false, pointer: e.pointerId };
+        $('#score').setPointerCapture(e.pointerId);
+      }
+    } else if (!S.touch || alreadySelected) {
       S.drag = { el: h.member, evEl: ev.el, startY: e.clientY, startX: e.clientX, axis: null, rest: true, pushed: false };
       $('#score').setPointerCapture(e.pointerId);
     }
     redraw();
-    e.preventDefault();
+    if (!S.touch || alreadySelected) e.preventDefault();
     return;
   }
   if (!addMode) {
@@ -1635,7 +1646,7 @@ async function rescan(attempt = 0, file = null) {
     ${newN !== oldN ? `<br><b>Heads up:</b> the new reading has ${newN} bar${newN === 1 ? '' : 's'} where the score had ${oldN}.` : ''}</p>
     <div class="cmp"><div class="lbl">Current</div><div class="box" id="cmpOld"></div><div class="lbl">New</div><div class="box" id="cmpNew"></div></div>
     <div class="modal-actions">
-      <label class="btn"><input type="file" accept="image/*,.heic,.heif" hidden id="closeup">📷 Use a close-up photo…</label>
+      <label class="btn"><input type="file" accept="image/*,.heic,.heif" hidden id="closeup">Use a close-up photo…</label>
       <button class="btn" data-m="again">⟳ Try another way</button>
       <button class="btn ghost" data-m="close">Cancel</button>
       <button class="btn primary" data-m="use" ${newN ? '' : 'disabled'}>Use the new reading</button>
@@ -2411,7 +2422,7 @@ function wire() {
   if (native.isNative) {
     // in the iOS app: Apple's document camera finds the page edges and flattens the page before upload
     const cam = $('#cameraInput').closest('label');
-    cam.lastChild.textContent = '📷 Scan a page';
+    cam.lastChild.textContent = ' Scan a page';
     cam.addEventListener('click', async (e) => {
       e.preventDefault();
       try {
@@ -2440,7 +2451,7 @@ function wire() {
     // Ink mode: the Pencil draws and never scrolls; a finger draws too until a Pencil has been used, then it scrolls
     if (S.mode === 'ink') { if (t.touchType === 'stylus' || !S.penSeen) e.preventDefault(); return; }
     const h = hitTest(x, y, true);
-    if (h && (h.type === 'note' || S.mode === 'add')) e.preventDefault();
+    if (h && h.type === 'note' && S.sel && h.member === S.sel) e.preventDefault();
   }, { passive: false });
   // and once a note drag is under way the page must not start scrolling under the finger
   sc.addEventListener('touchmove', (e) => { if (S.drag || S.stroke) e.preventDefault(); }, { passive: false });

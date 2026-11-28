@@ -134,7 +134,7 @@
           <div class="seg right">
             <button data-act="keytime" id="btnKeyTime" title="Fix the key, time signature or clef">♯ Key<span class="tb-more">&nbsp;/ time</span></button>
             <button data-act="rescan" id="btnRescan" title="Re-read the selected bars from the photo" disabled>⟳ Rescan<span class="tb-more">&nbsp;bars</span></button>
-            <button data-act="photo" id="btnPhoto" title="Show the photo next to the score">🖼 Photo</button>
+            <button data-act="photo" id="btnPhoto" title="Show the photo next to the score"><svg class="ms-btn-svg" width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.75" y="3" width="14.5" height="12" rx="2.2"/><circle cx="6.25" cy="7.25" r="1.4"/><path d="M2.2 13.2l4.1-3.8a1 1 0 0 1 1.38 0l2.4 2.2 2.1-1.9a1 1 0 0 1 1.36 0l2.3 2.1"/></svg> Photo</button>
           </div>
         </div>
         <div class="hint" id="hint">Click a note to select it, then drag it up or down. Use <b>Add notes</b> to write new ones.</div>
@@ -144,7 +144,7 @@
             <div class="rv-title"><span class="rv-badge" id="rvBadge"></span><b id="rvBar"></b><span class="muted" id="rvPos"></span></div>
             <div class="rv-progress"><span id="rvCount"></span><div class="rv-track"><div id="rvMeter"></div></div></div>
             <button class="btn icon rv-nav" id="rvNext" title="Next flag (])" aria-label="Next flag">›</button>
-            <button class="btn small ghost" id="rvClose" title="Close Fix it (Esc)">Close</button>
+            <button class="btn small ghost" id="rvClose" title="Exit Fix it and return to full score (Esc)">← Back to Score</button>
           </div>
           <div class="rv-sub"><div class="rv-why" id="rvWhy"></div><label class="check rv-auto"><input type="checkbox" id="rvAuto" checked> Play each flag</label></div>
           <div class="rv-pics" id="rvPics">
@@ -202,6 +202,6 @@
 <footer class="credit">OMR by <a href="https://github.com/kobimusic/copisteria" target="_blank" rel="noopener">copisteria</a> © KobiMusic (Apache-2.0)<span class="credit-more"> · engraving by VexFlow</span></footer>
 
 <script src="vendor/vexflow.js"></script>
-<script type="module" src="js/app.js?v=20261126b"></script>
+<script type="module" src="js/app.js?v=20261127a"></script>
 </body>
 </html>

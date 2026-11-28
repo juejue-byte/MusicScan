@@ -7,12 +7,19 @@ const $ = (s) => document.querySelector(s);
 const WHITE = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const BLACK_AFTER = { C: 1, D: 1, F: 1, G: 1, A: 1 };   // a black key follows these white keys
 const LS = 'musicscan:pad';
+const PIANO_ICON_SVG = '<svg class="ms-btn-svg" width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.75" y="3" width="14.5" height="12" rx="2"/><line x1="6.5" y1="3" x2="6.5" y2="15"/><line x1="11.5" y1="3" x2="11.5" y2="15"/><rect x="5" y="3" width="2.4" height="7" rx="0.5" fill="currentColor"/><rect x="10.6" y="3" width="2.4" height="7" rx="0.5" fill="currentColor"/></svg>';
 
 export function createPad(NI, { S, setDur, makeRest, stepSel, del }) {
-  const st = { base: null, staff: null, chord: false, open: true, openSelect: false };
-  // open by default on touch screens; with a mouse and keyboard it waits behind the Keyboard button
-  st.open = matchMedia('(pointer: coarse)').matches;
-  try { const v = localStorage.getItem(LS); if (v) st.open = v === 'open'; st.openSelect = localStorage.getItem(LS + ':select') === 'open'; } catch (e) { /* storage blocked */ }
+  const st = { base: null, staff: null, chord: false, open: false, openSelect: false };
+  // Default closed on iPhone (<= 680px) so the 2-octave keyboard never auto-pops or crowds the score;
+  // on larger touch tablets (iPad) it opens in Add mode unless closed.
+  const isCompactPhone = (window.innerWidth || document.documentElement.clientWidth || 393) <= 680;
+  st.open = matchMedia('(pointer: coarse)').matches && !isCompactPhone;
+  try {
+    const v = localStorage.getItem(LS);
+    if (v && !isCompactPhone) st.open = v === 'open';
+    st.openSelect = localStorage.getItem(LS + ':select') === 'open' && !isCompactPhone;
+  } catch (e) { /* storage blocked */ }
 
   const el = document.createElement('div');
   el.className = 'pad hidden';
@@ -31,7 +38,7 @@ export function createPad(NI, { S, setDur, makeRest, stepSel, del }) {
       <button class="pad-btn" data-p="left" title="Move the caret back (←)" aria-label="Caret back">◀</button>
       <button class="pad-btn" data-p="right" title="Move the caret on (→)" aria-label="Caret forward">▶</button>
       <button class="pad-btn" data-p="back" title="Step back and clear (Backspace)" aria-label="Step back and clear">⌫</button>
-      <button class="pad-btn pad-staff" data-p="staff" title="Write on the other staff (⌥⇧↑↓)">Bass ⇣</button>
+      <button class="pad-btn pad-staff" data-p="staff" title="Write on the other staff (⌥⇧↑↓)">Bass ⇩</button>
     </div>
     <button class="pad-hide" data-p="hide" title="Hide the keyboard" aria-label="Hide the keyboard">⌄</button>`;
   const statusbar = document.querySelector('.statusbar');
@@ -39,8 +46,8 @@ export function createPad(NI, { S, setDur, makeRest, stepSel, del }) {
   const show = document.createElement('button');
   show.className = 'btn small ghost pad-show hidden';
   show.id = 'btnPad';
-  show.textContent = '🎹 Keyboard';
-  show.title = 'Show the on-screen keyboard';
+  show.innerHTML = `${PIANO_ICON_SVG}<span>Piano</span>`;
+  show.title = 'Show the on-screen piano keyboard';
   statusbar.insertBefore(show, statusbar.querySelector('.zoom'));
   show.onclick = () => { setOpen(true); };
   const isOpen = () => (S.mode === 'add' ? st.open : st.openSelect);
@@ -121,7 +128,7 @@ export function createPad(NI, { S, setDur, makeRest, stepSel, del }) {
     sb.classList.toggle('hidden', nStaves < 2);
     const sel = S.mode !== 'add' && S.sel ? S.layout?.notes.find((n) => n.ev.el === S.sel || n.ev.chord.some((c) => c.el === S.sel)) : null;
     const onStaff = S.mode === 'add' ? S.caret?.staff : sel?.ev.staff;
-    sb.textContent = S.mode === 'add' ? (onStaff === '1' ? 'Lower ⇣' : 'Upper ⇡') : (onStaff === '1' ? 'Move ⇣' : 'Move ⇡');
+    sb.textContent = S.mode === 'add' ? (onStaff === '1' ? 'Lower ⇩' : 'Upper ⇧') : (onStaff === '1' ? 'Move ⇩' : 'Move ⇧');
     sb.title = S.mode === 'add' ? 'Write on the other staff (⌥⇧↑↓)' : 'Move the note to the other staff (⌘⇧↑↓)';
     el.querySelector('[data-p="left"]').title = S.mode === 'add' ? 'Move the caret back (←)' : 'Previous note (←)';
     el.querySelector('[data-p="right"]').title = S.mode === 'add' ? 'Move the caret on (→)' : 'Next note (→)';

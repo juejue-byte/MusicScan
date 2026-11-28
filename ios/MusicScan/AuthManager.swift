@@ -209,6 +209,71 @@ final class AuthManager {
         return "Bearer \(token)"
     }
 
+    // MARK: - Supabase Scan Telemetry Sync
+
+    /// Persists scan SLI latency and quality telemetry to Supabase (`public.scan_telemetry`) asynchronously
+    /// so we can monitor performance regressions and model quality without cluttering the editor status bar.
+    func recordScanTelemetry(_ entry: ScanSLIEntry) async {
+        guard isConfigured,
+              !entry.jobID.isEmpty,
+              let base = supabaseURL,
+              let token = await accessToken(),
+              let userID = session?.userID,
+              !userID.isEmpty,
+              let url = URL(string: "rest/v1/scan_telemetry?on_conflict=user_id,job_id", relativeTo: base.appendingPathComponent("/")) else {
+            return
+        }
+
+        let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+        #if os(iOS)
+        let deviceModel = UIDevice.current.model
+        #else
+        let deviceModel = "Mac"
+        #endif
+
+        var payload: [String: Any] = [
+            "user_id": userID,
+            "job_id": entry.jobID,
+            "title": entry.title,
+            "page_number": entry.pageNumber,
+            "total_pages": entry.totalPages,
+            "on_device_prep_ms": entry.onDevicePrepMs,
+            "wall_seconds": entry.pageWallSeconds,
+            "overhead_seconds": entry.overheadSeconds,
+            "measures_count": entry.measuresCount,
+            "fast_mode": entry.fastMode,
+            "access_mode": entry.accessMode,
+            "app_version": appVersion,
+            "device_model": deviceModel,
+        ]
+        if let omr = entry.serverOmrSeconds {
+            payload["omr_seconds"] = omr
+        }
+        if let qScore = entry.qualityScore {
+            payload["quality_score"] = qScore
+        }
+        if let qLevel = entry.qualityLevel {
+            payload["quality_level"] = qLevel
+        }
+        if let flagged = entry.flaggedBarsCount {
+            payload["flagged_bars_count"] = flagged
+        }
+        if let red = entry.redBarsCount {
+            payload["red_bars_count"] = red
+        }
+
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.httpMethod = "POST"
+        request.setValue(publishableKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("resolution=merge-duplicates,return=minimal", forHTTPHeaderField: "Prefer")
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        request.httpBody = body
+
+        _ = try? await URLSession.shared.data(for: request)
+    }
+
     // MARK: - WKWebView Cookie Injection
 
     /// Writes `musicscan_session` into the web view's cookie store before loading so editor `fetch('api/...')` calls are authenticated.

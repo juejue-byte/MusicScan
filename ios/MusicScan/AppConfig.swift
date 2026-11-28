@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import SwiftUI
 
-/// Records per-page and per-scan latency metrics (SLI) so we can track and improve end-to-end scan performance.
+/// Records per-page and per-scan latency metrics (SLI) and quality telemetry so we can track and improve end-to-end scan performance and catch regressions in Supabase.
 struct ScanSLIEntry: Codable, Identifiable, Equatable, Sendable {
     let id: UUID
     let timestamp: Date
@@ -22,11 +22,15 @@ struct ScanSLIEntry: Codable, Identifiable, Equatable, Sendable {
         return max(0, pageWallSeconds - omr)
     }
     let measuresCount: Int
+    let qualityScore: Int?
+    let qualityLevel: String?
+    let flaggedBarsCount: Int?
+    let redBarsCount: Int?
     let fastMode: Bool
     let accessMode: String
 }
 
-/// Persistent SLI latency recorder stored in `UserDefaults` (`musicScan.sliEntries`).
+/// Persistent SLI latency recorder stored in `UserDefaults` (`musicScan.sliEntries`) and synced asynchronously to Supabase (`public.scan_telemetry`).
 @MainActor
 @Observable
 final class ScanSLIRecorder {
@@ -76,6 +80,10 @@ final class ScanSLIRecorder {
         pageWallSeconds: Double,
         serverOmrSeconds: Double?,
         measuresCount: Int,
+        qualityScore: Int? = nil,
+        qualityLevel: String? = nil,
+        flaggedBarsCount: Int? = nil,
+        redBarsCount: Int? = nil,
         fastMode: Bool,
         accessMode: String
     ) {
@@ -94,6 +102,10 @@ final class ScanSLIRecorder {
             pageWallSeconds: max(0.05, pageWallSeconds),
             serverOmrSeconds: serverOmrSeconds,
             measuresCount: max(0, measuresCount),
+            qualityScore: qualityScore,
+            qualityLevel: qualityLevel,
+            flaggedBarsCount: flaggedBarsCount,
+            redBarsCount: redBarsCount,
             fastMode: fastMode,
             accessMode: accessMode
         )
@@ -102,6 +114,9 @@ final class ScanSLIRecorder {
             entries = Array(entries.prefix(Self.maxEntries))
         }
         save()
+        Task { @MainActor in
+            await AuthManager.shared.recordScanTelemetry(entry)
+        }
     }
 
     func clear() {

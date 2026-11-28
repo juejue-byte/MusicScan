@@ -557,6 +557,10 @@ struct EditorWebView: UIViewRepresentable {
                 let wallSeconds = (body["wallSeconds"] as? NSNumber)?.doubleValue ?? 0
                 let omrSeconds = (body["omrSeconds"] as? NSNumber)?.doubleValue
                 let measuresCount = (body["measures"] as? NSNumber)?.intValue ?? 0
+                let qualityScore = (body["qualityScore"] as? NSNumber)?.intValue
+                let qualityLevel = body["qualityLevel"] as? String
+                let flaggedBarsCount = (body["flaggedBars"] as? NSNumber)?.intValue
+                let redBarsCount = (body["redBars"] as? NSNumber)?.intValue
                 let fastMode = body["fastMode"] as? Bool ?? parent.controller.fastMode
                 let accessMode = body["access"] as? String ?? "full"
                 ScanSLIRecorder.shared.recordPageCompletion(
@@ -567,6 +571,10 @@ struct EditorWebView: UIViewRepresentable {
                     pageWallSeconds: wallSeconds,
                     serverOmrSeconds: omrSeconds,
                     measuresCount: measuresCount,
+                    qualityScore: qualityScore,
+                    qualityLevel: qualityLevel,
+                    flaggedBarsCount: flaggedBarsCount,
+                    redBarsCount: redBarsCount,
                     fastMode: fastMode,
                     accessMode: accessMode
                 )
@@ -1322,27 +1330,6 @@ private enum MusicScanNativeBridgeScript {
           #msNativePreviewVeil button:active {
             transform: scale(0.98);
           }
-          #msSliBadge {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            height: 24px;
-            padding: 0 9px;
-            margin-right: 6px;
-            border-radius: 999px;
-            background: #EAF4FE;
-            border: 1px solid #D6E4F2;
-            color: #0F56A3;
-            font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
-            font-size: 11.5px;
-            font-weight: 700;
-            font-variant-numeric: tabular-nums;
-            white-space: nowrap;
-            cursor: pointer;
-          }
-          #msSliBadge:active {
-            background: #D8EAFC;
-          }
         `;
         (document.head || document.documentElement).appendChild(style);
       }
@@ -1423,27 +1410,6 @@ private enum MusicScanNativeBridgeScript {
           scoreScroll.appendChild(veil);
         }
         positionProgressivePreviewVeil(veil, scoreScroll);
-      }
-
-      function updateSLIBadge() {
-        if (!latestSLISummary) return;
-        injectStyles();
-        const zoomBox = document.querySelector('#viewEditor .statusbar .zoom');
-        if (!zoomBox) return;
-        let badge = document.getElementById('msSliBadge');
-        if (!badge) {
-          badge = document.createElement('button');
-          badge.id = 'msSliBadge';
-          badge.type = 'button';
-          badge.title = 'Scan latency (SLI) — tap to view details in Settings';
-          badge.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            postToNativeImmediate('settings');
-          });
-          zoomBox.insertBefore(badge, zoomBox.firstChild);
-        }
-        badge.textContent = latestSLISummary;
       }
 
       async function triggerNativePaywall(reason) {
@@ -1547,7 +1513,7 @@ private enum MusicScanNativeBridgeScript {
           });
         }
 
-        // Record completed scan SLI when job poll reaches status === 'done'
+        // Record completed scan SLI & quality telemetry when job poll reaches status === 'done'
         if (data.id && data.status === 'done' && !recordedSLIJobs.has(data.id)) {
           recordedSLIJobs.add(data.id);
           completedPageCounter += 1;
@@ -1556,15 +1522,15 @@ private enum MusicScanNativeBridgeScript {
             ? Math.max(0.1, (performance.now() - timing.startMs) / 1000)
             : (typeof data.result?.seconds === 'number' ? data.result.seconds : 0);
           const omrSeconds = typeof data.result?.seconds === 'number' ? data.result.seconds : null;
-          const measuresCount = data.result?.stats?.measures || (Array.isArray(data.result?.measures) ? data.result.measures.length : 0);
+          const measuresArr = Array.isArray(data.result?.measures) ? data.result.measures : [];
+          const measuresCount = data.result?.stats?.measures || measuresArr.length;
+          const qualityScore = typeof data.result?.quality?.score === 'number' ? Math.round(data.result.quality.score) : null;
+          const qualityLevel = typeof data.result?.quality?.level === 'string' ? data.result.quality.level : null;
+          const flaggedBars = measuresArr.filter((m) => m && m.level && m.level !== 'ok').length;
+          const redBars = measuresArr.filter((m) => m && m.level === 'bad').length;
           const fastMode = Boolean(document.getElementById('optFast')?.checked);
           const access = data.allowance?.access || 'full';
           const title = (document.getElementById('docTitle')?.textContent || data.name || '').trim();
-
-          const omrLabel = omrSeconds != null ? ` (GPU ${omrSeconds.toFixed(1)}s)` : '';
-          latestSLISummary = `⏱ ${wallSeconds.toFixed(1)}s${omrLabel}`;
-          setTimeout(updateSLIBadge, 120);
-          setTimeout(updateSLIBadge, 550);
 
           postToNativeImmediate('scanSLI', {
             jobId: data.id,
@@ -1574,6 +1540,10 @@ private enum MusicScanNativeBridgeScript {
             wallSeconds: Number(wallSeconds.toFixed(2)),
             omrSeconds: omrSeconds != null ? Number(omrSeconds.toFixed(2)) : null,
             measures: measuresCount,
+            qualityScore,
+            qualityLevel,
+            flaggedBars,
+            redBars,
             fastMode,
             access
           });
@@ -1632,7 +1602,7 @@ private enum MusicScanNativeBridgeScript {
 
       // Guard editing, Fix It, Rescan, Ink, and Export on server-enforced preview scores,
       // while allowing Playback (#btnPlay, .pbar), Page navigation (#msPageNav, #msGoodNotesSheet, #msFollowPlayBtn), Flag bar navigation/toggle (#msFlagNav), Photo view, and Zoom.
-      const ALLOWED_PREVIEW_SELECTORS = '#btnNew, #btnPhoto, #photoCol, #zoomIn, #zoomOut, #zoomVal, #btnKeys, #btnPlay, #btnLoop, #btnPractice, #tempo, .tempo, .pbar, .pbar *, #practicePanel, #practicePanel *, #msPageNav, #msPageNav *, #msFlagNav, #msFlagNav *, #msFlagVisBtn, #msGoodNotesSheet, #msGoodNotesSheet *, #msFollowPlayBtn, #msFollowPlayBtn *, #msBarCompareBtn, #msMoreToolsBtn, #msSliBadge, #qualityBanner [data-b=close], #msNativePreviewVeil, #msNativePreviewVeil *, .ms-native-hdr-btn, .toast';
+      const ALLOWED_PREVIEW_SELECTORS = '#btnNew, #btnPhoto, #photoCol, #zoomIn, #zoomOut, #zoomVal, #btnKeys, #btnPlay, #btnLoop, #btnPractice, #tempo, .tempo, .pbar, .pbar *, #practicePanel, #practicePanel *, #msPageNav, #msPageNav *, #msFlagNav, #msFlagNav *, #msFlagVisBtn, #msQualityInfoSheet, #msQualityInfoSheet *, #msGoodNotesSheet, #msGoodNotesSheet *, #msFollowPlayBtn, #msFollowPlayBtn *, #msMoreToolsBtn, #qualityBanner [data-b=close], #msNativePreviewVeil, #msNativePreviewVeil *, .ms-native-hdr-btn, .toast';
       function previewInteractionGuard(e) {
         if (!isCurrentScorePreviewLocked()) return;
         const editor = document.getElementById('viewEditor');
@@ -1655,7 +1625,6 @@ private enum MusicScanNativeBridgeScript {
         requestAnimationFrame(() => {
           veilRafPending = false;
           renderPreviewVeilIfNeeded();
-          updateSLIBadge();
         });
       }
 
@@ -1832,25 +1801,42 @@ private enum NativeWebPolishScript {
           body.editing footer.credit {
             display: none !important;
           }
+          body.editing header.top .brand,
+          body.editing .top .brand {
+            display: none !important;
+          }
           body.editing header.top, body.editing .top {
             flex-wrap: wrap !important;
-            gap: 5px !important;
+            align-items: center !important;
+            gap: 4px 6px !important;
             padding-top: max(6px, env(safe-area-inset-top, 0px)) !important;
             padding-bottom: 6px !important;
             padding-left: max(10px, env(safe-area-inset-left, 0px)) !important;
             padding-right: max(10px, env(safe-area-inset-right, 0px)) !important;
           }
           body.editing .top-actions {
-            flex: 1 1 auto !important;
+            order: 1 !important;
+            width: 100% !important;
+            flex: 1 1 100% !important;
             min-width: 0 !important;
             max-width: 100% !important;
             flex-wrap: nowrap !important;
             overflow-x: auto !important;
             -webkit-overflow-scrolling: touch;
             scrollbar-width: none;
-            justify-content: flex-end;
-            gap: 4px !important;
+            justify-content: flex-start !important;
+            align-items: center !important;
+            gap: 5px !important;
             padding: 1px 0;
+          }
+          body.editing .top-actions #btnNew {
+            margin-right: auto !important;
+            padding: 0 10px !important;
+            font-weight: 700 !important;
+            color: #0F56A3 !important;
+            background: #EAF4FE !important;
+            border: 1px solid #C9DDF1 !important;
+            border-radius: 9px !important;
           }
           body.editing .top-actions::-webkit-scrollbar {
             display: none;
@@ -1870,28 +1856,41 @@ private enum NativeWebPolishScript {
           }
           body.editing .top .btn.play {
             width: auto !important;
-            min-width: 66px !important;
-            padding: 0 11px !important;
+            min-width: 68px !important;
+            padding: 0 12px !important;
             gap: 5px !important;
             font-weight: 700 !important;
           }
           body.editing .top .btn.play .pl {
             display: inline !important;
           }
-          body.editing .doc-title {
-            font-size: 12.5px !important;
-            padding-top: 1px;
-          }
-          /* Compact 1-line quality banner on iPhone so it doesn't eat half the screen */
-          #qualityBanner {
-            padding: 6px 10px !important;
-            font-size: 12px !important;
-            gap: 6px !important;
-          }
-          #qualityBanner ul {
+          /* Hide secondary header clutter on iPhone when appropriate */
+          html.ms-form-iphone.ms-single-page body.editing #btnPages {
             display: none !important;
           }
-          /* Clean, Airy iPhone "Drag Notes" Toolbar */
+          html.ms-form-iphone body.editing #btnRedo:disabled,
+          html.ms-form-iphone body.editing #btnLoop {
+            display: none !important;
+          }
+          body.editing #msDocTitleRow {
+            order: 2 !important;
+            flex: 1 1 100% !important;
+            width: 100% !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 8px !important;
+            padding-top: 2px !important;
+          }
+          /* Hide the main editing toolbar while Fix it (#review) is open on iPhone so there aren't two stacked toolbars */
+          html.ms-form-iphone body.reviewing #toolbar {
+            display: none !important;
+          }
+          /* Compact 1-line quality banner fallback */
+          #qualityBanner {
+            display: none !important;
+          }
+          /* Clean, Airy iPhone Toolbar */
           .toolbar {
             padding: 5px 8px !important;
             gap: 5px !important;
@@ -1903,7 +1902,7 @@ private enum NativeWebPolishScript {
             padding: 0 9px !important;
             font-size: 12.5px !important;
           }
-          /* By default on iPhone, keep the toolbar uncluttered on a single row (Drag Notes, Add, Ink, Fix It, Photo, More tools ▾).
+          /* By default on iPhone, keep the toolbar uncluttered on a single row (Select, Add, Ink, Fix it, Photo, More ▾).
              When a note is selected or Add Notes is active, automatically reveal Accidentals, Duration, and Rest/Delete. */
           html.ms-form-iphone:not(.ms-iphone-full-tools) body:not(.ink-mode) .toolbar .seg[aria-label="Rhythm"],
           html.ms-form-iphone:not(.ms-iphone-full-tools) body:not(.ink-mode) .toolbar .seg[aria-label="Markings and bars"],
@@ -1920,27 +1919,39 @@ private enum NativeWebPolishScript {
           body.ink-mode #msMoreToolsBtn {
             display: none !important;
           }
-          /* Hide the auto-popping floating bar photo inspector on iPhone unless explicitly toggled via "📷 Bar photo" */
-          html.ms-form-iphone:not(.ms-iphone-show-inspector) #inspector {
+          /* Keep floating #inspector hidden on iPhone (Fix it and Photo handle comparison cleanly) */
+          html.ms-form-iphone #inspector {
             display: none !important;
           }
-          html.ms-form-iphone.ms-iphone-show-inspector #inspector {
-            bottom: 36px !important;
-            left: 8px !important;
-            right: 8px !important;
-            max-width: none !important;
-            padding: 6px 8px 8px !important;
-            border-radius: 14px !important;
-            box-shadow: 0 12px 32px rgba(14, 34, 56, 0.22) !important;
+          /* Compact iPhone piano pad when explicitly opened */
+          html.ms-form-iphone #notePad .pad-keys {
+            height: 58px !important;
           }
-          /* Streamlined iPhone status bar */
+          html.ms-form-iphone #notePad .pad-btn {
+            min-height: 32px !important;
+            font-size: 11px !important;
+            padding: 2px 6px !important;
+          }
+          /* Streamlined iPhone status bar — never overflows horizontally */
           html.ms-form-iphone .statusbar {
             padding: 4px 10px !important;
             font-size: 11.5px !important;
+            gap: 6px !important;
+            overflow: hidden !important;
+            justify-content: space-between !important;
           }
           html.ms-form-iphone #btnKeys,
           html.ms-form-iphone #statHint {
             display: none !important;
+          }
+          html.ms-form-iphone .statusbar .zoom .btn.icon.small {
+            width: 28px !important;
+            height: 26px !important;
+            font-size: 14px !important;
+          }
+          html.ms-form-iphone .statusbar .zoom span {
+            min-width: 34px !important;
+            font-size: 11.5px !important;
           }
           .lib-grid {
             grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)) !important;
@@ -1996,7 +2007,7 @@ private enum NativeWebPolishScript {
             max-height: 140px !important;
           }
         }
-        /* Toggle chips for iPhone "More tools ▾" and on-demand "📷 Bar photo" */
+        /* Toggle chip for iPhone "More ▾" */
         #msMoreToolsBtn {
           height: 33px;
           padding: 0 11px;
@@ -2019,29 +2030,238 @@ private enum NativeWebPolishScript {
         html:not(.ms-form-iphone) #msMoreToolsBtn {
           display: none !important;
         }
-        #msBarCompareBtn {
+        /* Aligned Title Row with One-Tap Rename Button & Compact Scan Quality Pill */
+        #msDocTitleRow {
           display: none;
           align-items: center;
-          gap: 4px;
-          height: 24px;
-          padding: 0 9px;
-          border-radius: 999px;
-          border: 1px solid #B9D9F7;
+          justify-content: space-between;
+          gap: 8px;
+          min-width: 0;
+          flex: 1 1 auto;
+        }
+        body.editing #msDocTitleRow {
+          display: flex;
+        }
+        #msTitleRenameWrap {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          min-width: 0;
+          max-width: 100%;
+          padding: 3px 8px 3px 10px;
+          border-radius: 9px;
+          background: rgba(255, 255, 255, 0.78);
+          border: 1px solid rgba(214, 228, 242, 0.9);
+          cursor: pointer;
+          transition: background 0.14s ease, transform 0.12s ease;
+        }
+        #msTitleRenameWrap:active {
+          background: #EAF4FE;
+          transform: scale(0.98);
+        }
+        #msTitleRenameWrap .doc-title {
+          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif !important;
+          font-size: 13.5px !important;
+          font-weight: 700 !important;
+          color: #0E2238 !important;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          flex: 0 1 auto;
+        }
+        #msRenameIconBtn {
+          display: inline-flex;
+          align-items: center;
+          gap: 3px;
+          height: 22px;
+          padding: 0 7px;
+          border-radius: 6px;
+          border: none;
           background: #EAF4FE;
           color: #0F56A3;
+          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
+          font-size: 11px;
+          font-weight: 700;
+          cursor: pointer;
+          flex-shrink: 0;
+        }
+        #msRenameIconBtn svg {
+          width: 11.5px;
+          height: 11.5px;
+          stroke: currentColor;
+          fill: none;
+          stroke-width: 2.1;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+        }
+        #msQualityPill {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          height: 27px;
+          padding: 0 10px;
+          border-radius: 999px;
           font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
           font-size: 11.5px;
           font-weight: 700;
           cursor: pointer;
           white-space: nowrap;
+          flex-shrink: 0;
+          border: 1px solid #D6E4F2;
+          background: #FFFFFF;
+          color: #0E2238;
+          font-variant-numeric: tabular-nums;
         }
-        #msBarCompareBtn.on {
+        #msQualityPill.hidden {
+          display: none !important;
+        }
+        #msQualityPill.good {
+          background: #EBFBEE;
+          border-color: #B7E4C7;
+          color: #1D7A4E;
+        }
+        #msQualityPill.check {
+          background: #FFF8E8;
+          border-color: #F3D193;
+          color: #8A5300;
+        }
+        #msQualityPill.retake {
+          background: #FDE8E6;
+          border-color: #F5B5AE;
+          color: #A32A21;
+        }
+        #msQualityPill .ms-qp-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: currentColor;
+        }
+        #msQualityPill svg {
+          width: 12px;
+          height: 12px;
+          stroke: currentColor;
+          fill: none;
+          stroke-width: 2;
+          opacity: 0.75;
+        }
+        /* Scan Quality Info Sheet (on-demand details + Adjust edges / Retake photo) */
+        #msQualityInfoSheet {
+          position: fixed;
+          inset: 0;
+          z-index: 125;
+          background: rgba(14, 34, 56, 0.38);
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 18px;
+          box-sizing: border-box;
+          animation: msIosFadeIn 0.18s ease both;
+        }
+        #msQualityInfoSheet.hidden {
+          display: none !important;
+        }
+        #msQualityInfoSheet .ms-qi-card {
+          width: 100%;
+          max-width: 420px;
+          background: #FFFFFF;
+          border: 1px solid #D6E4F2;
+          border-radius: 22px;
+          padding: 18px;
+          box-shadow: 0 22px 54px rgba(14, 34, 56, 0.24);
+          font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+          color: #0E2238;
+        }
+        #msQualityInfoSheet .ms-qi-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          margin-bottom: 10px;
+        }
+        #msQualityInfoSheet .ms-qi-title {
+          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
+          font-size: 18px;
+          font-weight: 800;
+          margin: 0;
+        }
+        #msQualityInfoSheet .ms-qi-score {
+          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
+          font-size: 13px;
+          font-weight: 800;
+          padding: 4px 10px;
+          border-radius: 999px;
+          background: #EAF4FE;
+          color: #0F56A3;
+        }
+        #msQualityInfoSheet .ms-qi-desc {
+          font-size: 13.5px;
+          line-height: 1.45;
+          color: #4E647C;
+          margin: 0 0 12px;
+        }
+        #msQualityInfoSheet .ms-qi-list {
+          margin: 0 0 14px;
+          padding-left: 18px;
+          font-size: 13px;
+          color: #2A3F57;
+          line-height: 1.45;
+        }
+        #msQualityInfoSheet .ms-qi-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          justify-content: flex-end;
+        }
+        #msQualityInfoSheet .ms-qi-btn {
+          height: 36px;
+          padding: 0 14px;
+          border-radius: 10px;
+          border: 1px solid #D6E4F2;
+          background: #F5FAFF;
+          color: #0F56A3;
+          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
+          font-size: 13px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        #msQualityInfoSheet .ms-qi-btn.primary {
           background: #1769C2;
           border-color: #1769C2;
           color: #FFFFFF;
         }
-        html.ms-form-iphone.ms-bar-selected #msBarCompareBtn {
-          display: inline-flex;
+        /* Intuitive Fix it (#review) Back to Score header button */
+        #review #rvClose {
+          display: inline-flex !important;
+          align-items: center !important;
+          gap: 5px !important;
+          height: 33px !important;
+          padding: 0 12px !important;
+          border-radius: 10px !important;
+          border: 1px solid #B9D9F7 !important;
+          background: #EAF4FE !important;
+          color: #0F56A3 !important;
+          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif !important;
+          font-size: 12.5px !important;
+          font-weight: 800 !important;
+          order: -1 !important;
+          margin-right: 4px !important;
+        }
+        #review #rvClose:active {
+          background: #D8EAFC !important;
+          transform: scale(0.96);
+        }
+        /* Crisp SVG icons inside buttons */
+        #btnPhoto svg, #btnPad svg, #msFlagVisBtn svg {
+          width: 14px;
+          height: 14px;
+          stroke: currentColor;
+          fill: none;
+          stroke-width: 2;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+          flex-shrink: 0;
         }
         /* Low-Confidence Flagged Bar Filter, Visual Softening & Stepper Navigator */
         /* Soften default red/amber fills on the score canvas so dozens of flags never feel overwhelming */
@@ -2697,9 +2917,288 @@ private enum NativeWebPolishScript {
         }, true);
       }
 
+      const PHOTO_ICON_SVG = '<svg class="ms-btn-svg" viewBox="0 0 18 18" aria-hidden="true"><rect x="1.75" y="3" width="14.5" height="12" rx="2.2"/><circle cx="6.25" cy="7.25" r="1.4"/><path d="M2.2 13.2l4.1-3.8a1 1 0 0 1 1.38 0l2.4 2.2 2.1-1.9a1 1 0 0 1 1.36 0l2.3 2.1"/></svg>';
+      const PIANO_ICON_SVG = '<svg class="ms-btn-svg" viewBox="0 0 18 18" aria-hidden="true"><rect x="1.75" y="3" width="14.5" height="12" rx="2"/><line x1="6.5" y1="3" x2="6.5" y2="15"/><line x1="11.5" y1="3" x2="11.5" y2="15"/><rect x="5" y="3" width="2.4" height="7" rx="0.5" fill="currentColor"/><rect x="10.6" y="3" width="2.4" height="7" rx="0.5" fill="currentColor"/></svg>';
+      const PENCIL_ICON_SVG = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M12.9 2.6a1.6 1.6 0 0 1 2.3 2.3l-8.9 8.9-3.3.9.9-3.3 9-8.8z"/><path d="M11.3 4.2l2.3 2.3"/></svg>';
+      const FLAG_ICON_SVG = '<svg class="ms-btn-svg" viewBox="0 0 18 18" aria-hidden="true"><path d="M3.5 2.5v13"/><path d="M3.5 3.5h9.5l-2.2 3.5 2.2 3.5H3.5"/></svg>';
+
+      // Default the 2-octave piano pad to closed on iPhone unless explicitly opened by the user
+      try {
+        const w = window.innerWidth || document.documentElement.clientWidth || 393;
+        if (w <= 680 && !sessionStorage.getItem('ms_iphone_pad_init')) {
+          sessionStorage.setItem('ms_iphone_pad_init', '1');
+          localStorage.setItem('musicscan:pad', 'closed');
+        }
+      } catch (_) {}
+
+      function humanizeTimestampTitle(raw) {
+        if (!raw) return raw;
+        const m = raw.trim().match(/^Scan\s+(\d{4})-(\d{2})-(\d{2})T(\d{2})[-:](\d{2})(?:[-:](\d{2}))?$/i);
+        if (!m) return raw;
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const monIdx = Math.max(0, Math.min(11, parseInt(m[2], 10) - 1));
+        const day = parseInt(m[3], 10);
+        return `Scan \u00b7 ${months[monIdx]} ${day}`;
+      }
+
+      function stripAllEditorEmojis() {
+        const btnPhoto = document.getElementById('btnPhoto');
+        if (btnPhoto && !btnPhoto.__msDeEmojified) {
+          btnPhoto.__msDeEmojified = true;
+          btnPhoto.innerHTML = `${PHOTO_ICON_SVG}<span>Photo</span>`;
+        }
+        const btnPad = document.getElementById('btnPad');
+        if (btnPad && !btnPad.__msDeEmojified) {
+          btnPad.__msDeEmojified = true;
+          btnPad.innerHTML = `${PIANO_ICON_SVG}<span>Piano</span>`;
+        }
+        const closeupLabel = document.getElementById('closeup')?.closest('label');
+        if (closeupLabel && !closeupLabel.__msDeEmojified) {
+          const input = closeupLabel.querySelector('input');
+          if (input) {
+            closeupLabel.__msDeEmojified = true;
+            closeupLabel.innerHTML = '';
+            closeupLabel.appendChild(input);
+            closeupLabel.insertAdjacentHTML('beforeend', `${PHOTO_ICON_SVG}<span>Re-shoot bar</span>`);
+          }
+        }
+        const rvClose = document.getElementById('rvClose');
+        if (rvClose && rvClose.textContent !== '\u2190 Back to Score') {
+          rvClose.textContent = '\u2190 Back to Score';
+          rvClose.title = 'Exit Fix it and return to full score';
+          rvClose.setAttribute('aria-label', 'Back to Score');
+        }
+        document.querySelectorAll('.fix-btn').forEach((fixBtn) => {
+          if (fixBtn.__msToggleHooked) return;
+          fixBtn.__msToggleHooked = true;
+          fixBtn.addEventListener('click', (e) => {
+            if (document.body.classList.contains('reviewing')) {
+              e.preventDefault();
+              e.stopPropagation();
+              document.getElementById('rvClose')?.click();
+            }
+          }, true);
+        });
+      }
+
+      function openQualityInfoSheet() {
+        postNative({ id: 0, cmd: 'haptic', kind: 'light' });
+        let sheet = document.getElementById('msQualityInfoSheet');
+        if (!sheet) {
+          sheet = document.createElement('div');
+          sheet.id = 'msQualityInfoSheet';
+          sheet.className = 'hidden';
+          sheet.addEventListener('click', (e) => {
+            if (e.target === sheet) sheet.classList.add('hidden');
+          });
+          document.body.appendChild(sheet);
+        }
+
+        const q = window.__ms?.S?.result?.quality || window.__ms?.S?.quality || {};
+        const scoreNum = typeof q.score === 'number' ? Math.round(q.score) : null;
+        const level = q.level || (scoreNum !== null && scoreNum < 65 ? 'poor' : 'warn');
+        const { all, bad } = getFlaggedMeasureIndices('all');
+        const reasons = Array.isArray(q.reasons) && q.reasons.length
+          ? q.reasons
+          : ['Parts of this photo were low contrast or slightly tilted.'];
+        const summaryText = all.length > 0
+          ? `${all.length} bar${all.length === 1 ? '' : 's'} highlighted for review${bad.length > 0 ? ` (${bad.length} likely wrong in red)` : ''}.`
+          : 'All bars have been reviewed.';
+
+        sheet.innerHTML = `
+          <div class="ms-qi-card" role="dialog" aria-label="Scan quality details">
+            <div class="ms-qi-head">
+              <div class="ms-qi-title">
+                <span>Scan Quality</span>
+                ${scoreNum !== null ? `<span class="ms-qi-score ${level === 'poor' || level === 'retake' ? 'poor' : ''}">${scoreNum}%</span>` : ''}
+              </div>
+              <button type="button" class="ms-qi-close" data-qi="close">Done</button>
+            </div>
+            <p class="ms-qi-body">
+              ${reasons.join(' \u00b7 ')}<br>
+              <strong>${summaryText}</strong>
+            </p>
+            <div class="ms-qi-actions">
+              ${all.length > 0 ? `<button type="button" class="ms-qi-btn primary" data-qi="fix">Check ${all.length} highlighted bar${all.length === 1 ? '' : 's'}</button>` : ''}
+              <button type="button" class="ms-qi-btn" data-qi="crop">Adjust page edges</button>
+              <button type="button" class="ms-qi-btn" data-qi="retake">Retake photo</button>
+            </div>
+          </div>
+        `;
+
+        sheet.querySelector('[data-qi="close"]')?.addEventListener('click', () => {
+          sheet.classList.add('hidden');
+        });
+        sheet.querySelector('[data-qi="fix"]')?.addEventListener('click', () => {
+          sheet.classList.add('hidden');
+          const fixBtn = document.querySelector('#qualityBanner [data-b="fix"]') || document.querySelector('.fix-btn:not(:disabled)');
+          fixBtn?.click();
+        });
+        sheet.querySelector('[data-qi="crop"]')?.addEventListener('click', () => {
+          sheet.classList.add('hidden');
+          const cropBtn = document.querySelector('#qualityBanner [data-b="edges"]') || document.getElementById('btnEdges');
+          cropBtn?.click();
+        });
+        sheet.querySelector('[data-qi="retake"]')?.addEventListener('click', () => {
+          sheet.classList.add('hidden');
+          const retakeBtn = document.querySelector('#qualityBanner [data-b="retake"]') || document.getElementById('btnNew');
+          retakeBtn?.click();
+        });
+
+        sheet.classList.remove('hidden');
+      }
+
+      function ensureAlignedTitleAndQualityRow() {
+        const header = document.querySelector('header.top') || document.querySelector('.top');
+        const docTitle = document.getElementById('docTitle');
+        if (!header || !docTitle) return;
+
+        let row = document.getElementById('msDocTitleRow');
+        if (!row) {
+          row = document.createElement('div');
+          row.id = 'msDocTitleRow';
+
+          const renameWrap = document.createElement('div');
+          renameWrap.id = 'msTitleRenameWrap';
+          docTitle.parentNode?.insertBefore(row, docTitle);
+          renameWrap.appendChild(docTitle);
+
+          const renameBtn = document.createElement('button');
+          renameBtn.id = 'msRenameIconBtn';
+          renameBtn.type = 'button';
+          renameBtn.title = 'Rename score';
+          renameBtn.setAttribute('aria-label', 'Rename score');
+          renameBtn.innerHTML = `${PENCIL_ICON_SVG}<span>Rename</span>`;
+          renameBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            postNative({ id: 0, cmd: 'haptic', kind: 'selection' });
+            docTitle.click();
+          });
+          renameWrap.appendChild(renameBtn);
+          row.appendChild(renameWrap);
+
+          const qPill = document.createElement('button');
+          qPill.id = 'msQualityPill';
+          qPill.type = 'button';
+          qPill.className = 'hidden';
+          qPill.title = 'View scan quality details and photo options';
+          qPill.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openQualityInfoSheet();
+          });
+          row.appendChild(qPill);
+        }
+
+        // Auto-humanize raw ISO timestamp titles ("Scan 2026-11-28T04-39-51" -> "Scan · Nov 28")
+        const curText = (docTitle.textContent || '').trim();
+        const nice = humanizeTimestampTitle(curText);
+        if (nice && nice !== curText) {
+          docTitle.textContent = nice;
+          if (window.__ms?.S) {
+            window.__ms.S.name = nice;
+            if (window.__ms.S.score) window.__ms.S.score.title = nice;
+          }
+        }
+
+        const qPill = document.getElementById('msQualityPill');
+        if (qPill) {
+          const q = window.__ms?.S?.result?.quality || window.__ms?.S?.quality;
+          const scoreNum = typeof q?.score === 'number' ? Math.round(q.score) : null;
+          const { all } = getFlaggedMeasureIndices('all');
+          if (scoreNum !== null) {
+            qPill.classList.remove('hidden', 'ok', 'warn', 'poor');
+            const levelClass = scoreNum >= 80 && all.length === 0 ? 'ok' : (scoreNum < 60 ? 'poor' : 'warn');
+            qPill.classList.add(levelClass);
+            qPill.innerHTML = `<span class="ms-qp-dot"></span><span>Scan quality: ${scoreNum}%</span>`;
+          } else if (all.length > 0) {
+            qPill.classList.remove('hidden', 'ok', 'warn', 'poor');
+            qPill.classList.add('warn');
+            qPill.innerHTML = `<span class="ms-qp-dot"></span><span>Scan quality \u00b7 ${all.length}</span>`;
+          } else {
+            qPill.classList.add('hidden');
+          }
+        }
+      }
+
+      let touchScrollGuardInstalled = false;
+      function installTouchScrollProtection() {
+        if (touchScrollGuardInstalled) return;
+        const sc = document.getElementById('score');
+        if (!sc) return;
+        touchScrollGuardInstalled = true;
+
+        let touchStartPos = null;
+        let touchedAlreadySelectedNote = false;
+
+        sc.addEventListener('touchstart', (e) => {
+          if (e.touches.length !== 1) return;
+          const t = e.touches[0];
+          touchStartPos = { x: t.clientX, y: t.clientY };
+          const ms = window.__ms;
+          const mode = ms?.S?.mode || 'select';
+          if (mode === 'ink') return;
+
+          const selEl = ms?.S?.sel;
+          let hitSelectedNote = false;
+          if (selEl && mode === 'select') {
+            const selId = selEl.getAttribute?.('data-id');
+            if (selId) {
+              const domHit = document.elementFromPoint(t.clientX, t.clientY)?.closest?.('[data-id]');
+              if (domHit && domHit.getAttribute('data-id') === selId) {
+                hitSelectedNote = true;
+              }
+            }
+          }
+          touchedAlreadySelectedNote = hitSelectedNote;
+          if (!hitSelectedNote) {
+            e.stopImmediatePropagation();
+          }
+        }, { capture: true, passive: false });
+
+        sc.addEventListener('pointerdown', (e) => {
+          if (e.pointerType !== 'touch') return;
+          touchStartPos = { x: e.clientX, y: e.clientY };
+        }, { capture: true });
+
+        sc.addEventListener('pointermove', (e) => {
+          if (e.pointerType !== 'touch') return;
+          const ms = window.__ms;
+          if (!ms?.S) return;
+          const dx = touchStartPos ? Math.abs(e.clientX - touchStartPos.x) : 0;
+          const dy = touchStartPos ? Math.abs(e.clientY - touchStartPos.y) : 0;
+
+          if (ms.S.mode === 'select' && !touchedAlreadySelectedNote) {
+            if (ms.S.drag) {
+              ms.S.drag = null;
+            }
+            if (dy > 6 || dx > 6) {
+              e.stopImmediatePropagation();
+            }
+          } else if (ms.S.mode === 'add' && (dy > 8 || dx > 8)) {
+            touchStartPos.scrolled = true;
+            e.stopImmediatePropagation();
+          }
+        }, { capture: true });
+
+        sc.addEventListener('pointerup', (e) => {
+          if (e.pointerType !== 'touch') return;
+          const ms = window.__ms;
+          if (ms?.S?.mode === 'add' && touchStartPos?.scrolled) {
+            e.stopImmediatePropagation();
+          }
+          touchStartPos = null;
+          touchedAlreadySelectedNote = false;
+        }, { capture: true });
+      }
+
       function ensureAdaptiveEditorControls() {
         updateFormFactorClass();
         ensureContinuousPlayBehavior();
+        stripAllEditorEmojis();
+        ensureAlignedTitleAndQualityRow();
+        installTouchScrollProtection();
 
         const btnNew = document.getElementById('btnNew');
         if (btnNew && !btnNew.__msRelabeled) {
@@ -2727,41 +3226,9 @@ private enum NativeWebPolishScript {
           toolbar.appendChild(btn);
         }
 
-        const statusbar = document.querySelector('#viewEditor .statusbar');
-        const zoomBox = statusbar?.querySelector('.zoom');
-        if (statusbar && zoomBox && !document.getElementById('msBarCompareBtn')) {
-          const compareBtn = document.createElement('button');
-          compareBtn.id = 'msBarCompareBtn';
-          compareBtn.type = 'button';
-          compareBtn.textContent = '📷 Bar photo';
-          compareBtn.title = 'Compare selected bar with original photo';
-          compareBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            postNative({ id: 0, cmd: 'haptic', kind: 'selection' });
-            const shown = document.documentElement.classList.toggle('ms-iphone-show-inspector');
-            compareBtn.classList.toggle('on', shown);
-            const insp = document.getElementById('inspector');
-            if (shown && insp && insp.classList.contains('hidden')) {
-              // Trigger redraw of inspector for the active measure
-              const ms = window.__ms;
-              if (ms && typeof ms.redraw === 'function') ms.redraw();
-            }
-          });
-          statusbar.insertBefore(compareBtn, zoomBox);
-        }
+        document.getElementById('msBarCompareBtn')?.remove();
+        document.getElementById('msSliBadge')?.remove();
 
-        const inspClose = document.getElementById('inspClose');
-        if (inspClose && !inspClose.__msHooked) {
-          inspClose.__msHooked = true;
-          inspClose.addEventListener('click', () => {
-            document.documentElement.classList.remove('ms-iphone-show-inspector');
-            document.getElementById('msBarCompareBtn')?.classList.remove('on');
-          });
-        }
-
-        // Sync selection classes so iPhone shows pitch/delete pills only when a note is selected
-        // and shows "📷 Bar photo" pill only when a bar is selected.
         const ms = window.__ms;
         const hasNoteSel = Boolean(ms?.S?.sel) || Boolean(document.querySelector('#overlay .sel'));
         const hasBarSel = Boolean(ms?.S?.measures?.size) || Boolean(document.querySelector('#overlay .msel'));
@@ -3367,11 +3834,10 @@ private enum NativeWebPolishScript {
             visBtn.style.display = 'inline-flex';
             const isShown = flagHighlightMode !== 'off';
             visBtn.classList.toggle('on', isShown);
-            visBtn.textContent = flagHighlightMode === 'off'
-              ? `\ud83d\udc41 Flags (${all.length})`
-              : flagHighlightMode === 'bad'
-                ? `\u26a0 Red (${bad.length})`
-                : `\u26a0 Flags (${all.length})`;
+            const label = flagHighlightMode === 'bad'
+              ? `Red (${bad.length})`
+              : `Flags (${all.length})`;
+            visBtn.innerHTML = `${FLAG_ICON_SVG}<span>${label}</span>`;
           } else {
             visBtn.style.display = 'none';
           }
