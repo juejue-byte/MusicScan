@@ -1631,8 +1631,8 @@ private enum MusicScanNativeBridgeScript {
       };
 
       // Guard editing, Fix It, Rescan, Ink, and Export on server-enforced preview scores,
-      // while allowing Playback (#btnPlay, .pbar), Page navigation (#msPageNav, #msGoodNotesSheet, #msFollowPlayBtn), Photo view, and Zoom.
-      const ALLOWED_PREVIEW_SELECTORS = '#btnNew, #btnPhoto, #photoCol, #zoomIn, #zoomOut, #zoomVal, #btnKeys, #btnPlay, #btnLoop, #btnPractice, #tempo, .tempo, .pbar, .pbar *, #practicePanel, #practicePanel *, #msPageNav, #msPageNav *, #msGoodNotesSheet, #msGoodNotesSheet *, #msFollowPlayBtn, #msFollowPlayBtn *, #msBarCompareBtn, #msMoreToolsBtn, #msSliBadge, #qualityBanner [data-b=close], #msNativePreviewVeil, #msNativePreviewVeil *, .ms-native-hdr-btn, .toast';
+      // while allowing Playback (#btnPlay, .pbar), Page navigation (#msPageNav, #msGoodNotesSheet, #msFollowPlayBtn), Flag bar navigation/toggle (#msFlagNav), Photo view, and Zoom.
+      const ALLOWED_PREVIEW_SELECTORS = '#btnNew, #btnPhoto, #photoCol, #zoomIn, #zoomOut, #zoomVal, #btnKeys, #btnPlay, #btnLoop, #btnPractice, #tempo, .tempo, .pbar, .pbar *, #practicePanel, #practicePanel *, #msPageNav, #msPageNav *, #msFlagNav, #msFlagNav *, #msFlagVisBtn, #msGoodNotesSheet, #msGoodNotesSheet *, #msFollowPlayBtn, #msFollowPlayBtn *, #msBarCompareBtn, #msMoreToolsBtn, #msSliBadge, #qualityBanner [data-b=close], #msNativePreviewVeil, #msNativePreviewVeil *, .ms-native-hdr-btn, .toast';
       function previewInteractionGuard(e) {
         if (!isCurrentScorePreviewLocked()) return;
         const editor = document.getElementById('viewEditor');
@@ -2042,6 +2042,183 @@ private enum NativeWebPolishScript {
         }
         html.ms-form-iphone.ms-bar-selected #msBarCompareBtn {
           display: inline-flex;
+        }
+        /* Low-Confidence Flagged Bar Filter, Visual Softening & Stepper Navigator */
+        /* Soften default red/amber fills on the score canvas so dozens of flags never feel overwhelming */
+        #score svg g.ms-bg rect[fill="#C2362B"] {
+          fill-opacity: 0.065 !important;
+        }
+        #score svg g.ms-bg rect[fill="#E39B1B"] {
+          fill-opacity: 0.075 !important;
+        }
+        /* Filter mode: Likely wrong (red) only — hide amber "worth a look" highlights */
+        html[data-ms-flag-mode="bad"] #score svg g.ms-bg rect[fill="#E39B1B"],
+        html[data-ms-flag-mode="bad"] #photoSvg rect[stroke="#E39B1B"] {
+          display: none !important;
+        }
+        html[data-ms-flag-mode="bad"] #score svg g.ms-bg text.ms-num[fill="#8A5300"] {
+          fill: #4E647C !important;
+        }
+        /* Filter mode: Off (clean score) — hide all red and amber bar highlights */
+        html[data-ms-flag-mode="off"] #score svg g.ms-bg rect[fill="#C2362B"],
+        html[data-ms-flag-mode="off"] #score svg g.ms-bg rect[fill="#E39B1B"],
+        html[data-ms-flag-mode="off"] #photoSvg rect[stroke="#C2362B"],
+        html[data-ms-flag-mode="off"] #photoSvg rect[stroke="#E39B1B"] {
+          display: none !important;
+        }
+        html[data-ms-flag-mode="off"] #score svg g.ms-bg text.ms-num[fill="#C2362B"],
+        html[data-ms-flag-mode="off"] #score svg g.ms-bg text.ms-num[fill="#8A5300"] {
+          fill: #4E647C !important;
+        }
+        #msFlagNav {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 6px;
+          margin: 2px 10px 6px;
+          padding: 5px 8px;
+          border-radius: 14px;
+          background: rgba(255, 255, 255, 0.94);
+          border: 1px solid #D6E4F2;
+          box-shadow: 0 2px 10px rgba(14, 34, 56, 0.05);
+          user-select: none;
+          -webkit-user-select: none;
+          flex-wrap: wrap;
+        }
+        #msFlagNav.hidden,
+        body.reviewing #msFlagNav {
+          display: none !important;
+        }
+        #msFlagNav .ms-fn-modes {
+          display: inline-flex;
+          align-items: center;
+          background: #EAF4FE;
+          padding: 2px;
+          border-radius: 10px;
+          border: 1px solid #D6E4F2;
+          gap: 2px;
+        }
+        #msFlagNav .ms-fn-mode {
+          height: 27px;
+          padding: 0 9px;
+          border-radius: 8px;
+          border: none;
+          background: transparent;
+          color: #4E647C;
+          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
+          font-size: 11.5px;
+          font-weight: 700;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+        #msFlagNav .ms-fn-mode.on {
+          background: #FFFFFF;
+          color: #0E2238;
+          box-shadow: 0 1px 3px rgba(14, 34, 56, 0.10);
+        }
+        #msFlagNav .ms-fn-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          display: inline-block;
+        }
+        #msFlagNav .ms-fn-dot.bad { background: #C2362B; }
+        #msFlagNav .ms-fn-dot.all { background: #E39B1B; }
+        #msFlagNav .ms-fn-nav {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          margin-left: auto;
+        }
+        #msFlagNav .ms-fn-step {
+          width: 29px;
+          height: 29px;
+          border-radius: 9px;
+          border: 1px solid #D6E4F2;
+          background: #F5FAFF;
+          color: #0F56A3;
+          font-size: 15px;
+          font-weight: 800;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          padding: 0;
+        }
+        #msFlagNav .ms-fn-step:active:not(:disabled) {
+          background: #D8EAFC;
+        }
+        #msFlagNav .ms-fn-step:disabled {
+          opacity: 0.35;
+          cursor: default;
+        }
+        #msFlagNav .ms-fn-status {
+          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
+          font-size: 12px;
+          font-weight: 700;
+          color: #0E2238;
+          padding: 0 4px;
+          font-variant-numeric: tabular-nums;
+          white-space: nowrap;
+          cursor: pointer;
+        }
+        #msFlagNav .ms-fn-status .ms-fn-sub {
+          color: #4E647C;
+          font-weight: 600;
+        }
+        #msFlagNav .ms-fn-ok {
+          height: 29px;
+          padding: 0 10px;
+          border-radius: 9px;
+          border: 1px solid #B7E4C7;
+          background: #EBFBEE;
+          color: #1D7A4E;
+          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
+          font-size: 11.5px;
+          font-weight: 800;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+        #msFlagNav .ms-fn-ok:active {
+          transform: scale(0.96);
+        }
+        #msFlagNav .ms-fn-fix {
+          height: 29px;
+          padding: 0 10px;
+          border-radius: 9px;
+          border: 1px solid #F3D193;
+          background: #FFF8E8;
+          color: #8A5300;
+          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
+          font-size: 11.5px;
+          font-weight: 800;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+        #msFlagVisBtn {
+          display: none;
+          align-items: center;
+          gap: 4px;
+          height: 24px;
+          padding: 0 9px;
+          margin-right: 6px;
+          border-radius: 999px;
+          border: 1px solid #D6E4F2;
+          background: #FFFFFF;
+          color: #4E647C;
+          font-family: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
+          font-size: 11.5px;
+          font-weight: 700;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+        #msFlagVisBtn.on {
+          background: #FFF8E8;
+          border-color: #F3D193;
+          color: #8A5300;
         }
         .lib-card, #viewProgress .progress-card, #score svg {
           animation: msIosFadeIn 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -3063,11 +3240,324 @@ private enum NativeWebPolishScript {
         syncPageNavigatorActiveState();
       }
 
+      // Low-Confidence Flagged Bar Filter & Stepper Navigator
+      // Modes: 'all' (red + amber), 'bad' (red likely-wrong only), 'off' (clean score, all highlights hidden)
+      let flagHighlightMode = 'all';
+      let flagModeAutoInitializedForJob = null;
+      let activeFlagBarIndex = -1;
+      let lastFlagSignature = '';
+
+      function applyFlagHighlightMode(mode, userInitiated = false) {
+        flagHighlightMode = mode;
+        document.documentElement.setAttribute('data-ms-flag-mode', mode);
+        if (userInitiated) {
+          postNative({ id: 0, cmd: 'haptic', kind: 'selection' });
+        }
+        // Strip or restore '  ⚠' and '  ?' suffixes on SVG bar numbers to match the active filter
+        const meta = window.__ms?.S?.meta || [];
+        const score = window.__ms?.S?.score;
+        const texts = document.querySelectorAll('#score svg g.ms-bg text.ms-num');
+        texts.forEach((t, idx) => {
+          const m = meta[idx];
+          if (!m) return;
+          const num = score?.parts?.[0]?.measures?.[idx]?.getAttribute('number') ?? String(idx + 1);
+          const over = t.textContent?.includes('too long') ? '  too long' : '';
+          if (mode === 'off') {
+            t.textContent = num + over;
+          } else if (mode === 'bad') {
+            t.textContent = num + (m.level === 'bad' ? '  \u26a0' : '') + over;
+          } else {
+            t.textContent = num + (m.level === 'bad' ? '  \u26a0' : m.level === 'check' ? '  ?' : '') + over;
+          }
+        });
+        syncFlagNavigatorUI();
+      }
+
+      function getFlaggedMeasureIndices(mode = flagHighlightMode) {
+        const meta = window.__ms?.S?.meta;
+        if (!Array.isArray(meta)) return { all: [], bad: [], check: [], active: [] };
+        const all = [];
+        const bad = [];
+        const check = [];
+        meta.forEach((m, idx) => {
+          if (!m || m.reviewed) return;
+          if (m.level === 'bad') {
+            bad.push(idx);
+            all.push(idx);
+          } else if (m.level === 'check') {
+            check.push(idx);
+            all.push(idx);
+          }
+        });
+        const active = mode === 'bad' ? bad : (mode === 'all' ? all : []);
+        return { all, bad, check, active };
+      }
+
+      function jumpToFlaggedBar(mi) {
+        const ms = window.__ms;
+        if (!ms?.S?.score || mi < 0 || mi >= ms.S.score.nMeasures) return;
+        activeFlagBarIndex = mi;
+        postNative({ id: 0, cmd: 'haptic', kind: 'selection' });
+        ms.S.sel = null;
+        ms.S.measures = new Set([mi]);
+        ms.S.focus = mi;
+        if (typeof ms.redraw === 'function') ms.redraw();
+        const layoutMeasure = ms.S.layout?.measures?.[mi];
+        if (layoutMeasure && typeof layoutMeasure.y0 === 'number') {
+          performProgrammaticScoreScroll(layoutMeasure.y0 - 54);
+        }
+        syncFlagNavigatorUI();
+      }
+
+      function stepFlaggedBar(dir) {
+        if (flagHighlightMode === 'off') {
+          const counts = getFlaggedMeasureIndices('all');
+          applyFlagHighlightMode(counts.bad.length > 0 ? 'bad' : 'all', false);
+        }
+        const { active } = getFlaggedMeasureIndices(flagHighlightMode);
+        if (!active.length) return;
+        const ms = window.__ms;
+        const curSel = ms?.S?.measures?.size ? Math.min(...ms.S.measures) : activeFlagBarIndex;
+        let nextIdx = 0;
+        if (dir > 0) {
+          const found = active.findIndex((x) => x > curSel);
+          nextIdx = found >= 0 ? found : 0;
+        } else {
+          let found = -1;
+          for (let i = active.length - 1; i >= 0; i--) {
+            if (active[i] < curSel) { found = i; break; }
+          }
+          nextIdx = found >= 0 ? found : active.length - 1;
+        }
+        jumpToFlaggedBar(active[nextIdx]);
+      }
+
+      function markCurrentFlaggedBarOk() {
+        const ms = window.__ms;
+        if (!ms?.S?.meta) return;
+        const { active } = getFlaggedMeasureIndices(flagHighlightMode);
+        if (!active.length) return;
+        const curSel = ms.S.measures?.size ? Math.min(...ms.S.measures) : activeFlagBarIndex;
+        const targetMi = active.includes(curSel) ? curSel : active[0];
+        const m = ms.S.meta[targetMi];
+        if (!m) return;
+        m.flag = m.level;
+        m.reviewed = true;
+        m.level = 'ok';
+        postNative({ id: 0, cmd: 'haptic', kind: 'success' });
+        if (typeof ms.redraw === 'function') ms.redraw();
+        const updated = getFlaggedMeasureIndices(flagHighlightMode).active;
+        if (updated.length > 0) {
+          const nextBar = updated.find((x) => x > targetMi) ?? updated[0];
+          jumpToFlaggedBar(nextBar);
+        } else {
+          activeFlagBarIndex = -1;
+          syncFlagNavigatorUI();
+        }
+      }
+
+      function syncFlagNavigatorUI() {
+        const nav = document.getElementById('msFlagNav');
+        const visBtn = document.getElementById('msFlagVisBtn');
+        const ms = window.__ms;
+        const { all, bad, active } = getFlaggedMeasureIndices(flagHighlightMode);
+
+        if (visBtn) {
+          if (all.length > 0) {
+            visBtn.style.display = 'inline-flex';
+            const isShown = flagHighlightMode !== 'off';
+            visBtn.classList.toggle('on', isShown);
+            visBtn.textContent = flagHighlightMode === 'off'
+              ? `\ud83d\udc41 Flags (${all.length})`
+              : flagHighlightMode === 'bad'
+                ? `\u26a0 Red (${bad.length})`
+                : `\u26a0 Flags (${all.length})`;
+          } else {
+            visBtn.style.display = 'none';
+          }
+        }
+
+        if (!nav) return;
+        if (all.length === 0) {
+          nav.classList.add('hidden');
+          return;
+        }
+        nav.classList.remove('hidden');
+
+        // Auto-hide the redundant verbose #qualityBanner when our compact Flag Navigator bar is visible
+        const qBanner = document.getElementById('qualityBanner');
+        if (qBanner && !qBanner.classList.contains('hidden')) {
+          qBanner.classList.add('hidden');
+        }
+
+        const modeAllBtn = nav.querySelector('[data-fn-mode="all"]');
+        const modeBadBtn = nav.querySelector('[data-fn-mode="bad"]');
+        const modeOffBtn = nav.querySelector('[data-fn-mode="off"]');
+
+        if (modeAllBtn) {
+          modeAllBtn.classList.toggle('on', flagHighlightMode === 'all');
+          modeAllBtn.innerHTML = `<span class="ms-fn-dot all"></span><span>All (${all.length})</span>`;
+        }
+        if (modeBadBtn) {
+          modeBadBtn.style.display = bad.length > 0 ? 'inline-flex' : 'none';
+          modeBadBtn.classList.toggle('on', flagHighlightMode === 'bad');
+          modeBadBtn.innerHTML = `<span class="ms-fn-dot bad"></span><span>Red (${bad.length})</span>`;
+        }
+        if (modeOffBtn) {
+          modeOffBtn.classList.toggle('on', flagHighlightMode === 'off');
+          modeOffBtn.textContent = 'Hide';
+        }
+
+        const curSel = ms?.S?.measures?.size ? Math.min(...ms.S.measures) : activeFlagBarIndex;
+        const pos = active.indexOf(curSel);
+        const curMi = pos >= 0 ? curSel : (active[0] ?? -1);
+        const statusEl = nav.querySelector('[data-fn="status"]');
+        const prevBtn = nav.querySelector('[data-fn="prev"]');
+        const nextBtn = nav.querySelector('[data-fn="next"]');
+        const okBtn = nav.querySelector('[data-fn="ok"]');
+
+        if (flagHighlightMode === 'off' || active.length === 0) {
+          if (statusEl) {
+            statusEl.innerHTML = `<span class="ms-fn-sub">Highlights hidden</span>`;
+          }
+          if (prevBtn) prevBtn.disabled = all.length === 0;
+          if (nextBtn) nextBtn.disabled = all.length === 0;
+          if (okBtn) okBtn.style.display = 'none';
+        } else {
+          const barNum = ms?.S?.score?.parts?.[0]?.measures?.[curMi]?.getAttribute('number') ?? String(curMi + 1);
+          const idxLabel = pos >= 0 ? `${pos + 1}/${active.length}` : `1/${active.length}`;
+          if (statusEl) {
+            statusEl.innerHTML = `Bar ${barNum} <span class="ms-fn-sub">(${idxLabel})</span>`;
+          }
+          if (prevBtn) prevBtn.disabled = active.length < 1;
+          if (nextBtn) nextBtn.disabled = active.length < 1;
+          if (okBtn) okBtn.style.display = 'inline-flex';
+        }
+      }
+
+      function ensureFlagNavigator() {
+        const scoreCol = document.querySelector('#viewEditor .score-col');
+        const scoreScroll = document.getElementById('scoreScroll');
+        if (!scoreCol || !scoreScroll) return;
+
+        // Add quick flag-visibility pill in bottom statusbar so users can toggle flags anytime
+        const statusbar = document.querySelector('#viewEditor .statusbar');
+        const zoomBox = statusbar?.querySelector('.zoom');
+        if (statusbar && zoomBox && !document.getElementById('msFlagVisBtn')) {
+          const visBtn = document.createElement('button');
+          visBtn.id = 'msFlagVisBtn';
+          visBtn.type = 'button';
+          visBtn.title = 'Cycle low-confidence bar highlights (All / Red only / Hidden)';
+          visBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const { bad } = getFlaggedMeasureIndices('all');
+            const nextMode = flagHighlightMode === 'all'
+              ? (bad.length > 0 ? 'bad' : 'off')
+              : (flagHighlightMode === 'bad' ? 'off' : 'all');
+            applyFlagHighlightMode(nextMode, true);
+          });
+          statusbar.insertBefore(visBtn, zoomBox);
+        }
+
+        let nav = document.getElementById('msFlagNav');
+        if (!nav) {
+          nav = document.createElement('div');
+          nav.id = 'msFlagNav';
+          nav.className = 'hidden';
+          nav.setAttribute('role', 'region');
+          nav.setAttribute('aria-label', 'Low-confidence bar navigator');
+          nav.innerHTML = `
+            <div class="ms-fn-modes" role="tablist" aria-label="Highlight filter">
+              <button type="button" class="ms-fn-mode on" data-fn-mode="all" title="Show all flagged bars"></button>
+              <button type="button" class="ms-fn-mode" data-fn-mode="bad" title="Show only likely-wrong (red) bars"></button>
+              <button type="button" class="ms-fn-mode" data-fn-mode="off" title="Hide all low-confidence highlights">Hide</button>
+            </div>
+            <div class="ms-fn-nav">
+              <button type="button" class="ms-fn-step" data-fn="prev" title="Previous flagged bar" aria-label="Previous flagged bar">‹</button>
+              <div class="ms-fn-status" data-fn="status" title="Tap to jump to current flagged bar"></div>
+              <button type="button" class="ms-fn-step" data-fn="next" title="Next flagged bar" aria-label="Next flagged bar">›</button>
+              <button type="button" class="ms-fn-ok" data-fn="ok" title="Mark this bar as checked and move to next">✓ OK</button>
+              <button type="button" class="ms-fn-fix" data-fn="fix" title="Open side-by-side photo comparison">Compare</button>
+            </div>
+          `;
+          scoreCol.insertBefore(nav, scoreScroll);
+
+          nav.querySelectorAll('[data-fn-mode]').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const mode = btn.getAttribute('data-fn-mode') || 'all';
+              applyFlagHighlightMode(mode, true);
+              const { active } = getFlaggedMeasureIndices(mode);
+              if (active.length > 0 && !active.includes(activeFlagBarIndex)) {
+                jumpToFlaggedBar(active[0]);
+              }
+            });
+          });
+          nav.querySelector('[data-fn="prev"]')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            stepFlaggedBar(-1);
+          });
+          nav.querySelector('[data-fn="next"]')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            stepFlaggedBar(1);
+          });
+          nav.querySelector('[data-fn="status"]')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const { active } = getFlaggedMeasureIndices(flagHighlightMode);
+            if (active.length > 0) {
+              const ms = window.__ms;
+              const curSel = ms?.S?.measures?.size ? Math.min(...ms.S.measures) : activeFlagBarIndex;
+              jumpToFlaggedBar(active.includes(curSel) ? curSel : active[0]);
+            }
+          });
+          nav.querySelector('[data-fn="ok"]')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            markCurrentFlaggedBarOk();
+          });
+          nav.querySelector('[data-fn="fix"]')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            postNative({ id: 0, cmd: 'haptic', kind: 'selection' });
+            const curSel = window.__ms?.S?.measures?.size ? Math.min(...window.__ms.S.measures) : activeFlagBarIndex;
+            if (window.__msReview && typeof window.__msReview.start === 'function') {
+              window.__msReview.start(curSel >= 0 ? curSel : null);
+            } else {
+              document.querySelector('.fix-btn:not(:disabled)')?.click();
+            }
+          });
+        }
+
+        // Smart default when a new score opens: if there are > 6 total flags and at least 1 red "likely wrong" bar,
+        // start in 'bad' (Red only) mode so the score isn't visually flooded with amber boxes!
+        const ms = window.__ms;
+        const jobKey = (ms?.S?.libId || '') + ':' + (ms?.S?.job || '') + ':' + (ms?.S?.score?.nMeasures || 0);
+        const { all, bad } = getFlaggedMeasureIndices('all');
+        if (jobKey !== flagModeAutoInitializedForJob && (ms?.S?.score?.nMeasures || 0) > 0) {
+          flagModeAutoInitializedForJob = jobKey;
+          const defaultMode = (all.length > 6 && bad.length > 0) ? 'bad' : 'all';
+          activeFlagBarIndex = (defaultMode === 'bad' ? bad[0] : all[0]) ?? -1;
+          applyFlagHighlightMode(defaultMode, false);
+        } else {
+          const sig = `${flagHighlightMode}:${all.join(',')}:${bad.join(',')}:${ms?.S?.measures ? [...ms.S.measures].join(',') : ''}`;
+          if (sig !== lastFlagSignature) {
+            lastFlagSignature = sig;
+            applyFlagHighlightMode(flagHighlightMode, false);
+          }
+        }
+      }
+
       let lastStateKey = '';
       function reportStage() {
         ensureHeaderActions();
         ensureAdaptiveEditorControls();
         ensurePageNavigator();
+        ensureFlagNavigator();
         syncPageWithPlaybackCursor();
         const isHidden = (el) => !el || el.classList.contains('hidden') || el.hidden || el.style.display === 'none';
         const upload = document.getElementById('viewUpload');
