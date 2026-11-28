@@ -715,6 +715,7 @@ struct SignInSheetView: View {
                 .padding(.bottom, 8)
             }
             .scrollBounceBehavior(.basedOnSize)
+            .scrollDismissesKeyboard(.interactively)
         }
         .padding(22)
         .background(
@@ -722,6 +723,14 @@ struct SignInSheetView: View {
                 .fill(.white)
                 .shadow(color: isModalCard ? SkyTheme.navy900.opacity(0.22) : .clear, radius: 34, y: 18)
         )
+        .onAppear {
+            auth.lastError = nil
+            auth.statusMessage = nil
+        }
+        .onChange(of: isExistingAccountMode) { _, _ in
+            auth.lastError = nil
+            auth.statusMessage = nil
+        }
         .onChange(of: auth.isGuest) { _, isGuest in
             if !isGuest {
                 onContinue()

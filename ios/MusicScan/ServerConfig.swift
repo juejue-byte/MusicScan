@@ -108,10 +108,12 @@ struct ServerHealth: Sendable, Equatable {
             let signedIn = json?["user"] is String
             let rawDevice = (json?["device"] as? String)?.lowercased()
             let deviceLabel: String? = switch rawDevice {
+            case "modal-t4": "Modal T4 GPU"
+            case "modal-l4": "Modal L4 GPU"
             case "cuda": "CUDA GPU"
             case "mps": "Apple Silicon GPU"
             case "cpu": "CPU"
-            default: nil
+            default: rawDevice?.uppercased()
             }
 
             if authorized {

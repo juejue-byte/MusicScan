@@ -55,7 +55,6 @@ struct ContentView: View {
             && bridge.stage == .home
             && !bridge.isModalOpen
             && bridge.libraryCount == 0
-            && !bridge.hasResume
     }
 
     var body: some View {
@@ -137,10 +136,14 @@ struct ContentView: View {
                                 ReviewEmptyOverlayView(
                                     isPro: billing.isPro,
                                     hasSamples: !bridge.samples.isEmpty,
+                                    hasResume: bridge.hasResume,
                                     onGoToScan: {
                                         withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
                                             selectedTab = .scan
                                         }
+                                    },
+                                    onResumeLastScore: {
+                                        bridge.openResume()
                                     },
                                     onTrySample: {
                                         bridge.openSample(index: 0)
@@ -199,7 +202,12 @@ struct ContentView: View {
                         MusicScanTabBar(
                             selectedTab: $selectedTab,
                             stage: bridge.stage,
-                            libraryCount: bridge.libraryCount
+                            libraryCount: bridge.libraryCount,
+                            onReselectReview: {
+                                if bridge.stage == .editor {
+                                    bridge.showLibraryHome()
+                                }
+                            }
                         )
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                     }

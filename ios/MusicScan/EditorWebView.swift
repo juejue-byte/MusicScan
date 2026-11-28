@@ -432,6 +432,23 @@ struct EditorWebView: UIViewRepresentable {
 
         func webView(
             _ webView: WKWebView,
+            decidePolicyFor navigationResponse: WKNavigationResponse,
+            decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void
+        ) {
+            if navigationResponse.isForMainFrame,
+               let http = navigationResponse.response as? HTTPURLResponse,
+               http.statusCode >= 400 {
+                loadWatchdogTask?.cancel()
+                loadWatchdogTask = nil
+                decisionHandler(.cancel)
+                parent.onLoadError("Score server returned HTTP \(http.statusCode). Tap Try Again or check Server Settings.")
+                return
+            }
+            decisionHandler(.allow)
+        }
+
+        func webView(
+            _ webView: WKWebView,
             createWebViewWith configuration: WKWebViewConfiguration,
             for action: WKNavigationAction,
             windowFeatures: WKWindowFeatures
@@ -1886,20 +1903,21 @@ private enum NativeWebPolishScript {
             padding: 0 9px !important;
             font-size: 12.5px !important;
           }
-          /* By default on iPhone, show only Drag Notes (Select), Note quick actions (when a note is selected),
-             Fix It, Photo, and "More tools ▾" so the score has breathing room and isn't stuffy. */
-          html.ms-form-iphone:not(.ms-iphone-full-tools) .toolbar button[data-mode="insert"],
-          html.ms-form-iphone:not(.ms-iphone-full-tools) .toolbar button[data-mode="ink"],
-          html.ms-form-iphone:not(.ms-iphone-full-tools) .toolbar .seg[aria-label="Note duration"],
-          html.ms-form-iphone:not(.ms-iphone-full-tools) .toolbar .seg[aria-label="Note modifiers"],
-          html.ms-form-iphone:not(.ms-iphone-full-tools) .toolbar .menu-wrap,
-          html.ms-form-iphone:not(.ms-iphone-full-tools) .toolbar #btnSetup,
-          html.ms-form-iphone:not(.ms-iphone-full-tools) .toolbar #btnRescan,
-          html.ms-form-iphone:not(.ms-iphone-full-tools) .toolbar .sep {
+          /* By default on iPhone, keep the toolbar uncluttered on a single row (Drag Notes, Add, Ink, Fix It, Photo, More tools ▾).
+             When a note is selected or Add Notes is active, automatically reveal Accidentals, Duration, and Rest/Delete. */
+          html.ms-form-iphone:not(.ms-iphone-full-tools) body:not(.ink-mode) .toolbar .seg[aria-label="Rhythm"],
+          html.ms-form-iphone:not(.ms-iphone-full-tools) body:not(.ink-mode) .toolbar .seg[aria-label="Markings and bars"],
+          html.ms-form-iphone:not(.ms-iphone-full-tools) body:not(.ink-mode) .toolbar #btnKeyTime,
+          html.ms-form-iphone:not(.ms-iphone-full-tools) body:not(.ink-mode) .toolbar #btnRescan,
+          html.ms-form-iphone:not(.ms-iphone-full-tools) body:not(.ink-mode) .toolbar .sep {
             display: none !important;
           }
-          /* Keep quick pitch/accidental/delete handy ONLY when a note is selected or full tools expanded */
-          html.ms-form-iphone:not(.ms-iphone-full-tools):not(.ms-note-selected) .toolbar .seg[aria-label="Pitch and delete"] {
+          html.ms-form-iphone:not(.ms-iphone-full-tools):not(.ms-note-selected) body:not(.note-input):not(.ink-mode) .toolbar .seg.durs,
+          html.ms-form-iphone:not(.ms-iphone-full-tools):not(.ms-note-selected) body:not(.note-input):not(.ink-mode) .toolbar .seg[aria-label="Accidentals"],
+          html.ms-form-iphone:not(.ms-iphone-full-tools):not(.ms-note-selected) body:not(.note-input):not(.ink-mode) .toolbar .seg[aria-label="Edit"] {
+            display: none !important;
+          }
+          body.ink-mode #msMoreToolsBtn {
             display: none !important;
           }
           /* Hide the auto-popping floating bar photo inspector on iPhone unless explicitly toggled via "📷 Bar photo" */
@@ -1915,28 +1933,6 @@ private enum NativeWebPolishScript {
             border-radius: 14px !important;
             box-shadow: 0 12px 32px rgba(14, 34, 56, 0.22) !important;
           }
-          /* Stacked, clear bar analysis in Fix It on iPhone (photo strip right above the editable bar) */
-          html.ms-form-iphone #review {
-            padding: 8px 10px !important;
-          }
-          html.ms-form-iphone .rev-head {
-            gap: 6px !important;
-            margin-bottom: 6px !important;
-          }
-          html.ms-form-iphone .rev-hint {
-            display: none !important;
-          }
-          html.ms-form-iphone .rev-crop {
-            grid-template-columns: 1fr !important;
-            gap: 6px !important;
-          }
-          html.ms-form-iphone .rev-pane canvas {
-            max-height: 76px !important;
-          }
-          /* Hide reading crop duplicate on iPhone since the live editable SVG bar is directly underneath */
-          html.ms-form-iphone .rev-crop .rev-pane:nth-child(2) {
-            display: none !important;
-          }
           /* Streamlined iPhone status bar */
           html.ms-form-iphone .statusbar {
             padding: 4px 10px !important;
@@ -1947,11 +1943,17 @@ private enum NativeWebPolishScript {
             display: none !important;
           }
           .lib-grid {
-            grid-template-columns: repeat(auto-fill, minmax(144px, 1fr)) !important;
-            gap: 10px !important;
+            grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)) !important;
+            gap: 12px !important;
           }
           .lib-thumb {
-            height: 92px !important;
+            height: 112px !important;
+            background: #FFFFFF !important;
+          }
+          .lib-thumb img {
+            object-fit: contain !important;
+            background: #FFFFFF !important;
+            padding: 3px !important;
           }
           .lib-head h2 {
             font-size: 24px !important;
@@ -2522,6 +2524,14 @@ private enum NativeWebPolishScript {
         updateFormFactorClass();
         ensureContinuousPlayBehavior();
 
+        const btnNew = document.getElementById('btnNew');
+        if (btnNew && !btnNew.__msRelabeled) {
+          btnNew.__msRelabeled = true;
+          btnNew.innerHTML = '&#x2039;&nbsp;Scores';
+          btnNew.title = 'Back to Your music';
+          btnNew.setAttribute('aria-label', 'Back to Your music');
+        }
+
         const toolbar = document.querySelector('#viewEditor .toolbar');
         if (toolbar && !document.getElementById('msMoreToolsBtn')) {
           const btn = document.createElement('button');
@@ -3077,8 +3087,13 @@ private enum NativeWebPolishScript {
         const title = titleEl ? (titleEl.textContent || '').trim() : '';
         const editing = document.body.classList.contains('editing');
         const playing = document.body.classList.contains('playing');
-        const libraryCount = document.querySelectorAll('#library .lib-card').length;
-        const libraryReady = Boolean(window.__msLibraryReady || libraryCount > 0 || stage !== 'home');
+        const allTabCount = parseInt(document.querySelector('#library [data-f="all"] span')?.textContent || '', 10);
+        const cardCount = document.querySelectorAll('#library .lib-card').length;
+        const libraryCount = Number.isFinite(allTabCount) && allTabCount > 0
+          ? allTabCount
+          : (cardCount || (document.body.classList.contains('has-library') ? 1 : 0));
+        const hasMusicScanDOM = Boolean(upload || progress || editor);
+        const libraryReady = Boolean(hasMusicScanDOM && (window.__msLibraryReady || libraryCount > 0 || stage !== 'home'));
         const hasResume = Boolean(document.getElementById('resume'));
         const modalEl = document.getElementById('modal');
         const modalOpen = Boolean(modalEl && !isHidden(modalEl));
@@ -3121,7 +3136,7 @@ private enum NativeWebPolishScript {
       reportStage();
       // Safety mark in case an older server bundle hasn't set __msLibraryReady yet
       setTimeout(() => {
-        if (!window.__msLibraryReady) {
+        if (!window.__msLibraryReady && (document.getElementById('viewUpload') || document.getElementById('viewEditor'))) {
           window.__msLibraryReady = true;
           scheduleReportStage();
         }

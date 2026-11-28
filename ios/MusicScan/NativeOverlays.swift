@@ -40,6 +40,7 @@ struct MusicScanTabBar: View {
     @Binding var selectedTab: AppTab
     let stage: WorkspaceStage
     let libraryCount: Int
+    var onReselectReview: (() -> Void)? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -79,8 +80,12 @@ struct MusicScanTabBar: View {
         }()
 
         return Button {
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
-                selectedTab = tab
+            if isSelected && tab == .review {
+                onReselectReview?()
+            } else {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
+                    selectedTab = tab
+                }
             }
         } label: {
             HStack(spacing: 7) {
@@ -762,7 +767,9 @@ struct ScanWorkspaceView: View {
 struct ReviewEmptyOverlayView: View {
     var isPro: Bool = false
     let hasSamples: Bool
+    var hasResume: Bool = false
     let onGoToScan: () -> Void
+    var onResumeLastScore: (() -> Void)? = nil
     let onTrySample: () -> Void
     let onOpenGuide: () -> Void
     let onOpenSettings: () -> Void
@@ -834,6 +841,19 @@ struct ReviewEmptyOverlayView: View {
                                     .shadow(color: SkyTheme.blue600.opacity(0.24), radius: 10, y: 4)
                             }
                             .buttonStyle(TactileCardButtonStyle())
+
+                            if hasResume, let onResumeLastScore {
+                                Button(action: onResumeLastScore) {
+                                    Label("Continue Last Score", systemImage: "clock.arrow.circlepath")
+                                        .font(.system(size: 14.5, weight: .bold, design: .rounded))
+                                        .foregroundStyle(SkyTheme.blue700)
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 44)
+                                        .background(SkyTheme.sky50, in: Capsule())
+                                        .overlay(Capsule().stroke(SkyTheme.sky200, lineWidth: 1.2))
+                                }
+                                .buttonStyle(TactileCardButtonStyle())
+                            }
                         }
                         .padding(.top, 4)
                     }
