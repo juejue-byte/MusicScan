@@ -1,4 +1,5 @@
 import AVFoundation
+import MediaPlayer
 import Observation
 import SuperwallKit
 import SwiftUI
@@ -574,6 +575,18 @@ struct EditorWebView: UIViewRepresentable {
                 }
                 try? audio.setActive(true)
             }
+            updateNowPlayingMetadata(isPlaying: parent.controller.isPlaying)
+        }
+
+        private func updateNowPlayingMetadata(isPlaying: Bool) {
+            let rawTitle = parent.controller.documentTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            let scoreTitle = rawTitle.isEmpty ? "Sheet Music Score" : rawTitle
+            var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+            info[MPMediaItemPropertyTitle] = scoreTitle
+            info[MPMediaItemPropertyArtist] = "MusicScan"
+            info[MPMediaItemPropertyAlbumTitle] = "MusicScan"
+            info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         }
 
         func load(remoteServerURL: URL, token: Int) {
@@ -1063,6 +1076,9 @@ struct EditorWebView: UIViewRepresentable {
                 let nowPlaying = body["playing"] as? Bool ?? false
                 if nowPlaying && !parent.controller.isPlaying {
                     ensurePlaybackAudioSessionActive()
+                }
+                if nowPlaying != parent.controller.isPlaying || nowPlaying {
+                    updateNowPlayingMetadata(isPlaying: nowPlaying)
                 }
                 parent.controller.isPlaying = nowPlaying
                 let storeCount = LocalScoreStore.shared.scores.count
@@ -2854,14 +2870,17 @@ private enum NativeWebPolishScript {
         ms.S.sel = null;
         ms.S.measures = new Set([mi]);
         ms.S.focus = mi;
-        if (typeof ms.redraw === 'function') ms.redraw();
-        if (typeof ms.scrollToBar === 'function') {
+        if (typeof ms.setMode === 'function' && ms.S.mode !== 'add') {
+          ms.setMode('select');
+        } else if (typeof ms.redraw === 'function') {
+          ms.redraw();
+        }
+        const lm = ms.S.layout?.measures?.[mi];
+        const scroller = document.getElementById('scoreScroll');
+        if (scroller && lm && typeof lm.y0 === 'number') {
+          scroller.scrollTo({ top: Math.max(0, lm.y0 - 14), behavior: 'smooth' });
+        } else if (typeof ms.scrollToBar === 'function') {
           ms.scrollToBar(mi);
-        } else {
-          const lm = ms.S.layout?.measures?.[mi];
-          if (lm && typeof lm.y0 === 'number') {
-            document.getElementById('scoreScroll')?.scrollTo({ top: Math.max(0, lm.y0 - 48), behavior: 'smooth' });
-          }
         }
         scheduleReportStage();
       }
@@ -3187,6 +3206,21 @@ private enum NativeWebPolishScript {
         if (titleEl && title && titleEl.textContent !== title) {
           titleEl.textContent = title;
         }
+        const docHeading = title ? `${title} — MusicScan` : 'MusicScan';
+        if (document.title !== docHeading) {
+          document.title = docHeading;
+        }
+        if ('mediaSession' in navigator && typeof MediaMetadata !== 'undefined') {
+          try {
+            if (!navigator.mediaSession.metadata || navigator.mediaSession.metadata.title !== (title || 'MusicScan')) {
+              navigator.mediaSession.metadata = new MediaMetadata({
+                title: title || 'Sheet Music Score',
+                artist: 'MusicScan',
+                album: 'MusicScan'
+              });
+            }
+          } catch (_) {}
+        }
 
         const editing = document.body.classList.contains('editing');
         const playing = document.body.classList.contains('playing');
@@ -3237,7 +3271,9 @@ private enum NativeWebPolishScript {
         }
 
         if (stage === 'editor' && ms?.S?.score) {
-          syncActiveScoreToNativeStore(false);
+          if (ms.S.libId && ms.S.libId !== lastSyncedUpsertSignature.split('|')[0]) {
+            setTimeout(() => syncActiveScoreToNativeStore(false), 60);
+          }
 
           const totalBars = ms.S.score.nMeasures || 0;
           const selectedBar = ms.S.measures?.size ? Math.min(...ms.S.measures) : (ms.S.focus >= 0 ? ms.S.focus : 0);
@@ -3347,11 +3383,21 @@ private enum NativeWebPolishScript {
       reportStage();
       const observer = new MutationObserver(() => scheduleReportStage());
       observer.observe(document.body, {
-        subtree: true,
-        childList: true,
-        characterData: true,
+        subtree: false,
         attributes: true,
-        attributeFilter: ['class', 'hidden', 'style']
+        attributeFilter: ['class']
+      });
+      ['viewUpload', 'viewProgress', 'viewEditor', 'modal', 'toast', 'notePad'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+          observer.observe(el, {
+            subtree: id === 'viewProgress',
+            childList: id === 'viewProgress' || id === 'toast',
+            characterData: id === 'viewProgress' || id === 'toast',
+            attributes: true,
+            attributeFilter: ['class', 'hidden']
+          });
+        }
       });
       document.addEventListener('pointerup', () => setTimeout(scheduleReportStage, 30), { passive: true });
       document.addEventListener('keyup', () => setTimeout(scheduleReportStage, 30), { passive: true });

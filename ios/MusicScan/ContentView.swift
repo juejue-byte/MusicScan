@@ -69,7 +69,7 @@ struct ContentView: View {
 
                 VStack(spacing: 0) {
                     ZStack {
-                        // Local-first WebView stays permanently mounted via musicscan-app://local/index.html?embed=native
+                        // Local-first WebView stays permanently mounted via musicscan-app://MusicScan/index.html?embed=native
                         if let serverURL {
                             ZStack {
                                 EditorWebView(
@@ -78,14 +78,14 @@ struct ContentView: View {
                                     isPro: billing.isPro,
                                     controller: bridge,
                                     onLoaded: {
-                                        withAnimation(.easeOut(duration: 0.2)) {
+                                        withAnimation(.easeOut(duration: 0.18)) {
                                             isLoading = false
                                             loadError = nil
                                         }
                                         bridge.setReviewTabMode(true)
                                     },
                                     onLoadError: { message in
-                                        withAnimation(.easeOut(duration: 0.2)) {
+                                        withAnimation(.easeOut(duration: 0.18)) {
                                             isLoading = false
                                             loadError = message
                                         }
@@ -173,7 +173,7 @@ struct ContentView: View {
                                     bridge: bridge,
                                     store: scoreStore,
                                     onGoToScan: {
-                                        withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+                                        withAnimation(.easeOut(duration: 0.18)) {
                                             selectedTab = .scan
                                         }
                                     },
@@ -187,7 +187,7 @@ struct ContentView: View {
                                     hasSamples: !bridge.samples.isEmpty,
                                     hasResume: bridge.hasResume || !scoreStore.scores.isEmpty,
                                     onGoToScan: {
-                                        withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+                                        withAnimation(.easeOut(duration: 0.18)) {
                                             selectedTab = .scan
                                         }
                                     },
@@ -228,12 +228,12 @@ struct ContentView: View {
                                 },
                                 onOpenSample: { index in
                                     bridge.openSample(index: index)
-                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+                                    withAnimation(.easeOut(duration: 0.18)) {
                                         selectedTab = .review
                                     }
                                 },
                                 onResumeEditing: {
-                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+                                    withAnimation(.easeOut(duration: 0.18)) {
                                         selectedTab = .review
                                     }
                                 },
@@ -261,12 +261,12 @@ struct ContentView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
-                .animation(.spring(response: 0.28, dampingFraction: 0.88), value: shouldHideBottomTabBar)
-                .animation(.spring(response: 0.28, dampingFraction: 0.88), value: bridge.editorMode)
-                .animation(.spring(response: 0.28, dampingFraction: 0.88), value: bridge.showiPadPhotoPane)
-                .animation(.easeOut(duration: 0.22), value: shouldShowNativeScoreLibrary)
-                .animation(.easeOut(duration: 0.22), value: shouldShowReviewEmptyState)
-                .animation(.easeOut(duration: 0.22), value: bridge.preparingMessage != nil)
+                .animation(.easeOut(duration: 0.18), value: shouldHideBottomTabBar)
+                .animation(.easeOut(duration: 0.18), value: bridge.editorMode)
+                .animation(.easeOut(duration: 0.18), value: bridge.showiPadPhotoPane)
+                .animation(.easeOut(duration: 0.18), value: shouldShowNativeScoreLibrary)
+                .animation(.easeOut(duration: 0.18), value: shouldShowReviewEmptyState)
+                .animation(.easeOut(duration: 0.18), value: bridge.preparingMessage != nil)
 
                 if let preparing = bridge.preparingMessage, !isShowingWelcome {
                     PreparingImportOverlayView(
@@ -306,7 +306,7 @@ struct ContentView: View {
 
                 if isShowingWelcome {
                     WelcomeFlowView {
-                        withAnimation(.easeOut(duration: 0.25)) {
+                        withAnimation(.easeOut(duration: 0.22)) {
                             hasCompletedOnboarding = true
                             showWelcomeOverlay = false
                         }
@@ -361,7 +361,7 @@ struct ContentView: View {
         }
         .onChange(of: bridge.stage) { oldStage, newStage in
             if (newStage == .reading || newStage == .editor) && oldStage != newStage {
-                withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+                withAnimation(.easeOut(duration: 0.18)) {
                     selectedTab = .review
                 }
             }
@@ -386,16 +386,12 @@ struct ContentView: View {
         } else {
             let fixStripHeight: CGFloat
             if bridge.editorMode == .fix {
-                if bridge.showFullPageInFix {
-                    fixStripHeight = bridge.isFixPhotoExpanded ? 236 : 172
-                } else {
-                    fixStripHeight = bridge.isFixPhotoExpanded ? 164 : 124
-                }
+                fixStripHeight = bridge.isFixPhotoExpanded ? 168 : 128
             } else {
                 fixStripHeight = 0
             }
             let topBarHeight: CGFloat = 44 + fixStripHeight
-            let bottomDockHeight: CGFloat = (bridge.editorMode == .play ? 62 : 104)
+            let bottomDockHeight: CGFloat = (bridge.editorMode == .play ? 60 : 94)
             return EdgeInsets(top: topBarHeight, leading: 0, bottom: bottomDockHeight, trailing: 0)
         }
     }
@@ -423,15 +419,10 @@ struct ContentView: View {
 #if os(iOS)
 private struct PageSheetSizingModifier: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(iOS 18.0, *) {
-            content.presentationSizing(.page)
-        } else {
-            content
-        }
+        content
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(24)
     }
 }
 #endif
-
-#Preview {
-    ContentView()
-}

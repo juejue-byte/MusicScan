@@ -9,7 +9,7 @@ import WebKit
 /// `/api/billing/*`) to the configured Modal GPU backend.
 final class LocalWebSchemeHandler: NSObject, WKURLSchemeHandler {
     static let scheme = "musicscan-app"
-    static let localEditorURL = URL(string: "musicscan-app://local/index.html?embed=native")!
+    static let localEditorURL = URL(string: "musicscan-app://MusicScan/index.html?embed=native")!
 
     private let rootURL: URL
     private let activeTasksLock = NSLock()
